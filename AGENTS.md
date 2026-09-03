@@ -218,6 +218,13 @@ stopped with `/stop t1`, queued or running. Stopping kills the command's whole
 process group: killing the shell alone leaves `go test` compiling in the
 background, which is not what stopping means.
 
+A task that fails keeps what it wrote. It reports nothing — that is what
+failing means — so `/tasks t1` falls back to the tail of what it had written,
+and `spawn_task` hands the model the same thing under the error. A review that
+ran five minutes and died on a rate limit had already found things; throwing
+that away and saying only "failed" wastes the work twice, once in tokens and
+once in the asking again.
+
 What `/check` runs is the project's own business: `check` in its
 `.ouhai/settings.json`, or a guess from the files present (go.mod, package.json,
 Makefile) when it says nothing.

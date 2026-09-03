@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -282,5 +283,38 @@ func TestDeniedToolsAreNotOffered(t *testing.T) {
 	}
 	if !strings.Contains(results[0].ToolResultText, "switched off") {
 		t.Fatalf("and say why: %q", results[0].ToolResultText)
+	}
+}
+
+// dyingProvider writes a little, then fails the way a busy free tier does.
+type dyingProvider struct{}
+
+func (dyingProvider) Name() string { return "dying" }
+
+func (dyingProvider) Send(_ context.Context, req provider.Request) (*provider.Response, error) {
+	if req.Stream != nil {
+		req.Stream("found three problems in tea.go")
+	}
+	return nil, errors.New("provider error (HTTP 429): the service may be temporarily overloaded")
+}
+
+// A task that dies halfway still found things out. Handing the model only the
+// error throws away five minutes of work it asked for and paid for.
+func TestSpawnReturnsWhatAFailedTaskWrote(t *testing.T) {
+	a := New(dyingProvider{})
+	a.OnNotice = func(string) {}
+	a.OnToolCall = func(string, string) {}
+
+	input, _ := json.Marshal(map[string]string{"description": "review the diff", "prompt": "review it"})
+	out, isErr := a.spawn(context.Background(), input)
+
+	if !isErr {
+		t.Fatal("a failed task is a failed tool call")
+	}
+	if !strings.Contains(out, "429") {
+		t.Errorf("the reason must survive: %q", out)
+	}
+	if !strings.Contains(out, "found three problems in tea.go") {
+		t.Errorf("what it wrote before dying must survive: %q", out)
 	}
 }

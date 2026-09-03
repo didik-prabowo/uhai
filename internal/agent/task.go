@@ -74,6 +74,11 @@ func (a *Agent) spawn(ctx context.Context, input json.RawMessage) (string, bool)
 		var report string
 		sub.OnText = func(text string) { report = text }
 
+		// The answer as it is written, so the task can be looked in on with
+		// /tasks while it runs — and so a task that dies halfway leaves the
+		// part it managed to write.
+		sub.OnDelta = func(delta string) { a.Tasks.Progress(t.ID, delta) }
+
 		err := sub.Ask(ctx, args.Prompt)
 		return report, sub.Tokens(), err
 	})
@@ -82,7 +87,14 @@ func (a *Agent) spawn(ctx context.Context, input json.RawMessage) (string, bool)
 		t.ID, t.Description, t.Status, t.Elapsed.Round(time.Second), t.Tokens))
 
 	if err != nil {
-		return fmt.Sprintf("task %s failed: %v", t.ID, err), true
+		failed := fmt.Sprintf("task %s failed: %v", t.ID, err)
+		// A task that ran for five minutes and died on a rate limit still
+		// found things out. Half an answer is worth more to the model than
+		// the news that there is none.
+		if partial := strings.TrimSpace(t.Output); partial != "" {
+			failed += "\n\nWhat it had written before it failed:\n" + partial
+		}
+		return failed, true
 	}
 	if strings.TrimSpace(report) == "" {
 		return fmt.Sprintf("task %s finished without reporting anything", t.ID), true

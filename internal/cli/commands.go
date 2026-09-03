@@ -299,6 +299,11 @@ func tasksReport(a *agent.Agent, id string) string {
 				head += fmt.Sprintf("%s failed: %v%s", dim, t.Err, reset)
 			}
 			if strings.TrimSpace(t.Report) == "" {
+				// A failed task reports nothing, but it was writing something
+				// when it died and that is the only account of the work.
+				if partial := strings.TrimSpace(t.Output); partial != "" {
+					return head + "\n" + lastLines(t.Output, checkReportLines)
+				}
 				return head
 			}
 			return head + "\n" + t.Report

@@ -104,9 +104,10 @@ order. Each is small; the point is that *use* picks which.
   interrupted to paste a page in.*
 - **A visible plan.** Long jobs are a wall of tool calls with no shape.
   *Build it when a turn's steps stop fitting in the status row.*
-- **Incremental task output.** `/tasks t1` keeps the last 8,000 characters.
-  *Build it when a task prints thousands of lines and the tail stops being
-  enough.*
+- **Incremental task output.** `/tasks t1` keeps the last 8,000 characters, and
+  a task that fails keeps them too rather than reporting nothing. *Build the
+  incremental version when a task prints thousands of lines and the tail stops
+  being enough.*
 
 ## Phase 6 — Work that outlives the process *(triggered, not scheduled)*
 

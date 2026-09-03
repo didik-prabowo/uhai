@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1263,5 +1264,27 @@ func TestConnectAsksForTheWorkspaceAfterTheKey(t *testing.T) {
 	m.saveCredential("gsk-test")
 	if m.mode == teaKeyEntry {
 		t.Error("groq has nothing to ask after the key")
+	}
+}
+
+// A failed task reports nothing, so /tasks used to show only the error — and
+// five minutes of work went with it. What it was writing when it died is the
+// only account of that work.
+func TestFailedTaskShowsWhatItWrote(t *testing.T) {
+	a := agent.New(nil)
+	done, _, err := a.Tasks.Run(context.Background(), "review the diff", func(ctx context.Context, tk task.Task) (string, int, error) {
+		a.Tasks.Progress(tk.ID, "found three problems in tea.go")
+		return "", 0, errors.New("provider error (HTTP 429): overloaded")
+	})
+	if err == nil {
+		t.Fatal("the task was supposed to fail")
+	}
+
+	report := tasksReport(a, done.ID)
+	if !strings.Contains(report, "failed") || !strings.Contains(report, "429") {
+		t.Errorf("the reason must be there: %q", report)
+	}
+	if !strings.Contains(report, "found three problems in tea.go") {
+		t.Errorf("the partial answer must be there: %q", report)
 	}
 }
