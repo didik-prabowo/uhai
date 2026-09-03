@@ -25,6 +25,10 @@ The skeleton, and the loop that makes it an agent rather than a chat window.
   `run_bash`.
 - `internal/task`: a registry, two jobs at once, the rest queued; `/bg`,
   `/check`, `spawn_task` and `/stop` all reaching it through `Registry.Run`.
+- One conversation per file under `~/.ouhai/sessions`, named by an id that is
+  the moment it started. `-sessions` lists them; `-resume <id>` takes any
+  prefix that names only one, and brings back the model the conversation was
+  held with rather than whatever `settings.json` says today.
 
 **Declared done because** three different callers went through `Registry.Run`
 without any of them learning about the queue, and neither kind of task needed
@@ -104,7 +108,36 @@ order. Each is small; the point is that *use* picks which.
   *Build it when a task prints thousands of lines and the tail stops being
   enough.*
 
-## Phase 6 — Splitting the work *(triggered, not scheduled)*
+## Phase 6 — Work that outlives the process *(triggered, not scheduled)*
+
+A conversation survives being closed; the work inside it does not. Killing
+ouhai kills the tasks with it — `/stop` takes the whole process group on
+purpose — and nothing about a task is on disk. That is a shape, not an
+oversight: a task here is a side quest that reads ten files so the main
+conversation pays for one report, and a side quest whose parent is gone has
+nobody to report to.
+
+Making it durable means a different model of work, and these three items are
+that model arriving one piece at a time:
+
+- **`tasks.json`.** What ran, what it said, whether it finished. *Build it when
+  a task is long enough that losing one hurts* — today the longest is `/check`,
+  which is cheaper to re-run than to resume.
+- **Retrying an interrupted task.** Needs the above, plus an answer to the
+  question that makes it hard: a task killed halfway may have already written
+  files or pushed a commit. Re-running it is not obviously safer than dropping
+  it. *Build it when tasks are read-only or idempotent by construction* — which
+  is what typed agents below would buy.
+- **A workflow: named steps, a status per step, resume from the first
+  unfinished one.** This is the item the other two are really for. It is also
+  Phase 5's *visible plan* seen from the other end — one wants to show the
+  shape of a turn, the other wants to survive losing it. *Build it when a
+  single job routinely spans more than one sitting.*
+
+Until then the durable thing is the conversation, and it is enough: the history
+comes back, the model comes back, and re-asking is one arrow key.
+
+## Phase 7 — Splitting the work *(triggered, not scheduled)*
 
 - **Typed agents** (`.ouhai/agents/*.md`: a name, a prompt, its own tools and
   model). Buys permission per kind — a reviewer with no `edit_file` cannot
@@ -119,7 +152,7 @@ order. Each is small; the point is that *use* picks which.
 - **Continuing a task.** Tasks are one-shot: they run, they report. *Build it
   when a task becomes a conversation of its own.*
 
-## Phase 7 — Tools that are not ours *(not started)*
+## Phase 8 — Tools that are not ours *(not started)*
 
 MCP would let a project hand ouhai its own tools — a database, an issue
 tracker — without any of them being written here. It is the one item on this
