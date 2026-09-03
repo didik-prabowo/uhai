@@ -232,8 +232,11 @@ is free, changing it needs a human.
 
 ## Project notes and skills
 
-`OUHAI.md`, `AGENTS.md` or `CLAUDE.md` — first one found, in that order — is
-read into the system prompt every session. Skills are the other half: a folder
+`OUHAI.md`, `AGENTS.md` or `CLAUDE.md` — first one found, each checked in a
+`.local` variant first — is read into the system prompt every session, with
+`@path` lines replaced by the file they name, three deep and cycle-guarded. The
+`.local` files and the `@` imports are conventions rather than anything the
+AGENTS.md standard defines; they are supported because projects use them. Skills are the other half: a folder
 per skill with a `SKILL.md` under `.ouhai/skills/` or `.claude/skills/`, of
 which only the name and description reach the prompt. The body is a path the
 model reads when the work calls for it, which is what keeps a project's fifty

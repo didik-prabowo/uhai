@@ -256,3 +256,86 @@ func TestClaudeStyleProjectIsUnderstood(t *testing.T) {
 		t.Fatalf("OUHAI.md must win, got %q", got)
 	}
 }
+
+// A personal file wins over the shared one and pulls it in: that is the shape
+// projects use — untracked notes for how one person works, importing what the
+// team agreed. Neither is in the AGENTS.md standard, both are common.
+func TestLocalNotesAndImports(t *testing.T) {
+	dir := isolate(t)
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("AGENTS.md", "# Aturan tim\n")
+	write("CLAUDE.md", "# Catatan lama\n")
+	write("AGENTS.local.md", "# Punya saya\n\n@AGENTS.md\n@CLAUDE.md\n\n## Alur saya\nRencanakan dulu.\n")
+
+	notes := ProjectNotes()
+	for _, want := range []string{"# Punya saya", "# Aturan tim", "# Catatan lama", "Rencanakan dulu."} {
+		if !strings.Contains(notes, want) {
+			t.Errorf("the notes must carry %q:\n%s", want, notes)
+		}
+	}
+
+	// A file that imports itself, directly or in a ring, must not spin.
+	write("AGENTS.local.md", "# Mulai\n@ring.md\n")
+	write("ring.md", "# Cincin\n@AGENTS.local.md\n")
+	notes = ProjectNotes()
+	if !strings.Contains(notes, "# Cincin") {
+		t.Fatalf("the import must still happen once:\n%s", notes)
+	}
+	if strings.Count(notes, "# Mulai") != 1 {
+		t.Fatalf("and only once:\n%s", notes)
+	}
+
+	// An import of something that is not there stays visible rather than
+	// leaving a hole nobody notices.
+	write("AGENTS.local.md", "# Mulai\n@tidak-ada.md\n")
+	if notes := ProjectNotes(); !strings.Contains(notes, "@tidak-ada.md") {
+		t.Fatalf("a missing import must stay on the page:\n%s", notes)
+	}
+}
+
+// A project that keeps its skills somewhere of its own says so, rather than
+// moving its files to suit this.
+func TestSkillsFromASettingsFolder(t *testing.T) {
+	dir := isolate(t)
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	if err := os.MkdirAll(filepath.Join(dir, "local-docs", "skills", "planning"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local-docs", "skills", "planning", "SKILL.md"),
+		[]byte("---\nname: planning\ndescription: Rencanakan sebelum menulis kode\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".ouhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".ouhai", "settings.json"),
+		[]byte(`{"skills":["local-docs/skills"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills := Skills()
+	if len(skills) != 1 || skills[0].Name != "planning" {
+		t.Fatalf("the named folder must be searched: %+v", skills)
+	}
+}

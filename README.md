@@ -148,6 +148,12 @@ read at the start of every session, so a repository can state its own
 conventions once instead of you repeating them. This one has an `AGENTS.md`,
 which doubles as the map of the code.
 
+Each of those names also has a `.local` variant — `AGENTS.local.md` and so on —
+which is read first: an untracked file for how you work, as opposed to what the
+team agreed. A line that is only `@some/file.md` pulls that file in, so a
+personal file can import the shared one. Neither is part of the AGENTS.md
+standard; both are what projects already do.
+
 Longer instructions for particular jobs go in skills — a folder per skill with
 a `SKILL.md` inside, under `.ouhai/skills/` or `.claude/skills/`, which is the
 layout Claude Code uses:
@@ -164,6 +170,12 @@ The long part, which only gets read when it is needed.
 Only the name and the description travel with every prompt. The body is a file
 the model opens when the work turns out to be that work — so a project can keep
 as many as it likes without paying for them each turn.
+
+A project that keeps them elsewhere says where in its settings:
+
+```json
+{ "skills": ["local-docs/skills"] }
+```
 
 ## Development
 

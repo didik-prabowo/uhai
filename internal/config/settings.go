@@ -54,11 +54,55 @@ func save(edit func(*Settings)) error {
 }
 
 // projectNotesFiles lets a repository state its own conventions once, instead
-// of the user repeating them every session. OUHAI.md first, for a project with
-// something to say to this agent in particular; then the two files
-// repositories already write for agents in general — so a project that has
-// either needs nothing added for ouhai to read it.
-var projectNotesFiles = []string{"OUHAI.md", "AGENTS.md", "CLAUDE.md"}
+// of the user repeating them every session. The first one found is used.
+//
+// Each name comes in a ".local" variant, which is a convention rather than
+// anything the AGENTS.md standard says: an untracked file for how one person
+// works, usually importing the shared one with @. It is read first for that
+// reason — it is the more specific of the two, and it knows how to pull the
+// other in.
+var projectNotesFiles = []string{
+	"OUHAI.local.md", "OUHAI.md",
+	"AGENTS.local.md", "AGENTS.md",
+	"CLAUDE.local.md", "CLAUDE.md",
+}
+
+// importDepth is how far a chain of @ lines is followed. Notes importing notes
+// importing notes is a shape worth allowing and not worth chasing.
+const importDepth = 3
+
+// expandImports replaces a line that is only "@path" with the file it names —
+// the way project notes are written when one file is shared and another is
+// personal. A file that cannot be read, or that has already been pulled in,
+// leaves its line as it stands: better a visible "@thing" than a silent gap.
+func expandImports(notes, from string, seen map[string]bool, depth int) string {
+	if depth >= importDepth {
+		return notes
+	}
+
+	lines := strings.Split(notes, "\n")
+	for i, line := range lines {
+		path, ok := strings.CutPrefix(strings.TrimSpace(line), "@")
+		if !ok || path == "" || strings.ContainsAny(path, " \t") {
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(filepath.Dir(from), path)
+		}
+		if seen[path] {
+			lines[i] = ""
+			continue
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		seen[path] = true
+		lines[i] = expandImports(strings.TrimSpace(string(data)), path, seen, depth+1)
+	}
+	return strings.Join(lines, "\n")
+}
 
 // CheckCommand is what the project says verifies it, "" when it says nothing.
 func CheckCommand() string {
@@ -77,7 +121,7 @@ func ProjectNotes() string {
 			continue
 		}
 		if notes := strings.TrimSpace(string(data)); notes != "" {
-			return notes
+			return expandImports(notes, name, map[string]bool{name: true}, 0)
 		}
 	}
 	return ""
@@ -93,6 +137,10 @@ type Settings struct {
 	// Permissions decides what each tool may do without being asked; see
 	// permission.go for the rule syntax.
 	Permissions Permissions `json:"permissions,omitempty"`
+
+	// SkillDirs are extra folders to look for skills in, for a project that
+	// keeps them somewhere other than .ouhai, .claude or .agents.
+	SkillDirs []string `json:"skills,omitempty"`
 
 	// Check is how this project verifies itself, for /check, when guessing
 	// from the files present would get it wrong. Belongs in the project's own
@@ -144,6 +192,7 @@ func LoadSettings() (Settings, error) {
 		s.Permissions.Allow = append(s.Permissions.Allow, file.Permissions.Allow...)
 		s.Permissions.Ask = append(s.Permissions.Ask, file.Permissions.Ask...)
 		s.Permissions.Deny = append(s.Permissions.Deny, file.Permissions.Deny...)
+		s.SkillDirs = append(s.SkillDirs, file.SkillDirs...)
 	}
 
 	if v := strings.TrimSpace(os.Getenv("OUHAI_MODEL")); v != "" {

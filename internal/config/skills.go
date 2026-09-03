@@ -34,7 +34,14 @@ func Skills() []Skill {
 	seen := map[string]bool{}
 	var out []Skill
 
-	for _, dir := range skillDirs {
+	dirs := skillDirs
+	if s, err := LoadSettings(); err == nil {
+		// A project that keeps them somewhere of its own says so, rather than
+		// moving its files to suit this.
+		dirs = append(append([]string{}, s.SkillDirs...), skillDirs...)
+	}
+
+	for _, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
