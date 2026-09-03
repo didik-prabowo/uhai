@@ -77,8 +77,14 @@ func TestModelLimits(t *testing.T) {
 		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192, Vision: true},
 		"ollama/qwen2.5-coder":                         {Context: 32_768, MaxOutput: 4_096},
 		"openrouter/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
-		"openrouter/amazon/nova-lite-v1":               {Context: defaultContext, MaxOutput: defaultMaxOutput},
-		"groq/something-nobody-has-heard-of":           {Context: defaultContext, MaxOutput: defaultMaxOutput},
+		"zai/glm-4.7":                                  {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
+		"zai/glm-4.6":                                  {Context: 200_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
+		// A cheap variant must not inherit its family's price: -flashx lands on
+		// the free entry, which shows no figure rather than a wrong one.
+		"zai/glm-4.7-flashx":                 {Context: 128_000, MaxOutput: 8_192},
+		"zai/glm-4.5-air":                    {Context: 128_000, MaxOutput: 8_192},
+		"openrouter/amazon/nova-lite-v1":     {Context: defaultContext, MaxOutput: defaultMaxOutput},
+		"groq/something-nobody-has-heard-of": {Context: defaultContext, MaxOutput: defaultMaxOutput},
 	} {
 		if got := infoFor(setting); got != want {
 			t.Errorf("%s: got %+v, want %+v", setting, got, want)

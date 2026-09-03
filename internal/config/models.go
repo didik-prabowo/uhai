@@ -53,6 +53,18 @@ var models = map[string]modelInfo{
 	"gemini-2.5": {Context: 1_000_000, MaxOutput: 8_192, Vision: true},
 	"gemini-2.0": {Context: 1_000_000, MaxOutput: 8_192, Vision: true},
 
+	// GLM, from Z.ai, which makes and sells them — so they are priced. The
+	// pricing page publishes no context windows: 128k is the figure that is
+	// safe to be wrong about, and 4.6 is the one Z.ai documents at 200k.
+	// glm-4.7-flash is free and unpriced, which is also where -flashx lands —
+	// no figure beats a confident wrong one.
+	"glm-5.3-flash": {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.075, OutputUSD: 0.25},
+	"glm-5.3":       {Context: 128_000, MaxOutput: 8_192, InputUSD: 1.40, OutputUSD: 4.40},
+	"glm-4.7-flash": {Context: 128_000, MaxOutput: 8_192},
+	"glm-4.7":       {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
+	"glm-4.6":       {Context: 200_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
+	"glm-":          {Context: 128_000, MaxOutput: 8_192},
+
 	// Open models: hosted by everyone, priced by each host, so no figures.
 	"llama-3.3":     {Context: 128_000, MaxOutput: 8_192},
 	"llama-3.1":     {Context: 128_000, MaxOutput: 8_192},

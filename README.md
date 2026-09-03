@@ -22,10 +22,15 @@ which is the quickest way to catch having forgotten.
 It opens without a provider, so the first thing to type is `/connect`, which
 asks for a key and remembers it in `~/.ouhai/auth.json`. If an API key is
 already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` — it is used as it is,
-and there is nothing to connect.
+`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
+used as it is, and there is nothing to connect.
 
 Ollama needs no key at all: `/connect ollama`, once it is running locally.
+
+Z.ai's GLM models are `/connect zai`, then `/model zai/glm-4.7`. The
+subscription "coding plan" is the same API at another address — point
+`baseUrl` at `https://api.z.ai/api/coding/paas/v4` in `settings.json` to spend
+the plan instead of pay-as-you-go credit.
 
 When a key stops working — expired, revoked, out of credit — `/connect <name>`
 again and paste a new one; escape keeps the one already saved. If the key comes

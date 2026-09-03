@@ -48,6 +48,9 @@ var vendorEnv = map[string]map[string]string{
 	"openrouter": {
 		FieldKey: "OPENROUTER_API_KEY",
 	},
+	"zai": {
+		FieldKey: "ZAI_API_KEY",
+	},
 }
 
 // AuthPath returns the credentials file location: ~/.ouhai/auth.json.

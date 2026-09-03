@@ -51,6 +51,15 @@ var providers = map[string]providerInfo{
 		KeyURL:       "https://aistudio.google.com/apikey",
 		Cost:         "free tier",
 	},
+	// Z.ai sells the GLM models it makes, so these carry prices. The endpoint
+	// speaks the OpenAI format; the subscription "coding plan" is the same API
+	// at a different base URL, which settings.json can point at.
+	"zai": {
+		BaseURL:      "https://api.z.ai/api/paas/v4",
+		DefaultModel: "glm-4.7",
+		KeyURL:       "https://z.ai/manage-apikey/apikey-list",
+		Cost:         "cheap paid",
+	},
 	"openrouter": {
 		BaseURL:      "https://openrouter.ai/api/v1",
 		DefaultModel: "meta-llama/llama-3.3-70b-instruct",
