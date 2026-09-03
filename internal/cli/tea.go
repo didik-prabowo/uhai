@@ -806,7 +806,36 @@ func (m *teaModel) setChatHeight(height int) {
 // blockHeight is what the prompt takes: a blank row for air, the status row,
 // and the form — the input with a rule above and below it.
 func (m *teaModel) blockHeight() int {
-	return m.inputHeight + 4
+	return m.inputHeight + 4 + m.menuRows()
+}
+
+// menuLimit is how many command rows are shown at once. The menu used to draw
+// every match without being counted in the block, so eleven commands made the
+// view taller than the terminal and the rows that fell off the bottom took the
+// selection with them: pressing up at the top wrapped to /mouse, which was no
+// longer on the screen.
+const menuLimit = 8
+
+// menuRows is how tall the command menu is right now — never more than the
+// chat can spare, since the block is drawn under it.
+func (m *teaModel) menuRows() int {
+	found := len(matches(m.input.Value()))
+	if found == 0 {
+		return 0
+	}
+	room := m.height - (m.inputHeight + 4) - 2 // two rows of chat, at least
+	return max(1, min(found, min(menuLimit, room)))
+}
+
+// menuWindow is the slice of the menu that is drawn, and the index the
+// selection sits at within it. It follows the selection rather than the top of
+// the list, so wrapping from the first command to the last stays visible.
+func (m *teaModel) menuWindow(found int) (first, rows int) {
+	rows = m.menuRows()
+	if m.commandSel >= rows {
+		first = min(m.commandSel-rows+1, max(0, found-rows))
+	}
+	return first, rows
 }
 
 // afterTurn keeps the conversation recoverable and announces background work
@@ -1152,12 +1181,15 @@ func (m *teaModel) View() string {
 	}
 	menu := matches(m.input.Value())
 	var commandRows []string
-	for i, command := range menu {
-		style := teaDim
-		if i == m.commandSel {
-			style = teaUser
+	if len(menu) > 0 {
+		first, rows := m.menuWindow(len(menu))
+		for i, command := range menu[first:min(first+rows, len(menu))] {
+			style := teaDim
+			if first+i == m.commandSel {
+				style = teaUser
+			}
+			commandRows = append(commandRows, style.Render(fmt.Sprintf("  %-12s %s", command.name, command.desc)))
 		}
-		commandRows = append(commandRows, style.Render(fmt.Sprintf("  %-12s %s", command.name, command.desc)))
 	}
 	// Flush with the rules under it: an indent here made the whole block one
 	// column wider than the terminal. The model hint gets what is left after

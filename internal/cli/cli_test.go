@@ -1197,3 +1197,30 @@ func TestPickerShowsMoreThanOneModelAtATime(t *testing.T) {
 		t.Fatalf("only %d of %d models fit on a 24-row screen", shown, len(items))
 	}
 }
+
+// The command menu drew every match without being counted in the block under
+// the chat, so eleven commands made the view taller than the terminal. The
+// rows that fell off took the selection with them: pressing up at the first
+// command wrapped to the last, which was no longer on the screen.
+func TestCommandMenuKeepsTheSelectionOnScreen(t *testing.T) {
+	for _, height := range []int{14, 24, 40} {
+		m := newTeaModel(agent.New(nil), nil)
+		m.Update(tea.WindowSizeMsg{Width: 76, Height: height})
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+
+		menu := matches(m.input.Value())
+		if len(menu) < 5 {
+			t.Fatalf("expected the whole command list, got %d", len(menu))
+		}
+		for step := 0; step <= len(menu); step++ {
+			view := m.View()
+			if rows := strings.Count(view, "\n") + 1; rows > height {
+				t.Fatalf("height=%d step=%d: view is %d rows, taller than the screen", height, step, rows)
+			}
+			if selected := menu[m.commandSel].name; !strings.Contains(view, selected+" ") {
+				t.Fatalf("height=%d step=%d: %s is selected but not drawn", height, step, selected)
+			}
+			m.Update(tea.KeyMsg{Type: tea.KeyUp}) // wraps at the top
+		}
+	}
+}
