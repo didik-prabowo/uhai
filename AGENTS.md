@@ -177,6 +177,29 @@ What `/check` runs is the project's own business: `check` in its
 `.ouhai/settings.json`, or a guess from the files present (go.mod, package.json,
 Makefile) when it says nothing.
 
+## Drawing
+
+Every colour comes from `theme.go` — slate for structure, one violet accent,
+softened red and green for a diff — and a test fails the build if a view writes
+one of its own. That test exists because the palette had already drifted across
+two files once.
+
+Four rules the layout keeps, each of which took a bug to learn:
+
+- **Nothing fills the last column.** A line as wide as the terminal makes it
+  wrap on its own, which scrolls the screen under the renderer. Everything is
+  built to `m.cols()`, one short.
+- **Nothing is drawn on the last row.** Once the chat is long enough to scroll,
+  that row is the one the renderer loses track of; it is left blank on purpose.
+- **A line that already fits is never re-wrapped.** Narrowing it to make room
+  for a hanging indent is what turned the welcome box into rubble.
+- **Anything the chat draws to a fixed width is cut by columns, not by
+  characters.** A coloured line is mostly escape codes.
+
+The rhythm is a blank line before each question, one after it, and one before
+the line that closes the turn. A tool call is one row, cut to the width: it is
+a note that something happened, not the thing itself.
+
 ## The terminal bargain
 
 Every layout question here resolves to one chain, and it was walked in both
