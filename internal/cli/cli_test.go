@@ -1126,3 +1126,48 @@ func TestToolLinesFitOnOneLine(t *testing.T) {
 		t.Fatalf("and says it was cut: %q", used[0])
 	}
 }
+
+// The welcome box is drawn to the full width, which makes it the first thing
+// to break when wrapping changes: a line that already fits must be left alone,
+// and one that does not must be cut rather than allowed to push a wall off.
+func TestWelcomeBoxStaysABox(t *testing.T) {
+	for _, width := range []int{40, 60, 100} {
+		m := newTeaModel(agent.New(nil), nil)
+		m.Update(tea.WindowSizeMsg{Width: width, Height: 16})
+
+		var box []string
+		for _, row := range strings.Split(m.chat.View(), "\n") {
+			if strings.TrimSpace(row) != "" {
+				box = append(box, row)
+			}
+		}
+		// A rule, four lines, a rule.
+		if len(box) != 6 {
+			t.Fatalf("width %d: the box is six rows, got %d:\n%s", width, len(box), strings.Join(box, "\n"))
+		}
+		for i, row := range box {
+			if got := visibleLen(row); got != m.cols() {
+				t.Errorf("width %d row %d is %d columns, want %d: %q", width, i, got, m.cols(), row)
+			}
+		}
+		if !strings.HasPrefix(box[0], dim+"╭") || !strings.Contains(box[len(box)-1], "╯") {
+			t.Errorf("width %d: the box lost a corner:\n%s", width, strings.Join(box, "\n"))
+		}
+	}
+
+	// Cutting counts columns, not characters: a coloured line is mostly
+	// escapes, and counting those would leave a fraction of the text.
+	coloured := teaDim.Render(strings.Repeat("panjang ", 20))
+	if got := visibleLen(cutVisible(coloured, 30)); got != 30 {
+		t.Errorf("cut to %d columns, want 30", got)
+	}
+
+	// A path longer than the box is cut, not allowed to burst it.
+	long := strings.Repeat("/sangat-panjang", 12)
+	rows := boxLines(50, "cwd: "+long)
+	for _, row := range rows {
+		if visibleLen(row) != 50 {
+			t.Fatalf("a long line burst the box: %d columns", visibleLen(row))
+		}
+	}
+}

@@ -85,6 +85,13 @@ func wrapLine(s string, cols int) []string {
 // runs to a second row otherwise breaks the margin every other line holds, and
 // the block stops looking like a block.
 func wrapHanging(line string, cols int) []string {
+	// A line that already fits is left exactly as it is. Narrowing it to make
+	// room for an indent it will never use is how a box drawn to the full
+	// width — the welcome box — ends up wrapped into rubble.
+	if visibleLen(line) <= cols {
+		return []string{line}
+	}
+
 	// A line that starts at the edge still gets its continuations tucked in:
 	// a hanging indent is what says "this is still the same line".
 	indent := leadingSpaces(line)
@@ -125,6 +132,20 @@ func leadingSpaces(s string) int {
 	return n
 }
 
+// cutVisible shortens a line to a number of screen columns, which is not the
+// same as a number of characters: the colour escapes in it take no space, and
+// counting them cuts a coloured line to a fraction of its width.
+func cutVisible(s string, cols int) string {
+	if visibleLen(s) <= cols {
+		return s
+	}
+	rows := wrapLine(s, cols-1)
+	if len(rows) == 0 {
+		return s
+	}
+	return rows[0] + "…" + reset
+}
+
 // truncate shortens long text so the confirmation prompt is not flooded by a file's contents.
 func truncate(s string, max int) string {
 	r := []rune(s)
@@ -147,6 +168,10 @@ func boxLines(cols int, lines ...string) []string {
 	inner := cols - 4
 	out := []string{dim + "╭" + strings.Repeat("─", cols-2) + "╮" + reset}
 	for _, l := range lines {
+		// Cut to fit: a line longer than the box pushes the right wall off the
+		// screen, and a box with one wall is not a box. A long path is the
+		// usual culprit.
+		l = cutVisible(l, inner)
 		pad := inner - visibleLen(l)
 		if pad < 0 {
 			pad = 0
