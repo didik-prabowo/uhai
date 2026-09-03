@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -204,5 +205,54 @@ func TestChainedCommandsAreJudgedInFull(t *testing.T) {
 		if got := Permission("run_bash", command); got != want {
 			t.Errorf("%q → %q, want %q", command, got, want)
 		}
+	}
+}
+
+// A project that already writes for Claude Code needs nothing added: its
+// CLAUDE.md is read like the others, and its skills are found where it keeps
+// them.
+func TestClaudeStyleProjectIsUnderstood(t *testing.T) {
+	dir := isolate(t)
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "skills", "rilis"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path, body string) {
+		if err := os.WriteFile(filepath.Join(dir, path), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("CLAUDE.md", "# Konvensi proyek\n")
+	write(filepath.Join(".claude", "skills", "rilis", "SKILL.md"),
+		"---\nname: rilis\ndescription: Menerbitkan versi baru\n---\n\nLangkah-langkah panjang.\n")
+
+	if got := ProjectNotes(); got != "# Konvensi proyek" {
+		t.Fatalf("CLAUDE.md must be read as project notes, got %q", got)
+	}
+
+	skills := Skills()
+	if len(skills) != 1 || skills[0].Name != "rilis" || skills[0].Description != "Menerbitkan versi baru" {
+		t.Fatalf("the skill was not read: %+v", skills)
+	}
+	// The body stays in the file: only the name and the description travel
+	// with every prompt.
+	notes := SkillNotes()
+	if !strings.Contains(notes, "rilis — Menerbitkan versi baru") || strings.Contains(notes, "Langkah-langkah panjang") {
+		t.Fatalf("skill notes = %q", notes)
+	}
+
+	// OUHAI.md still wins, for a project with something to say to this agent
+	// in particular.
+	write("OUHAI.md", "# Khusus ouhai\n")
+	if got := ProjectNotes(); got != "# Khusus ouhai" {
+		t.Fatalf("OUHAI.md must win, got %q", got)
 	}
 }

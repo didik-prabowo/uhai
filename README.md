@@ -143,10 +143,27 @@ the build.
 
 ## Telling it about your project
 
-A file named `OUHAI.md` or `AGENTS.md` in the working directory is read at the
-start of every session, so a repository can state its own conventions once
-instead of you repeating them. This one has an `AGENTS.md`, which doubles as
-the map of the code.
+A file named `OUHAI.md`, `AGENTS.md` or `CLAUDE.md` in the working directory is
+read at the start of every session, so a repository can state its own
+conventions once instead of you repeating them. This one has an `AGENTS.md`,
+which doubles as the map of the code.
+
+Longer instructions for particular jobs go in skills — a folder per skill with
+a `SKILL.md` inside, under `.ouhai/skills/` or `.claude/skills/`, which is the
+layout Claude Code uses:
+
+```
+.claude/skills/rilis/SKILL.md
+---
+name: rilis
+description: Publishing a version, from the tag to the release notes
+---
+The long part, which only gets read when it is needed.
+```
+
+Only the name and the description travel with every prompt. The body is a file
+the model opens when the work turns out to be that work — so a project can keep
+as many as it likes without paying for them each turn.
 
 ## Development
 

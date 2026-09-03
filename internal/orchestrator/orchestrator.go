@@ -76,7 +76,12 @@ func newAgent() (*agent.Agent, error) {
 	}
 	a.AllowTool = func(name string) bool { return !config.ToolDenied(name) }
 	if notes := config.ProjectNotes(); notes != "" {
-		a.System += "\n\n# Project instructions\nThese come from OUHAI.md in the working directory. Follow them.\n\n" + notes
+		a.System += "\n\n# Project instructions\nThese come from OUHAI.md, AGENTS.md or CLAUDE.md in the working directory. Follow them.\n\n" + notes
+	}
+	// Only the names travel with every prompt; the instructions themselves are
+	// a file to open when the work turns out to be that work.
+	if skills := config.SkillNotes(); skills != "" {
+		a.System += "\n\n# Skills\nThis project keeps instructions for particular jobs. When one of these covers what you are asked to do, read its file before starting.\n\n" + skills
 	}
 	return a, err
 }

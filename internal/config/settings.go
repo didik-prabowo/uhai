@@ -55,10 +55,10 @@ func save(edit func(*Settings)) error {
 
 // projectNotesFiles lets a repository state its own conventions once, instead
 // of the user repeating them every session. OUHAI.md first, for a project with
-// something to say to this agent in particular; AGENTS.md after it, which is
-// what repositories write for agents in general — so a project that already
-// has one needs nothing added for ouhai to read it.
-var projectNotesFiles = []string{"OUHAI.md", "AGENTS.md"}
+// something to say to this agent in particular; then the two files
+// repositories already write for agents in general — so a project that has
+// either needs nothing added for ouhai to read it.
+var projectNotesFiles = []string{"OUHAI.md", "AGENTS.md", "CLAUDE.md"}
 
 // CheckCommand is what the project says verifies it, "" when it says nothing.
 func CheckCommand() string {

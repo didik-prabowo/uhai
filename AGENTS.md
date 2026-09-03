@@ -230,6 +230,18 @@ asking. Anything that changes a repository — opening a pull request, merging,
 `gh api -X POST` — is not, and asks. That line is deliberate: reading the world
 is free, changing it needs a human.
 
+## Project notes and skills
+
+`OUHAI.md`, `AGENTS.md` or `CLAUDE.md` — first one found, in that order — is
+read into the system prompt every session. Skills are the other half: a folder
+per skill with a `SKILL.md` under `.ouhai/skills/` or `.claude/skills/`, of
+which only the name and description reach the prompt. The body is a path the
+model reads when the work calls for it, which is what keeps a project's fifty
+pages of procedure from costing anything on a turn that does not need them.
+
+Both layouts are Claude Code's, deliberately: a repository already written for
+one agent should need nothing added for this one.
+
 ## Not built, on purpose
 
 Each of these was considered, argued for, and left out. The trigger matters
