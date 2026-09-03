@@ -135,6 +135,13 @@ type Settings struct {
 	Model   string `json:"model"`
 	BaseURL string `json:"baseUrl,omitempty"`
 
+	// BaseURLs points one provider somewhere else, which "baseUrl" cannot do:
+	// that one applies to whichever provider is loaded, so aiming it at a
+	// proxy for one vendor silently redirects the next /model too. Z.ai's
+	// coding plan is the case that found this — the same API and key at
+	// another address, wanted for that provider and no other.
+	BaseURLs map[string]string `json:"baseUrls,omitempty"`
+
 	// Permissions decides what each tool may do without being asked; see
 	// permission.go for the rule syntax.
 	Permissions Permissions `json:"permissions,omitempty"`
@@ -183,6 +190,12 @@ func LoadSettings() (Settings, error) {
 		}
 		if file.BaseURL != "" {
 			s.BaseURL = file.BaseURL
+		}
+		for name, url := range file.BaseURLs {
+			if s.BaseURLs == nil {
+				s.BaseURLs = map[string]string{}
+			}
+			s.BaseURLs[name] = url // the nearer file wins, provider by provider
 		}
 		if file.Check != "" {
 			s.Check = file.Check
@@ -239,16 +252,26 @@ func LoadProviderFor(modelSetting string) (provider.Provider, error) {
 	return loadProvider(s, modelSetting)
 }
 
+// providerURL is where one provider's requests go: its own override first
+// since that is the specific answer, then the global one — which is there for
+// somebody running a single endpoint for everything — then the table.
+func providerURL(s Settings, name string) string {
+	if url := s.BaseURLs[name]; url != "" {
+		return url
+	}
+	if s.BaseURL != "" {
+		return s.BaseURL
+	}
+	return providers[name].BaseURL
+}
+
 func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 	name, model, ok := strings.Cut(modelSetting, "/")
 	if !ok || name == "" || model == "" {
 		return nil, fmt.Errorf("model %q must look like \"provider/model\", e.g. %q", s.Model, defaultModel)
 	}
 
-	baseURL := s.BaseURL
-	if baseURL == "" {
-		baseURL = providers[name].BaseURL
-	}
+	baseURL := providerURL(s, name)
 	if baseURL == "" {
 		return nil, fmt.Errorf("unknown provider %q — set \"baseUrl\" in settings.json for a custom endpoint", name)
 	}

@@ -27,10 +27,13 @@ used as it is, and there is nothing to connect.
 
 Ollama needs no key at all: `/connect ollama`, once it is running locally.
 
-Z.ai's GLM models are `/connect zai`, then `/model zai/glm-4.7`. The
-subscription "coding plan" is the same API at another address — point
-`baseUrl` at `https://api.z.ai/api/coding/paas/v4` in `settings.json` to spend
-the plan instead of pay-as-you-go credit.
+Z.ai's GLM models are `/connect zai`, then `/model zai/glm-4.7`. Pay-as-you-go
+needs credit on the account; the subscription "coding plan" is the same API and
+key at another address, and is reached by pointing that one provider at it:
+
+```json
+{ "baseUrls": { "zai": "https://api.z.ai/api/coding/paas/v4" } }
+```
 
 When a key stops working — expired, revoked, out of credit — `/connect <name>`
 again and paste a new one; escape keeps the one already saved. If the key comes
@@ -108,7 +111,8 @@ the code holds what the project needs, and wins.
 
 - **model** — `provider/model`. `/model` writes it for you.
 - **baseUrl** — any OpenAI-compatible endpoint, for a provider that is not
-  listed.
+  listed. It applies to whichever provider is loaded, so use **baseUrls** —
+  a map of provider to address — to move one and leave the rest alone.
 - **check** — how this project verifies itself, for `/check`. Guessed from
   `go.mod`, `package.json` or a `Makefile` when absent.
 - **permissions** — what each tool may do without asking; see

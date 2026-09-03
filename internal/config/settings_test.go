@@ -345,3 +345,37 @@ func TestSkillsFromASettingsFolder(t *testing.T) {
 		t.Fatalf("the named folder must be searched: %+v", skills)
 	}
 }
+
+// "baseUrl" moves every provider at once, which is wrong for the case that
+// wants it: Z.ai's coding plan is the same API and key at another address, and
+// aiming the global one at it would redirect the next /model as well.
+func TestBaseURLPerProvider(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("OUHAI_BASE_URL", "")
+	t.Setenv("ZAI_API_KEY", "k")
+	t.Setenv("GROQ_API_KEY", "k")
+
+	if err := os.MkdirAll(filepath.Join(dir, ".ouhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := `{"model":"zai/glm-4.7","baseUrls":{"zai":"https://api.z.ai/api/coding/paas/v4"}}`
+	if err := os.WriteFile(filepath.Join(dir, ".ouhai", "settings.json"), []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.BaseURLs["zai"]; got != "https://api.z.ai/api/coding/paas/v4" {
+		t.Fatalf("the override did not load: %q", got)
+	}
+	// Any other provider keeps the endpoint the table gives it.
+	if got := providerURL(s, "groq"); got != providers["groq"].BaseURL {
+		t.Fatalf("groq was redirected to %q", got)
+	}
+	if got := providerURL(s, "zai"); got != s.BaseURLs["zai"] {
+		t.Fatalf("zai should use the override, got %q", got)
+	}
+}
