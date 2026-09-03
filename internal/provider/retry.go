@@ -48,13 +48,19 @@ func Post(ctx context.Context, hc *http.Client, build func() (*http.Request, err
 // Anything else — a bad key, a wrong model name — will fail the same way twice.
 func worthRetrying(status int) bool { return status == http.StatusTooManyRequests || status >= 500 }
 
-// backoff honours Retry-After when the server sends one, and otherwise waits
-// 1s, then 2s.
+// backoff honours Retry-After when the server sends one. Without it, a server
+// having a bad moment is given a second and then two; a rate limit is given
+// five and then ten, because asking a full queue again a second later is how
+// it stays full — the free tiers that answer 429 mean it.
 func backoff(resp *http.Response, attempt int) time.Duration {
 	if v := resp.Header.Get("Retry-After"); v != "" {
 		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs > 0 {
 			return min(time.Duration(secs)*time.Second, maxBackoff)
 		}
 	}
-	return min(time.Duration(1<<(attempt-1))*time.Second, maxBackoff)
+	base := time.Second
+	if resp.StatusCode == http.StatusTooManyRequests {
+		base = 5 * time.Second
+	}
+	return min(base<<(attempt-1), maxBackoff)
 }

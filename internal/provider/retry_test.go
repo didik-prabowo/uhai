@@ -34,4 +34,14 @@ func TestRetryPolicy(t *testing.T) {
 	if got := backoff(plain, 3); got != 4*time.Second {
 		t.Errorf("third backoff = %s, want 4s", got)
 	}
+
+	// A rate limit waits longer than a server hiccup: asking a queue that is
+	// already full again one second later is how it stays full.
+	limited := &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}
+	if got := backoff(limited, 1); got != 5*time.Second {
+		t.Errorf("first backoff after 429 = %s, want 5s", got)
+	}
+	if got := backoff(limited, 2); got != maxBackoff {
+		t.Errorf("second backoff after 429 = %s, want the %s cap", got, maxBackoff)
+	}
 }

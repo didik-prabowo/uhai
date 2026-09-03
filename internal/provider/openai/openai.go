@@ -22,7 +22,12 @@ import (
 // headerTimeout bounds the wait for the first byte only. A whole-request
 // timeout would cut off long answers, which streaming makes normal — the user
 // interrupts instead.
-const headerTimeout = 60 * time.Second
+//
+// Three minutes rather than one: a 35,000-token diff sent to a busy free tier
+// took longer than a minute to answer at all, and "timeout awaiting response
+// headers" is a lie about what happened. A dead connection now hangs longer
+// before it is called dead, which esc and /stop already answer.
+const headerTimeout = 3 * time.Minute
 
 // listTimeout bounds listing models. That request is not a stream and nothing
 // watches the keyboard while it runs, so it needs a limit of its own.

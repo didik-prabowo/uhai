@@ -154,6 +154,9 @@ func TestEmptyResultAndEmptyArguments(t *testing.T) {
 
 func TestErrorsAreSurfaced(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Retry-After keeps the test quick: a 429 without one now waits five
+		// seconds and then ten, which is right in life and wrong in a test.
+		w.Header().Set("Retry-After", "1")
 		w.WriteHeader(http.StatusTooManyRequests)
 		io.WriteString(w, `{"error":{"code":429,"message":"Quota exceeded for quota metric","status":"RESOURCE_EXHAUSTED"}}`)
 	}))
