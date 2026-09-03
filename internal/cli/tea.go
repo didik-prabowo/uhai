@@ -407,8 +407,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addHistory(teaDim.Render("could not list models from connected providers"))
 			return m, nil
 		}
-		m.picker = list.New(msg.items, list.NewDefaultDelegate(), max(20, m.width), m.pickerHeight())
-		m.picker.Title = "Choose model"
+		m.picker = m.newPicker(msg.items, "Choose model")
 		m.mode = teaModelPicker
 	case teaUsageMsg:
 		// Input is the whole prompt each call, so it replaces; output adds up.
@@ -542,8 +541,7 @@ func (m *teaModel) beginConnect(arg string) tea.Cmd {
 	for _, item := range providerItems() {
 		items = append(items, teaItem{title: item.name, desc: item.desc})
 	}
-	m.picker = list.New(items, list.NewDefaultDelegate(), max(20, m.width), m.pickerHeight())
-	m.picker.Title = "Connect provider"
+	m.picker = m.newPicker(items, "Connect provider")
 	m.mode = teaProviderPicker
 	return nil
 }
@@ -727,8 +725,6 @@ func (m *teaModel) modelHint() string {
 	return hint
 }
 
-// pickerHeight keeps a list short enough to sit above the prompt without
-// pushing the whole terminal around.
 // builtAt is when the running binary was built, so a session started before
 // the last build is obvious rather than mysterious.
 func builtAt() string {
@@ -748,8 +744,25 @@ func workingDir() string {
 	return dir
 }
 
+// newPicker builds a list that uses the screen it has. The default one is
+// generous with space — a blank row between items, a count above them — which
+// on a short terminal left a picker showing one model at a time. A list you
+// can only see one of is not a list, it is a very slow question.
+func (m *teaModel) newPicker(items []list.Item, title string) list.Model {
+	delegate := list.NewDefaultDelegate()
+	delegate.SetSpacing(0) // the description already separates one item from the next
+
+	picker := list.New(items, delegate, max(20, m.cols()), m.pickerHeight())
+	picker.Title = title
+	picker.Styles.Title = teaTitle
+	picker.SetShowStatusBar(false) // "17 items" spends two rows saying what the list shows
+	return picker
+}
+
+// pickerHeight is the screen, less the title, the help line and the hint under
+// it. Short terminals still get six rows, scrolling for the rest.
 func (m *teaModel) pickerHeight() int {
-	return min(12, max(6, m.height-6))
+	return max(6, m.height-4)
 }
 
 func (m *teaModel) inputWidth() int {

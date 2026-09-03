@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -1169,5 +1170,30 @@ func TestWelcomeBoxStaysABox(t *testing.T) {
 		if visibleLen(row) != 50 {
 			t.Fatalf("a long line burst the box: %d columns", visibleLen(row))
 		}
+	}
+}
+
+// The picker used to be pinned to twelve rows while each item took three of
+// them, so a screen offered one model at a time and choosing meant scrolling
+// blind. It must use the screen it was given.
+func TestPickerShowsMoreThanOneModelAtATime(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 76, Height: 24})
+
+	var items []list.Item
+	for _, name := range []string{"a/one", "a/two", "b/three", "b/four", "c/five", "c/six", "c/seven", "c/eight"} {
+		items = append(items, teaItem{title: name, desc: "200k context · $3.00/$15.00 per Mtok"})
+	}
+	m.picker = m.newPicker(items, "Choose model")
+	m.mode = teaModelPicker
+
+	shown := 0
+	for _, item := range items {
+		if strings.Contains(m.View(), item.(teaItem).title) {
+			shown++
+		}
+	}
+	if shown < 6 {
+		t.Fatalf("only %d of %d models fit on a 24-row screen", shown, len(items))
 	}
 }
