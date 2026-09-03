@@ -1,56 +1,90 @@
-// Package tools berisi definisi tool yang bisa dipanggil model (read_file,
-// write_file, run_bash) beserta eksekusinya. Package ini gak tahu apa-apa
-// soal provider mana yang dipakai — tool bekerja sama persis buat Anthropic,
-// OpenAI, atau provider lain apa pun.
+// Package tools defines the tools the model may call (read_file, write_file,
+// edit_file, glob, grep, run_bash) and runs them. It knows nothing about which provider is in use —
+// the tools behave identically for every vendor.
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"time"
 
 	"github.com/didik-prabowo/ouhai/internal/provider"
 )
 
-const bashTimeout = 30 * time.Second
 const maxResultLen = 8000
 
-// Definitions mengembalikan daftar ToolSpec yang dikirim ke provider
-// supaya model tahu tool apa saja yang tersedia.
+// Definitions returns the ToolSpecs sent to the provider so the model knows
+// what it can call.
 func Definitions() []provider.ToolSpec {
 	return []provider.ToolSpec{
 		{
 			Name:        "read_file",
-			Description: "Baca isi sebuah file di disk. Kembalikan seluruh isi file sebagai teks.",
+			Description: "Read a file from disk and return its full contents as text.",
 			JSONSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
-					"path": {"type": "string", "description": "Path relatif atau absolut ke file"}
+					"path": {"type": "string", "description": "Relative or absolute path to the file"}
 				},
 				"required": ["path"]
 			}`),
 		},
 		{
 			Name:        "write_file",
-			Description: "Tulis (timpa) konten ke sebuah file. Buat file baru kalau belum ada, termasuk folder induknya.",
+			Description: "Write (overwrite) content to a file, creating it and its parent folders if needed.",
 			JSONSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
-					"path": {"type": "string", "description": "Path file yang mau ditulis"},
-					"content": {"type": "string", "description": "Konten lengkap yang mau ditulis ke file"}
+					"path": {"type": "string", "description": "Path of the file to write"},
+					"content": {"type": "string", "description": "Full content to write into the file"}
 				},
 				"required": ["path", "content"]
 			}`),
 		},
 		{
-			Name:        "run_bash",
-			Description: "Jalankan satu perintah shell (bash) dan kembalikan stdout+stderr-nya.",
+			Name:        "edit_file",
+			Description: "Replace one exact piece of text in a file. Use this instead of write_file for changing part of an existing file. The old text must appear exactly once.",
 			JSONSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {
-					"command": {"type": "string", "description": "Perintah shell yang mau dijalankan"}
+					"path": {"type": "string", "description": "Path of the file to edit"},
+					"old": {"type": "string", "description": "Exact text to replace, including indentation. Add surrounding lines until it is unique in the file"},
+					"new": {"type": "string", "description": "Text to put in its place"}
+				},
+				"required": ["path", "old", "new"]
+			}`),
+		},
+		{
+			Name:        "glob",
+			Description: "List files whose name matches a pattern, such as *.go or **/*_test.go. Faster than run_bash for finding files, and it never needs permission.",
+			JSONSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"pattern": {"type": "string", "description": "Name pattern, e.g. \"*.go\" or \"**/*_test.go\""},
+					"path": {"type": "string", "description": "Folder to search in, default the working directory"}
+				},
+				"required": ["pattern"]
+			}`),
+		},
+		{
+			Name:        "grep",
+			Description: "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission.",
+			JSONSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"pattern": {"type": "string", "description": "Go regular expression to search for"},
+					"path": {"type": "string", "description": "Folder to search in, default the working directory"},
+					"include": {"type": "string", "description": "Only search files whose name matches this pattern, e.g. \"*.go\""}
+				},
+				"required": ["pattern"]
+			}`),
+		},
+		{
+			Name:        "run_bash",
+			Description: "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input.",
+			JSONSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"command": {"type": "string", "description": "Shell command to run"}
 				},
 				"required": ["command"]
 			}`),
@@ -58,88 +92,28 @@ func Definitions() []provider.ToolSpec {
 	}
 }
 
-// NeedsConfirm menandai tool yang efeknya keluar dari proses ini (nulis ke
-// disk, jalanin perintah) — pemanggilnya wajib minta izin user dulu.
-func NeedsConfirm(name string) bool {
-	return name == "write_file" || name == "run_bash"
-}
-
-// Execute menjalankan satu tool berdasarkan nama, dan mengembalikan hasilnya
-// sebagai teks (sudah dipotong kalau kepanjangan) beserta flag error.
-func Execute(name string, input json.RawMessage) (result string, isError bool) {
+// Execute runs one tool by name and returns its output as text (truncated if
+// too long) plus an error flag.
+func Execute(ctx context.Context, name string, input json.RawMessage) (result string, isError bool) {
 	switch name {
 	case "read_file":
 		result, isError = readFile(input)
 	case "write_file":
 		result, isError = writeFile(input)
+	case "edit_file":
+		result, isError = editFile(input)
+	case "glob":
+		result, isError = globFiles(input)
+	case "grep":
+		result, isError = grepFiles(input)
 	case "run_bash":
-		result, isError = runBash(input)
+		result, isError = runBash(ctx, input)
 	default:
-		return fmt.Sprintf("tool tidak dikenal: %s", name), true
+		return fmt.Sprintf("unknown tool: %s", name), true
 	}
 
 	if len(result) > maxResultLen {
-		result = result[:maxResultLen] + "\n...[output dipotong]"
+		result = result[:maxResultLen] + "\n...[output truncated]"
 	}
 	return result, isError
-}
-
-func readFile(input json.RawMessage) (string, bool) {
-	var args struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(input, &args); err != nil {
-		return err.Error(), true
-	}
-	data, err := os.ReadFile(args.Path)
-	if err != nil {
-		return fmt.Sprintf("gagal baca file: %v", err), true
-	}
-	return string(data), false
-}
-
-func writeFile(input json.RawMessage) (string, bool) {
-	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal(input, &args); err != nil {
-		return err.Error(), true
-	}
-	if err := os.WriteFile(args.Path, []byte(args.Content), 0644); err != nil {
-		return fmt.Sprintf("gagal tulis file: %v", err), true
-	}
-	return fmt.Sprintf("OK, %d bytes ditulis ke %s", len(args.Content), args.Path), false
-}
-
-func runBash(input json.RawMessage) (string, bool) {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := json.Unmarshal(input, &args); err != nil {
-		return err.Error(), true
-	}
-
-	cmd := exec.Command("bash", "-c", args.Command)
-	type execResult struct {
-		out []byte
-		err error
-	}
-	done := make(chan execResult, 1)
-
-	go func() {
-		out, err := cmd.CombinedOutput()
-		done <- execResult{out, err}
-	}()
-
-	select {
-	case res := <-done:
-		if res.err != nil {
-			return fmt.Sprintf("exit error: %v\noutput:\n%s", res.err, res.out), true
-		}
-		return string(res.out), false
-	case <-time.After(bashTimeout):
-		_ = cmd.Process.Kill()
-		return "timeout: command melebihi batas waktu", true
-	}
 }

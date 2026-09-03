@@ -1,8 +1,8 @@
-// Package config nyimpen kredensial provider. API key sengaja dipisah dari
-// setting biasa dan ditulis dengan izin ketat — bentuknya ikut opencode: satu
-// file map provider -> kredensial, mode 0600. Nilainya map, bukan string,
-// karena sebagian provider butuh lebih dari satu nilai (Anthropic tipe
-// identity-linked butuh key + workspace id).
+// Package config stores provider credentials and settings. API keys are kept
+// apart from ordinary settings and written with tight permissions — the shape
+// follows opencode: one file mapping provider -> credentials, mode 0600. The
+// value is a map, not a string, because some providers need more than one
+// value (identity-linked Anthropic keys need a key plus a workspace id).
 package config
 
 import (
@@ -20,17 +20,17 @@ const (
 	authFilePerm fs.FileMode = 0o600
 )
 
-// Field baku di dalam Creds. Provider boleh nambah field lain sendiri.
+// Standard fields inside Creds. Providers may add their own.
 const (
 	FieldKey       = "key"
 	FieldWorkspace = "workspace"
 )
 
-// Creds adalah kredensial satu provider: field -> nilai.
+// Creds holds one provider's credentials: field -> value.
 type Creds map[string]string
 
-// vendorEnv adalah env var baku tiap vendor, per field. Dibaca setelah file,
-// jadi env menang — biar orang yang env-nya udah keisi langsung jalan.
+// vendorEnv lists each vendor's standard env vars, per field. Read after the
+// file so env wins — someone whose env is already set works out of the box.
 var vendorEnv = map[string]map[string]string{
 	"anthropic": {
 		FieldKey:       "ANTHROPIC_API_KEY",
@@ -50,7 +50,7 @@ var vendorEnv = map[string]map[string]string{
 	},
 }
 
-// AuthPath mengembalikan lokasi file kredensial: ~/.ouhai/auth.json.
+// AuthPath returns the credentials file location: ~/.ouhai/auth.json.
 func AuthPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -59,8 +59,8 @@ func AuthPath() (string, error) {
 	return filepath.Join(home, ".ouhai", "auth.json"), nil
 }
 
-// LoadAuth membaca seluruh isi auth.json. File yang belum ada bukan error —
-// balikin map kosong, biar pemanggil bisa langsung nambah entri.
+// LoadAuth reads all of auth.json. A missing file is not an error — it
+// returns an empty map so callers can add entries right away.
 func LoadAuth() (map[string]Creds, error) {
 	path, err := AuthPath()
 	if err != nil {
@@ -77,15 +77,15 @@ func LoadAuth() (map[string]Creds, error) {
 
 	all := map[string]Creds{}
 	if err := json.Unmarshal(data, &all); err != nil {
-		return nil, fmt.Errorf("%s rusak: %w", path, err)
+		return nil, fmt.Errorf("%s is corrupt: %w", path, err)
 	}
 	return all, nil
 }
 
-// Get mengembalikan kredensial satu provider, hasil gabungan file + env.
-// Urutan menang, dari rendah ke tinggi: auth.json, env var vendor
-// (ANTHROPIC_API_KEY, ANTHROPIC_WORKSPACE_ID, dst), lalu OUHAI_API_KEY.
-// Field yang gak keisi di mana-mana ya gak ada di map hasilnya.
+// Get returns one provider's credentials, merged from file and env. Lowest
+// to highest precedence: auth.json, the vendor env vars (GROQ_API_KEY,
+// ANTHROPIC_WORKSPACE_ID, ...), then OUHAI_API_KEY. Fields set nowhere are
+// simply absent from the result.
 func Get(provider string) Creds {
 	out := Creds{}
 	if all, err := LoadAuth(); err == nil {
@@ -110,15 +110,28 @@ func Get(provider string) Creds {
 	return out
 }
 
-// APIKey pintasan buat field yang paling sering dipakai.
+// APIKey is a shortcut for the field used most often.
 func APIKey(provider string) string { return Get(provider)[FieldKey] }
 
-// Save nyimpen (atau nimpa) kredensial satu provider ke auth.json. Provider
-// lain gak keganggu. File ditulis 0600 dan foldernya 0700 — kredensial gak
-// boleh kebaca user lain.
+// EnvKeyVar names the environment variable currently supplying this provider's
+// key, "" when none is. The environment wins over the file, so saving a new key
+// while one is exported changes nothing — and being told that is the
+// difference between a puzzle and a fix.
+func EnvKeyVar(provider string) string {
+	for _, env := range []string{vendorEnv[provider][FieldKey], "OUHAI_API_KEY"} {
+		if env != "" && strings.TrimSpace(os.Getenv(env)) != "" {
+			return env
+		}
+	}
+	return ""
+}
+
+// Save writes (or replaces) one provider's credentials in auth.json without
+// touching the others. The file is 0600 and its folder 0700 — credentials
+// must not be readable by other users.
 func Save(provider string, c Creds) error {
 	if provider == "" || c[FieldKey] == "" {
-		return errors.New("provider dan field \"key\" gak boleh kosong")
+		return errors.New("provider and the \"key\" field must not be empty")
 	}
 
 	path, err := AuthPath()
@@ -139,8 +152,8 @@ func Save(provider string, c Creds) error {
 	if err != nil {
 		return err
 	}
-	// WriteFile gak nurunin izin file yang sudah ada, jadi dipaksa lagi
-	// pakai Chmod — file lama bisa saja kadung 0644.
+	// WriteFile does not lower the permissions of an existing file, so Chmod
+	// forces them — an older file may already be 0644.
 	if err := os.WriteFile(path, append(data, '\n'), authFilePerm); err != nil {
 		return err
 	}

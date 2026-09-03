@@ -1,0 +1,109 @@
+// Running commands. One shell, one command, killed with everything it started.
+package tools
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// bashTimeout bounds one command the model runs. Two minutes so a test suite
+// finishes rather than being cut off at the interesting part — the old thirty
+// seconds meant the model could not verify its own work on any project bigger
+// than a toy. Long enough to be useful, short enough that a command waiting on
+// input dies instead of hanging the turn; /check is the way to run something
+// that takes longer than this.
+const bashTimeout = 2 * time.Minute
+
+// killGroup kills the command's whole process group when ctx ends, and
+// returns the function that stops watching once the command is over.
+func killGroup(ctx context.Context, cmd *exec.Cmd) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
+}
+
+func runBash(ctx context.Context, input json.RawMessage) (string, bool) {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(input, &args); err != nil {
+		return err.Error(), true
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, bashTimeout)
+	defer cancel()
+
+	out, err := Shell(ctx, args.Command, nil)
+	switch ctx.Err() {
+	case context.DeadlineExceeded:
+		return "timeout: the command took too long", true
+	case context.Canceled:
+		return "the user interrupted this command", true
+	}
+	if err != nil {
+		return fmt.Sprintf("exit error: %v\noutput:\n%s", err, out), true
+	}
+	return out, false
+}
+
+// Shell runs one command and returns everything it printed, whether it
+// succeeded or not. onLine, when given, is called with each line as it is
+// printed, so a long command can be watched rather than waited for.
+//
+// It sets no deadline of its own: a tool call and a run of the whole test
+// suite want very different ones, and the caller knows which it is.
+func Shell(ctx context.Context, command string, onLine func(string)) (string, error) {
+	cmd := exec.Command("bash", "-c", command)
+
+	// Its own process group, so cancelling kills what the command started as
+	// well as the command. Killing the shell alone leaves "go test" compiling
+	// happily in the background, which is not what stopping means.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if onLine == nil {
+		var out bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &out
+		if err := cmd.Start(); err != nil {
+			return "", err
+		}
+		defer killGroup(ctx, cmd)()
+
+		// Wait first: reading the buffer in the return statement would read it
+		// before the command had finished filling it.
+		err := cmd.Wait()
+		return out.String(), err
+	}
+
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	cmd.Stderr = cmd.Stdout // one stream, in the order it was printed
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	defer killGroup(ctx, cmd)()
+
+	var out strings.Builder
+	sc := bufio.NewScanner(pipe)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // one line can be long
+	for sc.Scan() {
+		line := sc.Text()
+		out.WriteString(line + "\n")
+		onLine(line)
+	}
+	return out.String(), cmd.Wait()
+}

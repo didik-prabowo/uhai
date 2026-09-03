@@ -1,29 +1,39 @@
-// Package openai adalah klien buat semua provider yang bicara format
-// Chat Completions ala OpenAI — Groq, Gemini (endpoint compat), Ollama,
-// OpenRouter, Z.ai. Yang beda cuma baseURL, key, dan nama model, jadi satu
-// implementasi ini cukup buat semuanya.
+// Package openai is the client for every provider speaking OpenAI-style Chat
+// Completions — Groq, Gemini (compat endpoint), Ollama, OpenRouter, Z.ai.
+// Only the base URL, key and model name differ, so one implementation covers
+// them all.
 package openai
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/didik-prabowo/ouhai/internal/provider"
 )
 
-const requestTimeout = 120 * time.Second
+// headerTimeout bounds the wait for the first byte only. A whole-request
+// timeout would cut off long answers, which streaming makes normal — the user
+// interrupts instead.
+const headerTimeout = 60 * time.Second
 
-// Options buat bikin klien. BaseURL sudah termasuk versi, misalnya
+// listTimeout bounds listing models. That request is not a stream and nothing
+// watches the keyboard while it runs, so it needs a limit of its own.
+const listTimeout = 15 * time.Second
+
+// Options builds a client. BaseURL includes the version, e.g.
 // "https://api.groq.com/openai/v1".
 type Options struct {
-	Label   string // ditampilkan ke user, misal "groq"
+	Label   string // shown to the user, e.g. "groq"
 	BaseURL string
-	APIKey  string // boleh kosong buat server lokal seperti Ollama
+	APIKey  string // may be empty for local servers such as Ollama
 	Model   string
 }
 
@@ -34,18 +44,18 @@ type Client struct {
 
 func New(o Options) (*Client, error) {
 	if o.BaseURL == "" {
-		return nil, fmt.Errorf("baseURL kosong")
+		return nil, fmt.Errorf("empty baseURL")
 	}
 	if o.Model == "" {
-		return nil, fmt.Errorf("model kosong")
+		return nil, fmt.Errorf("empty model")
 	}
 	o.BaseURL = strings.TrimRight(o.BaseURL, "/")
-	return &Client{opts: o, http: &http.Client{Timeout: requestTimeout}}, nil
+	return &Client{opts: o, http: &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: headerTimeout}}}, nil
 }
 
 func (c *Client) Name() string { return c.opts.Label + "/" + c.opts.Model }
 
-// --- bentuk wire OpenAI ---
+// --- OpenAI wire format ---
 
 type wireMessage struct {
 	Role       string     `json:"role"`
@@ -59,8 +69,8 @@ type wireCall struct {
 	Type     string `json:"type"`
 	Function struct {
 		Name string `json:"name"`
-		// Arguments dikirim sebagai string JSON, bukan objek — ini memang
-		// bentuk OpenAI, bukan salah ketik.
+		// Arguments is a JSON string, not an object — that is the OpenAI shape,
+		// not a typo.
 		Arguments string `json:"arguments"`
 	} `json:"function"`
 }
@@ -78,6 +88,16 @@ type wireRequest struct {
 	Model    string        `json:"model"`
 	Messages []wireMessage `json:"messages"`
 	Tools    []wireTool    `json:"tools,omitempty"`
+	Stream   bool          `json:"stream"`
+
+	// StreamOptions asks for a final chunk carrying the token counts, which a
+	// stream otherwise leaves out. It is a pointer so it can be dropped for
+	// servers that do not know the field.
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+}
+
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type wireResponse struct {
@@ -91,8 +111,32 @@ type wireResponse struct {
 	} `json:"error"`
 }
 
-// toWire menerjemahkan pesan netral jadi bentuk OpenAI. Satu Message netral
-// bisa jadi beberapa pesan wire: hasil tool wajib satu pesan per tool call.
+// wireChunk is one server-sent event of a streamed completion.
+type wireChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"delta"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// toWire translates neutral messages into the OpenAI shape. One neutral
+// Message may become several wire messages: each tool result needs its own.
 func toWire(system string, msgs []provider.Message) []wireMessage {
 	out := []wireMessage{}
 	if system != "" {
@@ -114,11 +158,15 @@ func toWire(system string, msgs []provider.Message) []wireMessage {
 				call.Function.Arguments = string(b.ToolInput)
 				calls = append(calls, call)
 			case provider.BlockToolResult:
-				// Hasil tool jadi pesan sendiri dengan role "tool".
+				// A tool result becomes its own message with role "tool".
+				// Content must be there even when the tool printed nothing —
+				// omitempty would drop it, and the API refuses a tool message
+				// without one. Saying so is also better than saying nothing:
+				// the model can tell success from silence.
 				out = append(out, wireMessage{
 					Role:       "tool",
 					ToolCallID: b.ToolResultForID,
-					Content:    b.ToolResultText,
+					Content:    orNoOutput(b.ToolResultText),
 				})
 			}
 		}
@@ -134,6 +182,14 @@ func toWire(system string, msgs []provider.Message) []wireMessage {
 	return out
 }
 
+// orNoOutput keeps an empty result from vanishing on the wire.
+func orNoOutput(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return "(no output)"
+	}
+	return text
+}
+
 func toWireTools(specs []provider.ToolSpec) []wireTool {
 	var out []wireTool
 	for _, s := range specs {
@@ -147,26 +203,22 @@ func toWireTools(specs []provider.ToolSpec) []wireTool {
 	return out
 }
 
-func (c *Client) Send(req provider.Request) (*provider.Response, error) {
-	body, err := json.Marshal(wireRequest{
-		Model:    c.opts.Model,
-		Messages: toWire(req.System, req.Messages),
-		Tools:    toWireTools(req.Tools),
-	})
-	if err != nil {
-		return nil, err
-	}
+// Models lists the model ids the endpoint offers (GET /models). Every
+// OpenAI-compatible server implements it, so /model works for Groq, Gemini,
+// Ollama and the rest without vendor-specific code.
+func (c *Client) Models() ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+	defer cancel()
 
-	httpReq, err := http.NewRequest(http.MethodPost, c.opts.BaseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.opts.BaseURL+"/models", nil)
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
 	if c.opts.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.opts.APIKey)
+		req.Header.Set("Authorization", "Bearer "+c.opts.APIKey)
 	}
 
-	resp, err := c.http.Do(httpReq)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -176,14 +228,224 @@ func (c *Client) Send(req provider.Request) (*provider.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parse(raw, resp.StatusCode)
+
+	var body struct {
+		Data []struct {
+			ID                string   `json:"id"`
+			Created           int64    `json:"created"`
+			Active            *bool    `json:"active"`
+			ContextWindow     int      `json:"context_window"`
+			InputModalities   []string `json:"input_modalities"`
+			OutputModalities  []string `json:"output_modalities"`
+			SupportedFeatures []string `json:"supported_features"`
+		} `json:"data"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, fmt.Errorf("model list is not JSON (HTTP %d): %s", resp.StatusCode, snippet(raw))
+	}
+	if body.Error != nil {
+		return nil, fmt.Errorf("provider error (HTTP %d): %s", resp.StatusCode, body.Error.Message)
+	}
+
+	type chatModel struct {
+		id      string
+		created int64
+	}
+	models := make([]chatModel, 0, len(body.Data))
+	for _, m := range body.Data {
+		if m.Active != nil && !*m.Active {
+			continue
+		}
+		if m.ContextWindow > 0 && m.ContextWindow < 8192 {
+			continue
+		}
+		// Chat completions need text input and text output. Older
+		// OpenAI-compatible endpoints may omit modality metadata, so keep
+		// those models and only filter when the fields are present.
+		if len(m.InputModalities) > 0 && (!contains(m.InputModalities, "text") || !contains(m.OutputModalities, "text")) {
+			continue
+		}
+		if len(m.SupportedFeatures) > 0 && !contains(m.SupportedFeatures, "tools") {
+			continue
+		}
+		if strings.Contains(strings.ToLower(m.ID), "prompt-guard") {
+			continue
+		}
+		models = append(models, chatModel{id: m.ID, created: m.Created})
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].created == models[j].created {
+			return models[i].id < models[j].id
+		}
+		return models[i].created > models[j].created
+	})
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		ids = append(ids, m.id)
+	}
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("the endpoint returned no models")
+	}
+	return ids, nil
 }
 
-// parse dipisah dari Send biar bisa dites tanpa jaringan.
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Response, error) {
+	wire := wireRequest{
+		Model:         c.opts.Model,
+		Messages:      toWire(req.System, req.Messages),
+		Tools:         toWireTools(req.Tools),
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
+	}
+
+	body, err := json.Marshal(wire)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.post(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Not every OpenAI-compatible server knows stream_options. Losing the
+	// token counts is a fair trade; losing the answer is not, so ask again
+	// without it.
+	if resp.StatusCode == http.StatusBadRequest {
+		raw, _ := io.ReadAll(resp.Body)
+		if !strings.Contains(string(raw), "stream_options") {
+			return parse(raw, resp.StatusCode)
+		}
+		wire.StreamOptions = nil
+		if body, err = json.Marshal(wire); err != nil {
+			return nil, err
+		}
+		if resp, err = c.post(ctx, body); err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+	}
+
+	// Errors do not come back as a stream: read the whole body and let parse
+	// produce the message.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		raw, _ := io.ReadAll(resp.Body)
+		return parse(raw, resp.StatusCode)
+	}
+	return parseStream(resp.Body, req.Stream)
+}
+
+// post sends the request. The body is kept as bytes so every attempt can send
+// it again; the retrying itself is the same for every vendor and lives in the
+// provider package.
+func (c *Client) post(ctx context.Context, body []byte) (*http.Response, error) {
+	return provider.Post(ctx, c.http, func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.opts.BaseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if c.opts.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.opts.APIKey)
+		}
+		return req, nil
+	})
+}
+
+// parseStream reads a server-sent-event stream of chat completion chunks,
+// reporting text as it arrives and assembling everything into one response.
+// Tool calls arrive in pieces too: the first chunk carries id and name, later
+// ones append fragments of the argument JSON, keyed by index.
+func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, error) {
+	var text strings.Builder
+	var usage provider.Usage
+	calls := map[int]*wireCall{}
+	var order []int
+
+	sc := bufio.NewScanner(body)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // one chunk can be long
+	for sc.Scan() {
+		data, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "data:")
+		if !ok {
+			continue // blank lines and SSE comments
+		}
+		data = strings.TrimSpace(data)
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk wireChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue // a chunk we cannot read is not worth killing the answer for
+		}
+		if chunk.Error != nil {
+			return nil, fmt.Errorf("provider error: %s", chunk.Error.Message)
+		}
+		// The usage chunk carries no choices, so it is read before that check.
+		if chunk.Usage != nil {
+			usage = provider.Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens}
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+
+		delta := chunk.Choices[0].Delta
+		if delta.Content != "" {
+			text.WriteString(delta.Content)
+			if onDelta != nil {
+				onDelta(delta.Content)
+			}
+		}
+		for _, tc := range delta.ToolCalls {
+			call := calls[tc.Index]
+			if call == nil {
+				call = &wireCall{}
+				calls[tc.Index] = call
+				order = append(order, tc.Index)
+			}
+			if tc.ID != "" {
+				call.ID = tc.ID
+			}
+			if tc.Function.Name != "" {
+				call.Function.Name = tc.Function.Name
+			}
+			call.Function.Arguments += tc.Function.Arguments
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("stream broke: %w", err)
+	}
+
+	msg := wireMessage{Role: "assistant", Content: text.String()}
+	for _, i := range order {
+		msg.ToolCalls = append(msg.ToolCalls, *calls[i])
+	}
+	blocks, stop := toBlocks(msg)
+	if len(blocks) == 0 {
+		return nil, fmt.Errorf("the model returned an empty response")
+	}
+	return &provider.Response{Content: blocks, StopReason: stop, Usage: usage}, nil
+}
+
+// parse is split from Send so it can be tested without the network.
 func parse(raw []byte, status int) (*provider.Response, error) {
 	var wire wireResponse
 	if err := json.Unmarshal(raw, &wire); err != nil {
-		return nil, fmt.Errorf("respons bukan JSON (HTTP %d): %s", status, snippet(raw))
+		return nil, fmt.Errorf("response is not JSON (HTTP %d): %s", status, snippet(raw))
 	}
 	if wire.Error != nil {
 		return nil, fmt.Errorf("provider error (HTTP %d): %s", status, wire.Error.Message)
@@ -192,31 +454,37 @@ func parse(raw []byte, status int) (*provider.Response, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", status, snippet(raw))
 	}
 	if len(wire.Choices) == 0 {
-		return nil, fmt.Errorf("respons tanpa choices: %s", snippet(raw))
+		return nil, fmt.Errorf("response has no choices: %s", snippet(raw))
 	}
 
-	choice := wire.Choices[0]
-	out := &provider.Response{StopReason: provider.StopEndTurn}
-	if choice.Message.Content != "" {
-		out.Content = append(out.Content, provider.ContentBlock{
+	blocks, stop := toBlocks(wire.Choices[0].Message)
+	return &provider.Response{Content: blocks, StopReason: stop}, nil
+}
+
+// toBlocks turns one assistant message into neutral content blocks.
+func toBlocks(msg wireMessage) ([]provider.ContentBlock, provider.StopReason) {
+	var blocks []provider.ContentBlock
+	stop := provider.StopEndTurn
+	if msg.Content != "" {
+		blocks = append(blocks, provider.ContentBlock{
 			Type: provider.BlockText,
-			Text: choice.Message.Content,
+			Text: msg.Content,
 		})
 	}
-	for _, call := range choice.Message.ToolCalls {
+	for _, call := range msg.ToolCalls {
 		args := call.Function.Arguments
 		if strings.TrimSpace(args) == "" {
-			args = "{}" // sebagian model kirim string kosong buat tool tanpa argumen
+			args = "{}" // some models send "" for tools that take no arguments
 		}
-		out.Content = append(out.Content, provider.ContentBlock{
+		blocks = append(blocks, provider.ContentBlock{
 			Type:      provider.BlockToolUse,
 			ToolUseID: call.ID,
 			ToolName:  call.Function.Name,
 			ToolInput: json.RawMessage(args),
 		})
-		out.StopReason = provider.StopToolUse
+		stop = provider.StopToolUse
 	}
-	return out, nil
+	return blocks, stop
 }
 
 func snippet(raw []byte) string {

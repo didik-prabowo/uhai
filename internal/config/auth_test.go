@@ -6,20 +6,27 @@ import (
 	"testing"
 )
 
-// isolate bikin tiap test punya HOME sendiri dan env vendor yang bersih —
-// mesin yang kebetulan sudah export ANTHROPIC_* gak boleh bikin test bocor.
-func isolate(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OPENAI_API_KEY", "OUHAI_API_KEY"} {
+// isolate gives a test a home of its own and takes the environment out of the
+// picture: settings read the env last and let it win, so a shell that happens
+// to export OUHAI_MODEL would otherwise decide what these tests see. It
+// returns the home directory, for tests that write files into it.
+func isolate(t *testing.T) string {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, env := range []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OPENAI_API_KEY", "OUHAI_API_KEY",
+		"OUHAI_MODEL", "OUHAI_BASE_URL",
+	} {
 		t.Setenv(env, "")
 	}
+	return home
 }
 
-func TestSaveDanBacaKey(t *testing.T) {
+func TestSaveAndReadKey(t *testing.T) {
 	isolate(t)
 
 	if got := APIKey("anthropic"); got != "" {
-		t.Fatalf("file belum ada harusnya kosong, dapat %q", got)
+		t.Fatalf("no file yet should mean empty, got %q", got)
 	}
 	if err := Save("anthropic", Creds{FieldKey: "sk-ant-1"}); err != nil {
 		t.Fatal(err)
@@ -28,16 +35,16 @@ func TestSaveDanBacaKey(t *testing.T) {
 		t.Fatalf("dapat %q", got)
 	}
 
-	// Provider kedua gak boleh nimpa yang pertama.
+	// A second provider must not overwrite the first.
 	if err := Save("openai", Creds{FieldKey: "sk-oai-1"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := APIKey("anthropic"); got != "sk-ant-1" {
-		t.Fatalf("key lama ketimpa: %q", got)
+		t.Fatalf("the old key was overwritten: %q", got)
 	}
 }
 
-func TestIzinFileKetat(t *testing.T) {
+func TestFilePermissionsAreTight(t *testing.T) {
 	isolate(t)
 	if err := Save("anthropic", Creds{FieldKey: "sk-ant-1"}); err != nil {
 		t.Fatal(err)
@@ -49,38 +56,38 @@ func TestIzinFileKetat(t *testing.T) {
 		t.Fatal(err)
 	}
 	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("file kredensial harus 0600, dapat %v", fi.Mode().Perm())
+		t.Fatalf("the credentials file must be 0600, got %v", fi.Mode().Perm())
 	}
 	di, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if di.Mode().Perm() != 0o700 {
-		t.Fatalf("folder kredensial harus 0700, dapat %v", di.Mode().Perm())
+		t.Fatalf("the credentials folder must be 0700, got %v", di.Mode().Perm())
 	}
 }
 
-func TestProviderBisaPunyaBeberapaField(t *testing.T) {
+func TestProviderCanHaveSeveralFields(t *testing.T) {
 	isolate(t)
 
-	// Anthropic tipe identity-linked butuh key + workspace id.
+	// Identity-linked Anthropic keys need a key plus a workspace id.
 	if err := Save("anthropic", Creds{FieldKey: "sk-ant-1", FieldWorkspace: "wrk-1"}); err != nil {
 		t.Fatal(err)
 	}
 	got := Get("anthropic")
 	if got[FieldKey] != "sk-ant-1" || got[FieldWorkspace] != "wrk-1" {
-		t.Fatalf("dua field harus kebaca dua-duanya: %v", got)
+		t.Fatalf("both fields should be readable: %v", got)
 	}
 
-	// Workspace boleh diisi dari env sendiri, tanpa ganggu key dari file.
+	// Workspace may come from its own env var without touching the file key.
 	t.Setenv("ANTHROPIC_WORKSPACE_ID", "wrk-env")
 	got = Get("anthropic")
 	if got[FieldKey] != "sk-ant-1" || got[FieldWorkspace] != "wrk-env" {
-		t.Fatalf("env cuma boleh nimpa field-nya sendiri: %v", got)
+		t.Fatalf("env must only override its own field: %v", got)
 	}
 }
 
-func TestEnvMenangDariFile(t *testing.T) {
+func TestEnvBeatsFile(t *testing.T) {
 	isolate(t)
 	if err := Save("anthropic", Creds{FieldKey: "dari-file"}); err != nil {
 		t.Fatal(err)
@@ -88,11 +95,32 @@ func TestEnvMenangDariFile(t *testing.T) {
 
 	t.Setenv("ANTHROPIC_API_KEY", "dari-env")
 	if got := APIKey("anthropic"); got != "dari-env" {
-		t.Fatalf("env vendor harus menang, dapat %q", got)
+		t.Fatalf("the vendor env var should win, got %q", got)
 	}
 
 	t.Setenv("OUHAI_API_KEY", "dari-ouhai")
 	if got := APIKey("anthropic"); got != "dari-ouhai" {
-		t.Fatalf("OUHAI_API_KEY harus paling menang, dapat %q", got)
+		t.Fatalf("OUHAI_API_KEY should win over everything, got %q", got)
+	}
+}
+
+func TestSaveModelIsReadBack(t *testing.T) {
+	isolate(t)
+
+	if err := SaveModel("groq/" + DefaultModel("groq")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "groq/llama-3.3-70b-versatile" {
+		t.Fatalf("wrong model stored: %q", got.Model)
+	}
+
+	// Env still beats the file.
+	t.Setenv("OUHAI_MODEL", "ollama/qwen2.5-coder")
+	if got, _ := LoadSettings(); got.Model != "ollama/qwen2.5-coder" {
+		t.Fatalf("OUHAI_MODEL should win, got %q", got.Model)
 	}
 }

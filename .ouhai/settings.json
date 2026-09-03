@@ -1,0 +1,46 @@
+{
+  "check": "make check",
+  "permissions": {
+    "allow": [
+      "Bash(make check:*)",
+      "Bash(make test:*)",
+      "Bash(make build:*)",
+      "Bash(make vet:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go doc:*)",
+      "Bash(go list:*)",
+      "Bash(gofmt -l:*)",
+      "Bash(gofmt -d:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(ls:*)",
+      "Bash(wc -l:*)",
+      "Bash(go mod graph:*)",
+      "Bash(go mod why:*)",
+      "Bash(go mod verify:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh release list:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh search:*)",
+      "Bash(gh api repos/*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "ask": [
+      "Read(*.env)",
+      "Read(*.env.*)",
+      "Read(**/auth.json)"
+    ]
+  }
+}
