@@ -137,7 +137,9 @@ allowing `git` does not quietly allow `git status && rm -rf /`:
 ```
 
 [`docs/tools.md`](docs/tools.md) has each tool in full — parameters, limits,
-what is refused and why — and [`docs/permissions.md`](docs/permissions.md) has
+what is refused and why — [`docs/roadmap.md`](docs/roadmap.md) has what is
+built and what each unbuilt thing is waiting for, and
+[`docs/permissions.md`](docs/permissions.md) has
 the rules. Tests hold both pages to the code, so a tool nobody documented fails
 the build.
 
