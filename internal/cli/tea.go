@@ -1015,7 +1015,24 @@ func (m *teaModel) submit() tea.Cmd {
   wheel          scrolls the chat
   shift+drag     selects text — in tmux this spans the panes, since the
                  terminal knows nothing about splits
-  in tmux        prefix + [ then drag: selects inside the pane, and copies`)
+  in tmux        prefix + [ then drag: selects inside the pane, and copies
+
+` + teaTitle.Render("what it can do") + `
+  reads freely   read_file, glob, grep — no question asked
+  asks first     write_file, edit_file, run_bash — the question shows the
+                 diff, or the command itself, so it can be judged
+  in the back    /bg runs a prompt read-only, /check runs the tests; both
+                 report into the chat and into the model's next prompt
+  allow it once  a at the question allows that tool for this session only;
+                 .ouhai/settings.json "permissions" makes it permanent
+
+` + teaTitle.Render("outside this session") + `
+  ouhai -p "..."      one answer and exit — and a pipe works: cat q | ouhai
+  ouhai -sessions     the conversations saved so far
+  ouhai -resume [id]  carry on with one, on the model it was held with
+  AGENTS.md           this project's own instructions, read every prompt —
+                      CLAUDE.md and OUHAI.md are read the same way
+  .claude/skills/     instructions for particular jobs, opened when needed`)
 		return nil
 	case strings.HasPrefix(value, "/model"):
 		arg := strings.TrimSpace(strings.TrimPrefix(value, "/model"))
