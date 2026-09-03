@@ -35,6 +35,10 @@ key at another address, and is reached by pointing that one provider at it:
 { "baseUrls": { "zai": "https://api.z.ai/api/coding/paas/v4" } }
 ```
 
+The free `-flash` models work without any balance but are missing from the
+list the API returns, so the picker cannot show them. Name one directly:
+`/model zai/glm-4.7-flash`. They call tools like the paid ones do.
+
 When a key stops working — expired, revoked, out of credit — `/connect <name>`
 again and paste a new one; escape keeps the one already saved. If the key comes
 from your environment it wins over anything saved, and the prompt says so
