@@ -42,6 +42,7 @@ type teaModel struct {
 	mode        teaMode
 	picker      list.Model
 	keyInput    textarea.Model
+	credField   string // which credential the entry box is collecting
 	provider    string
 	commandSel  int
 	inputHeight int
@@ -484,6 +485,9 @@ func (m *teaModel) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			m.keyInput.Reset()
+			if m.credField != config.FieldKey {
+				return m, m.activateProvider(m.provider) // the key is in already
+			}
 			if config.APIKey(m.provider) == "" {
 				m.mode = teaPrompt
 				m.input.Focus()
@@ -491,22 +495,7 @@ func (m *teaModel) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.activateProvider(m.provider)
 		case "enter":
-			key := strings.TrimSpace(m.keyInput.Value())
-			if key == "" {
-				return m, nil
-			}
-			if err := config.Save(m.provider, config.Creds{config.FieldKey: key}); err != nil {
-				m.addHistory(teaDim.Render("could not save key: " + err.Error()))
-				m.mode = teaPrompt
-				return m, nil
-			}
-			m.keyInput.Reset()
-			// A key in the environment beats the file, so saving one while
-			// that is set looks like nothing happened.
-			if env := config.EnvKeyVar(m.provider); env != "" {
-				m.addHistory(teaDim.Render(env + " is set and wins over the saved key — unset it for this to take effect"))
-			}
-			return m, m.activateProvider(m.provider)
+			return m, m.saveCredential(strings.TrimSpace(m.keyInput.Value()))
 		}
 		var cmd tea.Cmd
 		m.keyInput, cmd = m.keyInput.Update(msg)
@@ -546,6 +535,66 @@ func (m *teaModel) beginConnect(arg string) tea.Cmd {
 	return nil
 }
 
+// askCredential puts the entry box in front of one field. Providers are asked
+// for their key first and their extras after, one question at a time, because
+// a form that asks for three things at once has to explain all three before
+// any of them can be typed.
+func (m *teaModel) askCredential(field string) {
+	m.credField = field
+	m.keyInput.Reset()
+	saved := config.Get(m.provider)[field] != ""
+	switch {
+	case field == config.FieldKey && saved:
+		m.keyInput.Placeholder = "paste a new API key, or esc to keep the one saved"
+	case field == config.FieldKey:
+		m.keyInput.Placeholder = "paste API key"
+	case saved:
+		m.keyInput.Placeholder = "enter keeps the one saved"
+	default:
+		m.keyInput.Placeholder = "enter to skip — only identity-linked keys need one"
+	}
+	m.keyInput.Focus()
+	m.mode = teaKeyEntry
+}
+
+// saveCredential stores what was typed, then asks for the next field or
+// connects. An empty answer is only allowed for the extras: a provider with no
+// key cannot be connected at all, so an empty one leaves the question up.
+func (m *teaModel) saveCredential(value string) tea.Cmd {
+	if value == "" && m.credField == config.FieldKey {
+		return nil
+	}
+	if value != "" {
+		if err := config.Save(m.provider, config.Creds{m.credField: value}); err != nil {
+			m.addHistory(teaDim.Render("could not save " + credLabel(m.credField) + ": " + err.Error()))
+			m.mode = teaPrompt
+			m.input.Focus()
+			return nil
+		}
+		// The environment beats the file, so saving while one is exported
+		// looks like nothing happened.
+		if env := config.EnvVar(m.provider, m.credField); env != "" {
+			m.addHistory(teaDim.Render(env + " is set and wins over what is saved — unset it for this to take effect"))
+		}
+	}
+	m.keyInput.Reset()
+	if m.credField == config.FieldKey {
+		if extra := config.ExtraFields(m.provider); len(extra) > 0 {
+			m.askCredential(extra[0])
+			return nil
+		}
+	}
+	return m.activateProvider(m.provider)
+}
+
+// credLabel is what a credential is called on screen.
+func credLabel(field string) string {
+	if field == config.FieldWorkspace {
+		return "workspace id"
+	}
+	return "API key"
+}
+
 func (m *teaModel) selectProvider(name string) tea.Cmd {
 	if !config.Known(name) {
 		m.addHistory(teaDim.Render("unknown provider: " + name))
@@ -556,12 +605,7 @@ func (m *teaModel) selectProvider(name string) tea.Cmd {
 	// exactly the one you need to replace, and there was no way to.
 	if config.NeedsKey(name) {
 		m.provider = name
-		m.keyInput.Placeholder = "paste API key"
-		if config.APIKey(name) != "" {
-			m.keyInput.Placeholder = "paste a new API key, or esc to keep the one saved"
-		}
-		m.keyInput.Focus()
-		m.mode = teaKeyEntry
+		m.askCredential(config.FieldKey)
 		return nil
 	}
 	return m.activateProvider(name)
@@ -1190,10 +1234,14 @@ func (m *teaModel) View() string {
 			rows = append(rows, teaDim.Render("get a key: ")+url)
 		}
 		keep := "esc cancel"
-		if config.APIKey(m.provider) != "" {
+		switch {
+		case m.credField != config.FieldKey:
+			keep = "esc connects without it"
+		case config.APIKey(m.provider) != "":
 			keep = "esc keeps the key already saved"
 		}
-		rows = append(rows, teaDim.Render("enter save · "+keep), m.formSurface("API key  "+masked))
+		label := credLabel(m.credField)
+		rows = append(rows, teaDim.Render("enter save · "+keep), m.formSurface(label+"  "+masked))
 		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 	menu := matches(m.input.Value())

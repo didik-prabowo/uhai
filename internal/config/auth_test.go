@@ -124,3 +124,27 @@ func TestSaveModelIsReadBack(t *testing.T) {
 		t.Fatalf("OUHAI_MODEL should win, got %q", got.Model)
 	}
 }
+
+// Credentials arrive one question at a time, so saving the second field must
+// not erase the first.
+func TestSaveMergesFields(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OUHAI_API_KEY"} {
+		t.Setenv(env, "")
+	}
+
+	if err := Save("anthropic", Creds{FieldKey: "k"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save("anthropic", Creds{FieldWorkspace: "wrkspc_1"}); err != nil {
+		t.Fatal(err)
+	}
+	if key, ws := APIKey("anthropic"), Workspace("anthropic"); key != "k" || ws != "wrkspc_1" {
+		t.Fatalf("key=%q workspace=%q — one write erased the other", key, ws)
+	}
+
+	// A workspace without a key is not a connection.
+	if err := Save("openai", Creds{FieldWorkspace: "w"}); err == nil {
+		t.Error("saving credentials with no key must be refused")
+	}
+}

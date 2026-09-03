@@ -111,6 +111,11 @@ the code holds what the project needs, and wins.
 
 Environment wins over both: `OUHAI_MODEL`, `OUHAI_BASE_URL`, `OUHAI_API_KEY`.
 
+An Anthropic key that is linked to an identity rather than to one workspace has
+to say which workspace it acts in, so `/connect anthropic` asks for a workspace
+id after the key — press enter to skip it, since an ordinary key carries its
+own. `ANTHROPIC_WORKSPACE_ID` sets it from the environment.
+
 Conversations are written to `~/.ouhai/sessions` after every turn, one file per
 session named by its id, which is what `-resume` picks up. `-sessions` lists
 them: id, when it was last touched, the model, how much was said, and the first

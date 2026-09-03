@@ -139,6 +139,20 @@ cannot be used to read a file elsewhere. Sessions saved before ids existed
 still resume: the id comes from the file name, and `updated` falls back to
 `started`.
 
+### Credentials
+
+`auth.json` maps a provider to a *map* of fields rather than to a key, because
+one key is not always the whole story: an Anthropic key linked to an identity
+can act in several workspaces, and the API answers 400 until the request names
+one. `providerInfo.Extra` lists what `/connect` asks for after the key, one
+question at a time, and `Save` merges rather than replaces — answering the
+second question must not erase the first.
+
+The field was declared with its env var months before anything read it, which
+is the failure worth remembering: the store knew about workspaces, the client
+never sent the header, and the error the API returned named a thing the code
+already had a constant for.
+
 ## The model registry
 
 `config/models.go` answers four questions about a model, and each is answered

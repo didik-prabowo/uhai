@@ -113,12 +113,23 @@ func Get(provider string) Creds {
 // APIKey is a shortcut for the field used most often.
 func APIKey(provider string) string { return Get(provider)[FieldKey] }
 
+// Workspace is the id an identity-linked key acts in, "" when there is none.
+// Only Anthropic asks for one so far.
+func Workspace(provider string) string { return Get(provider)[FieldWorkspace] }
+
 // EnvKeyVar names the environment variable currently supplying this provider's
 // key, "" when none is. The environment wins over the file, so saving a new key
 // while one is exported changes nothing — and being told that is the
 // difference between a puzzle and a fix.
-func EnvKeyVar(provider string) string {
-	for _, env := range []string{vendorEnv[provider][FieldKey], "OUHAI_API_KEY"} {
+func EnvKeyVar(provider string) string { return EnvVar(provider, FieldKey) }
+
+// EnvVar names the environment variable currently supplying one field.
+func EnvVar(provider, field string) string {
+	vars := []string{vendorEnv[provider][field]}
+	if field == FieldKey {
+		vars = append(vars, "OUHAI_API_KEY")
+	}
+	for _, env := range vars {
 		if env != "" && strings.TrimSpace(os.Getenv(env)) != "" {
 			return env
 		}
@@ -129,9 +140,12 @@ func EnvKeyVar(provider string) string {
 // Save writes (or replaces) one provider's credentials in auth.json without
 // touching the others. The file is 0600 and its folder 0700 — credentials
 // must not be readable by other users.
+// Save merges the fields it is given into what is already stored, rather than
+// replacing the entry: the credentials arrive one question at a time, and
+// answering the second one must not erase the first.
 func Save(provider string, c Creds) error {
-	if provider == "" || c[FieldKey] == "" {
-		return errors.New("provider and the \"key\" field must not be empty")
+	if provider == "" || len(c) == 0 {
+		return errors.New("a provider and at least one credential are needed")
 	}
 
 	path, err := AuthPath()
@@ -146,7 +160,17 @@ func Save(provider string, c Creds) error {
 	if err != nil {
 		return err
 	}
-	all[provider] = c
+	if all[provider] == nil {
+		all[provider] = Creds{}
+	}
+	for field, value := range c {
+		if value = strings.TrimSpace(value); value != "" {
+			all[provider][field] = value
+		}
+	}
+	if all[provider][FieldKey] == "" {
+		return errors.New("the \"key\" field must not be empty")
+	}
 
 	data, err := json.MarshalIndent(all, "", "  ")
 	if err != nil {

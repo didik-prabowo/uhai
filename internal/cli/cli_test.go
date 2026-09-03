@@ -1224,3 +1224,44 @@ func TestCommandMenuKeepsTheSelectionOnScreen(t *testing.T) {
 		}
 	}
 }
+
+// Anthropic keys that are linked to an identity rather than to one workspace
+// have to say which workspace a request acts in, so /connect asks for it after
+// the key — and connects anyway when there is nothing to give.
+func TestConnectAsksForTheWorkspaceAfterTheKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OUHAI_API_KEY", "OUHAI_MODEL"} {
+		t.Setenv(env, "")
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.selectProvider("anthropic")
+	if m.credField != config.FieldKey {
+		t.Fatalf("the key comes first, got %q", m.credField)
+	}
+
+	m.saveCredential("sk-test")
+	if m.credField != config.FieldWorkspace {
+		t.Fatalf("the workspace id is asked for next, got %q", m.credField)
+	}
+	if view := m.View(); !strings.Contains(view, "workspace id") || !strings.Contains(view, "esc connects without it") {
+		t.Fatalf("the question must name the field and say it is optional:\n%s", view)
+	}
+
+	m.saveCredential("wrkspc_1")
+	if got := config.Workspace("anthropic"); got != "wrkspc_1" {
+		t.Fatalf("workspace id = %q", got)
+	}
+	// Saving the second field must not have erased the first.
+	if got := config.APIKey("anthropic"); got != "sk-test" {
+		t.Fatalf("the key was lost saving the workspace: %q", got)
+	}
+
+	// A provider with no extras connects as soon as the key is in.
+	m.selectProvider("groq")
+	m.saveCredential("gsk-test")
+	if m.mode == teaKeyEntry {
+		t.Error("groq has nothing to ask after the key")
+	}
+}

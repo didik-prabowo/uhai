@@ -188,3 +188,34 @@ func TestEmptyToolResultStillHasContent(t *testing.T) {
 		t.Fatalf("content was dropped on the way to JSON: %s", raw)
 	}
 }
+
+// A key linked to an identity can act in several workspaces, so the API
+// refuses to guess: without this header it answers 400. An ordinary key must
+// not have one sent, since it carries its workspace itself.
+func TestWorkspaceIDTravelsAsAHeader(t *testing.T) {
+	for _, id := range []string{"wrkspc_1", ""} {
+		var got string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got = r.Header.Get("Anthropic-Workspace-Id")
+			io.WriteString(w, events(
+				`{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}`,
+				`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+				`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+				`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+			))
+		}))
+
+		c, err := New(Options{Label: "anthropic", BaseURL: server.URL, APIKey: "k", Model: "claude-sonnet-5", WorkspaceID: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Send(context.Background(), provider.Request{}); err != nil {
+			t.Fatal(err)
+		}
+		server.Close()
+
+		if got != id {
+			t.Errorf("workspace header = %q, want %q", got, id)
+		}
+	}
+}

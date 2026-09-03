@@ -16,6 +16,11 @@ type providerInfo struct {
 	KeyURL       string // where to get a key, shown by /connect
 	Cost         string // rough price bracket, shown in the picker
 	Local        bool   // runs on this machine, needs no API key
+
+	// Extra names credentials beyond the key that /connect should ask for.
+	// Anthropic's identity-linked keys act inside a workspace, and the API
+	// refuses the request without its id.
+	Extra []string
 }
 
 var providers = map[string]providerInfo{
@@ -25,6 +30,7 @@ var providers = map[string]providerInfo{
 		DefaultModel: "claude-sonnet-5",
 		KeyURL:       "https://console.anthropic.com/settings/keys",
 		Cost:         "paid API",
+		Extra:        []string{FieldWorkspace},
 	},
 	"groq": {
 		BaseURL:      "https://api.groq.com/openai/v1",
@@ -113,3 +119,7 @@ func Cost(provider string) string {
 	}
 	return "paid API"
 }
+
+// ExtraFields is what /connect asks for after the key, in order. Empty for
+// every provider whose key is the whole story.
+func ExtraFields(provider string) []string { return providers[provider].Extra }

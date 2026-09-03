@@ -193,7 +193,10 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 			Stream:   a.OnDelta,
 		})
 		if err != nil {
-			return fmt.Errorf("provider error: %w", err)
+			// No wrapping: every client already names itself and the status
+			// it got, and "provider error: provider error (HTTP 400)" reads
+			// like the program stuttered.
+			return err
 		}
 		a.LastUsage = resp.Usage
 		if a.OnUsage != nil {

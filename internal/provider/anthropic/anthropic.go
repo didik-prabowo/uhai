@@ -49,6 +49,12 @@ type Options struct {
 	// MaxTokens is the longest answer to ask for. Zero takes the default,
 	// which is small enough to be safe on any model.
 	MaxTokens int
+
+	// WorkspaceID is which workspace the request acts in. A key tied to an
+	// identity rather than to one workspace can act in several, so the API
+	// refuses to guess: without this header it answers 400. Ordinary keys
+	// carry their workspace themselves and leave this empty.
+	WorkspaceID string
 }
 
 type Client struct {
@@ -426,5 +432,8 @@ func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Anthropic-Version", apiVersion)
 	if c.opts.APIKey != "" {
 		req.Header.Set("X-Api-Key", c.opts.APIKey)
+	}
+	if c.opts.WorkspaceID != "" {
+		req.Header.Set("Anthropic-Workspace-Id", c.opts.WorkspaceID)
 	}
 }

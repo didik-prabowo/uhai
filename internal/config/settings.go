@@ -272,11 +272,12 @@ func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 	switch API(name) {
 	case "anthropic":
 		c, err := anthropic.New(anthropic.Options{
-			Label:     name,
-			BaseURL:   baseURL,
-			APIKey:    key,
-			Model:     model,
-			MaxTokens: MaxOutput(modelSetting),
+			Label:       name,
+			BaseURL:     baseURL,
+			APIKey:      key,
+			Model:       model,
+			MaxTokens:   MaxOutput(modelSetting),
+			WorkspaceID: Workspace(name),
 		})
 		if err != nil {
 			return nil, err
