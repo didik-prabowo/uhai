@@ -15,8 +15,10 @@ import (
 	"strings"
 )
 
-// skillDirs are where skills are looked for, ours first.
-var skillDirs = []string{".ouhai/skills", ".claude/skills"}
+// skillDirs are where skills are looked for, ours first. The other two are
+// what projects already use — a repository should not have to move its files
+// to be read here.
+var skillDirs = []string{".ouhai/skills", ".claude/skills", ".agents/skills"}
 
 // Skill is one of them, as the model is told about it.
 type Skill struct {
