@@ -318,3 +318,59 @@ func TestSpawnReturnsWhatAFailedTaskWrote(t *testing.T) {
 		t.Errorf("what it wrote before dying must survive: %q", out)
 	}
 }
+
+// flakyProvider fails the first turn the way a rate limit does, then works.
+type flakyProvider struct{ calls int }
+
+func (flakyProvider) Name() string { return "flaky" }
+
+func (f *flakyProvider) Send(_ context.Context, req provider.Request) (*provider.Response, error) {
+	f.calls++
+	if f.calls == 1 {
+		if req.Stream != nil {
+			req.Stream("half an answer")
+		}
+		return nil, errors.New("provider error (HTTP 429): overloaded")
+	}
+	return &provider.Response{
+		StopReason: provider.StopEndTurn,
+		Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "oke"}},
+	}, nil
+}
+
+// A turn that fails leaves the history ending on the user's prompt, and the
+// Messages API refuses two user messages in a row — so the next prompt was
+// refused for a reason belonging to the one before it.
+func TestFailedTurnLeavesTheHistoryUsable(t *testing.T) {
+	a := New(&flakyProvider{})
+	a.OnNotice = func(string) {}
+
+	if err := a.Ask(context.Background(), "pertama"); err == nil {
+		t.Fatal("the first turn was supposed to fail")
+	}
+	if err := a.Ask(context.Background(), "kedua"); err != nil {
+		t.Fatalf("the turn after a failure must work: %v", err)
+	}
+
+	for i := 1; i < len(a.History); i++ {
+		if a.History[i].Role == a.History[i-1].Role {
+			t.Fatalf("two %s messages in a row at %d: %+v", a.History[i].Role, i, a.History)
+		}
+	}
+	// What was streamed before the failure is what the screen showed, so the
+	// history has to agree with it.
+	var closed string
+	for _, m := range a.History {
+		for _, b := range m.Content {
+			if m.Role == provider.RoleAssistant && strings.Contains(b.Text, "half an answer") {
+				closed = b.Text
+			}
+		}
+	}
+	if closed == "" {
+		t.Fatal("the partial answer must be kept in the history")
+	}
+	if !strings.Contains(closed, "429") {
+		t.Errorf("the closing line should say why it stopped: %q", closed)
+	}
+}

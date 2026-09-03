@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/didik-prabowo/ouhai/internal/provider"
 	"github.com/didik-prabowo/ouhai/internal/task"
@@ -186,13 +187,23 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 			}
 		}
 
+		// The answer is kept as it arrives, not only shown: a turn that dies
+		// halfway has already put text on the screen, and the history has to
+		// agree with what the user read.
+		var partial strings.Builder
 		resp, err := a.Provider.Send(ctx, provider.Request{
 			System:   a.systemPrompt(),
 			Messages: a.History,
 			Tools:    a.tools(),
-			Stream:   a.OnDelta,
+			Stream: func(delta string) {
+				partial.WriteString(delta)
+				if a.OnDelta != nil {
+					a.OnDelta(delta)
+				}
+			},
 		})
 		if err != nil {
+			a.closeTurn(partial.String(), err.Error())
 			// No wrapping: every client already names itself and the status
 			// it got, and "provider error: provider error (HTTP 400)" reads
 			// like the program stuttered.
@@ -225,7 +236,34 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 		})
 	}
 
+	a.closeTurn("", fmt.Sprintf("hit the %d iteration limit", a.MaxIterations))
 	return fmt.Errorf("stopped: hit the %d iteration limit without finishing", a.MaxIterations)
+}
+
+// closeTurn ends a turn that did not finish, so the next one can start.
+//
+// Every failure — a rate limit, a timeout, esc — leaves the history ending on
+// a user message: the prompt nothing answered, or the tool results nothing
+// read. The Messages API refuses two user messages in a row, so without this
+// the *next* prompt fails for a reason belonging to the previous one, which is
+// the worst kind of error to debug.
+//
+// The partial answer goes in rather than being dropped: it was on the screen,
+// the tokens were paid for, and a model asked to carry on can see how far it
+// got.
+func (a *Agent) closeTurn(partial, reason string) {
+	if n := len(a.History); n == 0 || a.History[n-1].Role != provider.RoleUser {
+		return
+	}
+
+	text := strings.TrimSpace(partial)
+	if text != "" {
+		text += "\n\n"
+	}
+	a.History = append(a.History, provider.Message{
+		Role:    provider.RoleAssistant,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text + "(this turn stopped before finishing: " + reason + ")"}},
+	})
 }
 
 func (a *Agent) runTools(ctx context.Context, blocks []provider.ContentBlock) []provider.ContentBlock {

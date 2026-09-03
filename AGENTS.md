@@ -73,6 +73,26 @@ What the second and third implementations taught:
   not have. That client invents one, which works because the id only has to be
   unique within the conversation it is used in.
 
+## When a turn does not finish
+
+A turn fails in the middle more often than anything else here: a rate limit, a
+header timeout, esc. Whatever the cause, `Ask` leaves the history ending on a
+**user** message — the prompt nothing answered, or the tool results nothing
+read — and the Messages API refuses two user messages in a row. So the failure
+was silent and the *next* prompt was refused, which is the worst kind of error
+to debug: the message names a rule, not the turn that broke it.
+
+`closeTurn` ends the turn with an assistant message carrying whatever was
+streamed plus one line saying why it stopped. Three things fall out of it: the
+history alternates again, the history agrees with what was on the screen, and a
+model asked to carry on can see how far it got. The tokens were paid for
+either way.
+
+Retrying is the other half, and it is deliberately uneven: a 429 waits five
+seconds and then ten, a 5xx one and two, and a transport error — a timeout, a
+reset — is not retried at all, since the three minutes it already waited are
+the evidence that waiting is not the answer.
+
 ## Permission
 
 The code is split the way the concerns are: `internal/tools` has `tool.go` (the
