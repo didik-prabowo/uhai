@@ -44,26 +44,33 @@ into one commit — but the tag `backup/before-squash-1146` still points at thos
 token usage, and a hook for streamed text. `agent` speaks only to it and never
 imports a vendor.
 
-Two implementations sit behind it, and the split is by *wire format*, not by
+Three implementations sit behind it, and the split is by *wire format*, not by
 company:
 
-- `provider/openai` — Chat Completions, which Groq, OpenAI, Gemini's compat
-  endpoint, OpenRouter and Ollama all speak. Only the base URL differs.
+- `provider/openai` — Chat Completions, which Groq, OpenAI, OpenRouter and
+  Ollama all speak. Only the base URL differs.
 - `provider/anthropic` — the Messages API. Blocks rather than a flattened
   string, `max_tokens` required, and a tool call whose arguments arrive as
   fragments of JSON that are only valid once the block closes.
+- `provider/gemini` — generateContent. The assistant is called "model", a call
+  and its result are parts of a message, and a result is matched to its call by
+  the tool's *name* — so the id every other API hands out has to be looked back
+  up while translating, which is the one place the neutral types cost something
+  to carry.
 
-`config.loadProvider` picks between them on the provider's name. It is one
-comparison against a literal on purpose: a table of constructors is what the
-third wire format should buy, and there is no third yet.
+`config.loadProvider` picks by `API` in the provider table, which the third
+format bought: a name compared against a literal was fine for two.
 
-What the second implementation taught, and what a third will have to settle:
+What the second and third implementations taught:
 
 - `provider.Request` has no `MaxTokens`. Anthropic needs one, so the caller
   passes it in the client's options, out of the registry below, and the neutral
   request stays as it was.
 - `Request.Stream` carries text only. Tool arguments stream too, and are
   buffered rather than reported — fine while nothing shows them being typed.
+- Tool calls are identified by an id the neutral types require and Gemini does
+  not have. That client invents one, which works because the id only has to be
+  unique within the conversation it is used in.
 
 ## Permission
 

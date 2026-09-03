@@ -3,7 +3,7 @@
 A coding agent that lives in the terminal. It reads and writes files, runs
 commands, and asks before doing anything it cannot take back.
 
-It talks to whichever model you point it at — Anthropic, OpenAI, Groq, Gemini,
+It talks to whichever model you point it at — Anthropic, Gemini, OpenAI, Groq,
 OpenRouter, or Ollama on your own machine — and the whole of it is about 4,800
 lines of Go, small enough to read in an afternoon.
 

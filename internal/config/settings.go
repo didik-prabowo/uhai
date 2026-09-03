@@ -11,6 +11,7 @@ import (
 
 	"github.com/didik-prabowo/ouhai/internal/provider"
 	"github.com/didik-prabowo/ouhai/internal/provider/anthropic"
+	"github.com/didik-prabowo/ouhai/internal/provider/gemini"
 	"github.com/didik-prabowo/ouhai/internal/provider/openai"
 )
 
@@ -261,17 +262,29 @@ func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 		return nil, fmt.Errorf("no API key for %s yet — type /connect %s, or export %s=...", name, name, env)
 	}
 
-	// Anthropic speaks its own wire format; everything else here speaks the
-	// OpenAI-style one, whoever hosts it.
+	// Which client to build is a property of the provider, like its endpoint
+	// and its default model — a table entry rather than a name compared
+	// against a literal, now that there are three formats to choose from.
 	//
 	// Do not "return xxx.New(...)" directly: when New fails, its nil pointer
 	// gets wrapped into a non-nil interface, and callers checking "p != nil"
 	// panic the moment they use it.
-	//
-	// ponytail: a name compared against a literal. Make it a field of
-	// providerInfo when a third wire format arrives, not before.
-	if name == "anthropic" {
+	switch API(name) {
+	case "anthropic":
 		c, err := anthropic.New(anthropic.Options{
+			Label:     name,
+			BaseURL:   baseURL,
+			APIKey:    key,
+			Model:     model,
+			MaxTokens: MaxOutput(modelSetting),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+
+	case "gemini":
+		c, err := gemini.New(gemini.Options{
 			Label:     name,
 			BaseURL:   baseURL,
 			APIKey:    key,

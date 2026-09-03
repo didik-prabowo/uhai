@@ -7,6 +7,10 @@ import "sort"
 // of remembering to edit a parallel map for the endpoint, the default model,
 // the key page and the price.
 type providerInfo struct {
+	// API is the wire format this provider speaks. Empty means the
+	// OpenAI-style one, which most of them do.
+	API string
+
 	BaseURL      string // default endpoint, overridable via settings.json
 	DefaultModel string // so the user can chat right after /connect
 	KeyURL       string // where to get a key, shown by /connect
@@ -16,6 +20,7 @@ type providerInfo struct {
 
 var providers = map[string]providerInfo{
 	"anthropic": {
+		API:          "anthropic",
 		BaseURL:      "https://api.anthropic.com/v1",
 		DefaultModel: "claude-sonnet-5",
 		KeyURL:       "https://console.anthropic.com/settings/keys",
@@ -34,7 +39,8 @@ var providers = map[string]providerInfo{
 		Cost:         "paid API",
 	},
 	"gemini": {
-		BaseURL:      "https://generativelanguage.googleapis.com/v1beta/openai",
+		API:          "gemini",
+		BaseURL:      "https://generativelanguage.googleapis.com/v1beta",
 		DefaultModel: "gemini-2.5-flash",
 		KeyURL:       "https://aistudio.google.com/apikey",
 		Cost:         "free tier",
@@ -75,6 +81,16 @@ func ConnectedProviders() []string {
 		}
 	}
 	return out
+}
+
+// API is the wire format a provider speaks, "openai" when it has not said
+// otherwise — which is most of them, and the reason one client covers Groq,
+// OpenRouter, Ollama and OpenAI itself.
+func API(provider string) string {
+	if api := providers[provider].API; api != "" {
+		return api
+	}
+	return "openai"
 }
 
 // Known reports whether a provider has a built-in endpoint.
