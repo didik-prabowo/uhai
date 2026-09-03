@@ -47,8 +47,9 @@ imports a vendor.
 Three implementations sit behind it, and the split is by *wire format*, not by
 company:
 
-- `provider/openai` — Chat Completions, which Groq, OpenAI, OpenRouter and
-  Ollama all speak. Only the base URL differs.
+- `provider/openai` — Chat Completions, which Groq, OpenAI, OpenRouter, Z.ai
+  and Ollama all speak. Only the base URL differs, which is why five vendors
+  share one folder: a `provider/zai` would have been the same file twice.
 - `provider/anthropic` — the Messages API. Blocks rather than a flattened
   string, `max_tokens` required, and a tool call whose arguments arrive as
   fragments of JSON that are only valid once the block closes.
