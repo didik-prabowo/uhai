@@ -39,7 +39,13 @@ ouhai -p "what does cmd/ouhai do?"          # answer one prompt and exit
 ouhai -p "run the tests and fix the build" -y   # ...and let it write and run things
 echo "sebutkan dua warna" | ouhai            # a prompt per line
 ouhai -resume                                # carry on from the last conversation
+ouhai -sessions                              # what can be carried on
+ouhai -resume 2026-09-03T14-05             # ...carry on with that one
 ```
+
+A resumed conversation comes back with the model it was held with, and keeps
+writing to the same file — its id survives being picked up and put down. Any
+prefix of an id that names only one session is enough to type.
 
 ## Using it in a project
 
@@ -105,8 +111,10 @@ the code holds what the project needs, and wins.
 
 Environment wins over both: `OUHAI_MODEL`, `OUHAI_BASE_URL`, `OUHAI_API_KEY`.
 
-Conversations are written to `~/.ouhai/sessions` after every turn, which is
-what `-resume` picks up.
+Conversations are written to `~/.ouhai/sessions` after every turn, one file per
+session named by its id, which is what `-resume` picks up. `-sessions` lists
+them: id, when it was last touched, the model, how much was said, and the first
+thing that was asked.
 
 ## What it can do to your machine
 

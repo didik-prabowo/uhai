@@ -116,6 +116,29 @@ The question is asked from the agent's goroutine while the model works, which
 is why it outranks the spinner in the status row and why the session's list
 carries its own lock.
 
+## Sessions
+
+One conversation, one file under `~/.ouhai/sessions`, rewritten after every
+turn. The name is the id, and the id is the moment it started — it sorts as a
+date and reads as one, so a listing needs no index and `-resume <id>` takes any
+prefix that names only one.
+
+Two things `-resume` does that took a bug to learn:
+
+- **It brings back the model.** `Session.Model` was written and never read, so
+  a conversation held on Sonnet quietly carried on with whatever
+  `settings.json` said today — a different window and a different price, with
+  nothing on screen saying so. When that model can no longer be built, the
+  fallback is a line on stderr rather than a silent swap.
+- **It keeps writing to the same file.** Resuming used to copy the history into
+  a new session, so an id nobody could hold on to grew a new twin every time.
+  `cli.ContinueSession` hands the id and the start time back.
+
+An id is matched against what was found rather than pasted into a path, so it
+cannot be used to read a file elsewhere. Sessions saved before ids existed
+still resume: the id comes from the file name, and `updated` falls back to
+`started`.
+
 ## The model registry
 
 `config/models.go` answers four questions about a model, and each is answered

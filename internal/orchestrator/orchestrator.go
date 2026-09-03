@@ -16,29 +16,80 @@ import (
 	"github.com/didik-prabowo/ouhai/internal/agent"
 	"github.com/didik-prabowo/ouhai/internal/cli"
 	"github.com/didik-prabowo/ouhai/internal/config"
+	"github.com/didik-prabowo/ouhai/internal/provider"
 )
 
 // Run assembles an interactive session and hands it to the terminal front end.
-// With resume, the newest saved conversation is picked up where it left off.
-func Run(resume bool) {
+// With resume, a saved conversation is picked up where it left off: the one
+// named by id, or the newest when there is no id.
+func Run(resume bool, id string) {
 	a, err := newAgent()
 	if resume {
-		if err := restore(a); err != nil {
-			fmt.Fprintln(os.Stderr, "ouhai:", err)
+		if note, rerr := restore(a, id); rerr != nil {
+			fmt.Fprintln(os.Stderr, "ouhai:", rerr)
+		} else if note != "" {
+			fmt.Fprintln(os.Stderr, "ouhai:", note)
 		}
 	}
 	cli.Run(a, err)
 }
 
-// restore puts the newest saved conversation back into the agent. Failing to
-// find one is worth saying out loud — silently starting empty would look like
-// the history was lost.
-func restore(a *agent.Agent) error {
+// restore puts a saved conversation back into the agent, and points it at the
+// model that conversation was held with: resuming on whatever the settings say
+// today would change the context window and the price of every turn without
+// saying so. The note is what could not be restored, which is worth a line —
+// silently carrying on with a different model is the failure worth avoiding.
+//
+// Failing to find the session at all is an error: starting empty would look
+// like the history was lost.
+func restore(a *agent.Agent, id string) (string, error) {
 	s, err := config.LatestSession()
+	if id != "" {
+		s, err = config.LoadSession(id)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	a.History = s.Messages
+	// Saving continues in the file that was resumed, so an id survives being
+	// picked up and put down rather than forking a copy each time.
+	cli.ContinueSession(s)
+
+	if s.Model == "" || (a.Provider != nil && a.Provider.Name() == s.Model) {
+		return "", nil
+	}
+	p, perr := config.LoadProviderFor(s.Model)
+	if perr != nil {
+		return fmt.Sprintf("this conversation was held with %s, carrying on with what settings.json says: %v", s.Model, perr), nil
+	}
+	use(a, p)
+	return "", nil
+}
+
+// use points the agent at a provider, along with the two facts that follow the
+// model rather than the session.
+func use(a *agent.Agent, p provider.Provider) {
+	a.Provider = p
+	a.MaxContextTokens = config.ContextWindow(p.Name())
+	a.UseTools = config.SupportsTools(p.Name())
+}
+
+// ListSessions prints what can be resumed, newest first. It is a command
+// rather than a screen: the answer is usually one id, and copying it out of a
+// terminal beats arrowing through a list.
+func ListSessions() error {
+	all, err := config.Sessions()
 	if err != nil {
 		return err
 	}
-	a.History = s.Messages
+	for _, s := range all {
+		fmt.Printf("%s  %s  %-28s %3d messages", s.ID, s.Updated.Format("2006-01-02 15:04"), s.Model, len(s.Messages))
+		if prompt := s.Prompt(); prompt != "" {
+			fmt.Printf("  %s", prompt)
+		}
+		fmt.Println()
+	}
 	return nil
 }
 
@@ -71,8 +122,7 @@ func newAgent() (*agent.Agent, error) {
 	p, err := config.LoadProvider()
 	a := agent.New(p) // p may be nil; checked before Ask
 	if p != nil {
-		a.MaxContextTokens = config.ContextWindow(p.Name())
-		a.UseTools = config.SupportsTools(p.Name())
+		use(a, p)
 	}
 	a.AllowTool = func(name string) bool { return !config.ToolDenied(name) }
 	if notes := config.ProjectNotes(); notes != "" {
