@@ -63,9 +63,12 @@ func save(edit func(*Settings)) error {
 // reason — it is the more specific of the two, and it knows how to pull the
 // other in.
 var projectNotesFiles = []string{
-	"UHAI.local.md", "UHAI.md",
-	"AGENTS.local.md", "AGENTS.md",
-	"CLAUDE.local.md", "CLAUDE.md",
+	"UHAI.local.md",
+	"UHAI.md",
+	"AGENTS.local.md",
+	"AGENTS.md",
+	"CLAUDE.local.md",
+	"CLAUDE.md",
 }
 
 // importDepth is how far a chain of @ lines is followed. Notes importing notes

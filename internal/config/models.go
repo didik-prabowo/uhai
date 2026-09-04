@@ -40,8 +40,16 @@ const (
 // their own limits could fill it in, but none of the ones here do it the same
 // way, and what is unlisted still works — quietly, at safe defaults.
 var models = map[string]modelInfo{
-	"claude-opus":   {Context: 200_000, MaxOutput: 8_192, InputUSD: 15, OutputUSD: 75},
-	"claude-sonnet": {Context: 200_000, MaxOutput: 8_192, InputUSD: 3, OutputUSD: 15},
+	// The 5 generation moved to a million-token window and a 128k answer, and
+	// Opus came down to a third of what Opus 4 cost. 128k output is only safe
+	// because this client always streams (Stream: true, anthropic.go): the
+	// Messages API wants streaming for a max_tokens that large.
+	//
+	// claude- is the fallback for anything older or unrecognised, and stays at
+	// the figures that are safe everywhere.
+	"claude-fable":  {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 10, OutputUSD: 50},
+	"claude-opus":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
+	"claude-sonnet": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15},
 	"claude-haiku":  {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
 	"claude-":       {Context: 200_000, MaxOutput: 8_192},
 

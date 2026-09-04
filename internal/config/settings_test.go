@@ -71,8 +71,13 @@ func TestProjectNotesReadsAgentsFile(t *testing.T) {
 // something it has never heard of has to be safe rather than optimistic.
 func TestModelLimits(t *testing.T) {
 	for setting, want := range map[string]modelInfo{
-		"anthropic/claude-sonnet-5":                    {Context: 200_000, MaxOutput: 8_192, InputUSD: 3, OutputUSD: 15},
-		"anthropic/claude-haiku-4-5-20251001":          {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
+		"anthropic/claude-opus-5":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
+		"anthropic/claude-sonnet-5": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15},
+		// Haiku is the one in the family that did not move to a million.
+		"anthropic/claude-haiku-4-5-20251001": {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
+		// Anything older or unrecognised lands on the claude- fallback, which
+		// stays at the figures that are safe everywhere.
+		"anthropic/claude-3-5-sonnet-20241022":         {Context: 200_000, MaxOutput: 8_192},
 		"openai/gpt-4o-mini":                           {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
 		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192},
 		"ollama/qwen2.5-coder":                         {Context: 32_768, MaxOutput: 4_096},
@@ -93,7 +98,7 @@ func TestModelLimits(t *testing.T) {
 
 	// A model name carrying slashes is matched on its last segment, which is
 	// where the family lives.
-	if ContextWindow("openrouter/anthropic/claude-sonnet-5") != 200_000 {
+	if ContextWindow("openrouter/anthropic/claude-sonnet-5") != 1_000_000 {
 		t.Error("a prefixed model name must still find its family")
 	}
 }
@@ -101,7 +106,7 @@ func TestModelLimits(t *testing.T) {
 // Pricing and capabilities are shown, so they have to read the way they are
 // quoted — and stay quiet when the host, not the model, sets the price.
 func TestModelSummaryAndCost(t *testing.T) {
-	if got := ModelSummary("anthropic/claude-sonnet-5"); got != "200k context · $3/$15 per Mtok" {
+	if got := ModelSummary("anthropic/claude-sonnet-5"); got != "1M context · $3/$15 per Mtok" {
 		t.Fatalf("claude summary = %q", got)
 	}
 	if got := ModelSummary("openai/gpt-4o-mini"); got != "128k context · $0.15/$0.6 per Mtok" {
