@@ -190,7 +190,10 @@ a while on the strength of sharing a directory — and nothing in `config` ever
 referenced a `Session`, which is what gave the mistake away.
 
 `Session` is the data; `Store` is the contract for keeping it — `Save`, `All`,
-`Load` — and `Files` is the one implementation shipped. `orchestrator` names
+`Load` — and `Files` is the one implementation shipped. One per file, so the
+split is visible before reading any of it: `session.go` knows nothing about
+storage, `store.go` nothing about files, `files.go` everything about them. A
+second backend is a fourth file and touches none of the other three. `orchestrator` names
 the store in one line and hands it to `cli.UseStore`; nothing downstream ever
 learns which it got. A second backend replaces that line and changes nothing
 else.
