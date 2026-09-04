@@ -443,6 +443,12 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addHistory(teaDim.Render("interrupted"))
 		case msg.err != nil:
 			m.addHistory(teaDim.Render("error: " + msg.err.Error()))
+			// A failed turn stops there, and the next move is not obvious:
+			// nothing says whether the reading it already did was lost with
+			// it. It was not — the turn is closed in the history, tool
+			// results and all — so sending the prompt again carries on from
+			// there rather than starting over.
+			m.addHistory(teaDim.Render("↑ brings the prompt back — what it already read is still in the history"))
 		default:
 			m.addHistory(m.turnSummary())
 		}

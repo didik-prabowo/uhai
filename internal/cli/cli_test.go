@@ -982,13 +982,23 @@ func TestTurnClosesWithASummary(t *testing.T) {
 	for _, err := range []error{context.Canceled, fmt.Errorf("provider error")} {
 		m.lines = nil
 		m.Update(teaDoneMsg{err: err})
-		if last := m.lines[len(m.lines)-1].text; strings.Contains(last, "Done in") {
-			t.Fatalf("a failed turn must not report success: %q", last)
+		for _, line := range m.lines {
+			if strings.Contains(line.text, "Done in") {
+				t.Fatalf("a failed turn must not report success: %q", line.text)
+			}
 		}
-		// However it ended, it stands clear of what was said before it.
-		if blank := m.lines[len(m.lines)-2].text; strings.TrimSpace(blank) != "" {
-			t.Fatalf("the closing line needs a line above it, got %q", blank)
+		// However it ended, the block stands clear of what was said before it.
+		if blank := m.lines[0].text; strings.TrimSpace(blank) != "" {
+			t.Fatalf("the closing block needs a line above it, got %q", blank)
 		}
+	}
+
+	// A turn that failed says what to do next: stopping there with only the
+	// reason leaves it unclear whether the reading it did was lost with it.
+	m.lines = nil
+	m.Update(teaDoneMsg{err: fmt.Errorf("provider error (HTTP 429)")})
+	if last := m.lines[len(m.lines)-1].text; !strings.Contains(last, "still in the history") {
+		t.Fatalf("a failed turn should say the work survived it: %q", last)
 	}
 
 	// The next turn counts from zero.
