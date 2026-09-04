@@ -1061,6 +1061,9 @@ func (m *teaModel) submit() tea.Cmd {
 			err := m.agent.Compact(ctx)
 			return teaCompactMsg{before: before, after: m.agent.Tokens(), err: err}
 		})
+	case strings.HasPrefix(value, "/skills"):
+		m.addHistory(skillsReport())
+		return nil
 	case strings.HasPrefix(value, "/tasks"):
 		m.addHistory(tasksReport(m.agent, strings.TrimSpace(strings.TrimPrefix(value, "/tasks"))))
 		return nil
@@ -1098,6 +1101,7 @@ func (m *teaModel) submit() tea.Cmd {
   /check    run the project's tests as a task, or /check <command>
   /stop     stop a task: /stop t1
   /compact  summarize the history to free up context
+  /skills   what this project keeps aside, and where it was found
   /tasks    list tasks, or /tasks t1 to read one's report
   /bg       run a prompt in the background, read-only
   /mouse    hand the mouse back to the terminal

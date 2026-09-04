@@ -33,6 +33,7 @@ var commands = []command{
 	{"/exit", "quit uhai"},
 	{"/model", "select a model for the provider"},
 	{"/compact", "summarize the history to free up context"},
+	{"/skills", "list the skills this project has, and where they were found"},
 	{"/tasks", "list tasks, or /tasks t1 to read one's report"},
 	{"/bg", "run a prompt in the background, read-only"},
 	{"/check", "run the project's tests as a task, or /check <command>"},
@@ -48,7 +49,14 @@ var commands = []command{
 // question is what this replaces — it spent a turn and answered nothing.
 func pipeAnswer(prompt string) string {
 	name := strings.Fields(prompt)[0]
-	if name != "/help" {
+	switch name {
+	case "/skills":
+		// Nothing to interact with: it reads the disk and prints. Refusing it
+		// here would mean the one way to check a skill was found needs a
+		// terminal, which is exactly where scripts cannot look.
+		return skillsReport()
+	case "/help":
+	default:
 		return "uhai: " + name + " needs the interactive prompt — run uhai in a terminal"
 	}
 
@@ -57,7 +65,34 @@ func pipeAnswer(prompt string) string {
 	for _, c := range commands {
 		fmt.Fprintf(&b, "  %-9s %s\n", c.name, c.desc)
 	}
-	b.WriteString("Only /help and /exit work without a terminal; the rest need the prompt.")
+	b.WriteString("Only /help, /skills and /exit work without a terminal; the rest need the prompt.")
+	return b.String()
+}
+
+// skillsReport is what the project's skills look like from outside the model:
+// what was found, and where. It exists because a skill in the wrong folder, or
+// with frontmatter that did not parse, fails in the one way that cannot be
+// debugged — the model simply does not follow it, and nothing anywhere says
+// why. This turns that into a line.
+func skillsReport() string {
+	skills := config.Skills()
+	if len(skills) == 0 {
+		return "no skills found. Looked in: " + strings.Join(config.SkillDirs(), ", ") +
+			"\nA skill is a folder with a SKILL.md in it."
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d skill(s) — only these lines travel with each prompt; the bodies stay on disk:\n", len(skills))
+	for _, s := range skills {
+		desc := s.Description
+		if desc == "" {
+			// Worth saying: the model chooses from the description, so a
+			// skill without one is a skill it has little reason to open.
+			desc = "(no description — add one to the frontmatter)"
+		}
+		fmt.Fprintf(&b, "  %-16s %s\n  %-16s %s\n", s.Name, desc, "", s.Path)
+	}
+	fmt.Fprintf(&b, "Looked in: %s", strings.Join(config.SkillDirs(), ", "))
 	return b.String()
 }
 

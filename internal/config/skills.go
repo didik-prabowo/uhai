@@ -20,6 +20,19 @@ import (
 // to be read here.
 var skillDirs = []string{".uhai/skills", ".claude/skills", ".agents/skills"}
 
+// SkillDirs is every place Skills looks, in the order it looks. It is exported
+// because a skill that was not found is the failure with no symptom — the
+// model simply does not follow it — and the only useful thing to say then is
+// where it should have been.
+func SkillDirs() []string {
+	// A project that keeps them somewhere of its own says so, rather than
+	// moving its files to suit this.
+	if s, err := LoadSettings(); err == nil {
+		return append(append([]string{}, s.SkillDirs...), skillDirs...)
+	}
+	return skillDirs
+}
+
 // Skill is one of them, as the model is told about it.
 type Skill struct {
 	Name        string
@@ -34,14 +47,7 @@ func Skills() []Skill {
 	seen := map[string]bool{}
 	var out []Skill
 
-	dirs := skillDirs
-	if s, err := LoadSettings(); err == nil {
-		// A project that keeps them somewhere of its own says so, rather than
-		// moving its files to suit this.
-		dirs = append(append([]string{}, s.SkillDirs...), skillDirs...)
-	}
-
-	for _, dir := range dirs {
+	for _, dir := range SkillDirs() {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue

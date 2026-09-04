@@ -1436,6 +1436,70 @@ func TestPipeAnswersCommandsItself(t *testing.T) {
 			t.Errorf("the refusal must name the command asked for: %q", got)
 		}
 	}
+
+	// /skills is the exception: it reads the disk and prints, so refusing it
+	// would put the only way to check a skill was found behind a terminal —
+	// which is where a script cannot look.
+	if got := pipeAnswer("/skills"); strings.Contains(got, "interactive prompt") {
+		t.Errorf("/skills needs no terminal, got %q", got)
+	}
+}
+
+// A skill that is in the wrong folder, or whose frontmatter did not parse,
+// fails the one way nothing reports: the model just does not follow it. This
+// is the only place that says what was found and where it looked.
+func TestSkillsReportSaysWhatWasFoundAndWhere(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	// Nothing yet: the answer has to say where to put one, not just "none".
+	empty := skillsReport()
+	if !strings.Contains(empty, ".uhai/skills") || !strings.Contains(empty, "SKILL.md") {
+		t.Errorf("with no skills, say where one would go:\n%s", empty)
+	}
+
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, ".uhai", "skills", "rilis", "SKILL.md"),
+		"---\nname: rilis\ndescription: Langkah merilis versi baru\n---\nbadan yang panjang sekali\n")
+	write(filepath.Join(dir, ".claude", "skills", "review", "SKILL.md"),
+		"---\nname: review\ndescription: Checklist sebelum merge\n---\n")
+	write(filepath.Join(dir, ".uhai", "skills", "sunyi", "SKILL.md"), "# tanpa frontmatter\n")
+
+	got := skillsReport()
+	for _, want := range []string{
+		"rilis", "Langkah merilis versi baru", ".uhai/skills/rilis/SKILL.md",
+		"review", "Checklist sebelum merge", ".claude/skills/review/SKILL.md",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the report must carry %q:\n%s", want, got)
+		}
+	}
+	// The model picks a skill by its description, so one without a description
+	// is one it has little reason to open — worth saying rather than hiding.
+	if !strings.Contains(got, "sunyi") || !strings.Contains(got, "no description") {
+		t.Errorf("a skill with no description must be listed and named as such:\n%s", got)
+	}
+	// The bodies are the whole reason skills exist: they must not be in here,
+	// any more than they are in the prompt.
+	if strings.Contains(got, "badan yang panjang") {
+		t.Errorf("a skill's body must not be printed:\n%s", got)
+	}
 }
 
 // A model is checked against the provider's list after the switch, and only as

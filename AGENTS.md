@@ -474,6 +474,14 @@ pages of procedure from costing anything on a turn that does not need them.
 Both layouts are Claude Code's, deliberately: a repository already written for
 one agent should need nothing added for this one.
 
+`/skills` prints what was found and where it looked. A skill in the wrong
+folder, or whose frontmatter did not parse, fails in the one way nothing
+reports — the model simply does not follow it, and no error names a cause. It
+answers in a pipe as well, unlike every command except `/help`: putting the
+only way to check discovery behind a terminal is putting it where a script
+cannot look. `config.SkillDirs` is exported for it, and `Skills` searches
+exactly that list, so the two cannot disagree about where it looked.
+
 ## Not built, on purpose
 
 Each of these was considered, argued for, and left out. The trigger matters
