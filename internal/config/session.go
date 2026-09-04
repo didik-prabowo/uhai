@@ -47,9 +47,7 @@ func (s Session) Save() error {
 	if len(s.Messages) == 0 {
 		return nil // nothing said yet
 	}
-	if s.ID == "" {
-		s.ID = s.Started.Format(idLayout)
-	}
+	s.ID = s.Identity()
 	s.Updated = time.Now()
 	dir, err := sessionsDir()
 	if err != nil {
@@ -64,6 +62,16 @@ func (s Session) Save() error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, s.ID+".json"), data, 0o644)
+}
+
+// Identity is the id this session has or will have once it is saved. One
+// place decides what an id looks like, so nothing has to spell the layout out
+// a second time.
+func (s Session) Identity() string {
+	if s.ID != "" {
+		return s.ID
+	}
+	return s.Started.Format(idLayout)
 }
 
 // Sessions lists what has been saved, newest first.

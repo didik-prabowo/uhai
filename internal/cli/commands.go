@@ -81,6 +81,15 @@ func providerItems() []command {
 // session is this conversation on disk, rewritten after every turn.
 var session = config.Session{Started: time.Now()}
 
+// savedSessionID is this conversation's id, "" when nothing was said and so
+// nothing was written.
+func savedSessionID() string {
+	if len(session.Messages) == 0 {
+		return ""
+	}
+	return session.Identity()
+}
+
 // ContinueSession makes the saves go back into a conversation that was
 // resumed, keeping its id and its start time. Without it every -resume forks
 // a fresh copy of the history and the id nobody could hold on to.

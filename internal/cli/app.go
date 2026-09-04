@@ -25,6 +25,12 @@ func Run(a *agent.Agent, startupErr error) {
 	if err := runTea(a, startupErr); err != nil {
 		fmt.Fprintln(os.Stderr, "ouhai:", err)
 	}
+	// The id is printed on the way out because that is the moment it is
+	// needed and the last moment it is free: hunting for it later means
+	// -sessions and reading timestamps.
+	if id := savedSessionID(); id != "" {
+		fmt.Printf("\nResume this conversation with:\n  ouhai -resume %s\n", id)
+	}
 }
 
 // rawMode reports whether we are talking to a terminal at all. A pipe is not

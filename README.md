@@ -55,8 +55,9 @@ ouhai -sessions                              # what can be carried on
 ouhai -resume 2026-09-03T14-05             # ...carry on with that one
 ```
 
-A resumed conversation comes back with the model it was held with, and keeps
-writing to the same file — its id survives being picked up and put down. Any
+On the way out ouhai prints the line that brings the conversation back, which
+is the moment the id is worth having. A resumed conversation comes back with
+the model it was held with, and keeps writing to the same file — its id survives being picked up and put down. Any
 prefix of an id that names only one session is enough to type.
 
 ## Using it in a project

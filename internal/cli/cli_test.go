@@ -1298,3 +1298,20 @@ func TestFailedTaskShowsWhatItWrote(t *testing.T) {
 		t.Errorf("the partial answer must be there: %q", report)
 	}
 }
+
+// The id is printed on the way out, which is the moment it is needed — but
+// only when something was actually saved to resume.
+func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
+	session = config.Session{Started: time.Now()}
+	if got := savedSessionID(); got != "" {
+		t.Fatalf("nothing was said, so there is nothing to resume: %q", got)
+	}
+
+	session.Messages = []provider.Message{{
+		Role:    provider.RoleUser,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
+	}}
+	if got := savedSessionID(); got != session.Started.Format("2006-01-02T15-04-05") {
+		t.Fatalf("the id is the moment it started, got %q", got)
+	}
+}
