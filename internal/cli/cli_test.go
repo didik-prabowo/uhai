@@ -431,7 +431,7 @@ func TestPortedCommands(t *testing.T) {
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
 	}}
 	m.Update(teaDoneMsg{})
-	saved, err := session.Latest()
+	saved, err := session.Latest(store)
 	if err != nil {
 		t.Fatalf("the session must be saved after a turn: %v", err)
 	}

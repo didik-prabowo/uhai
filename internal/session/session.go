@@ -1,5 +1,7 @@
-// Package session is the conversation on disk: one file per conversation
-// under ~/.uhai/sessions, written after every turn and read back by -resume.
+// Package session is the conversation and where it is kept: Session is the
+// data, Store is the contract for keeping it, and Files is the one
+// implementation uhai ships — a JSON file per conversation under
+// ~/.uhai/sessions, written after every turn and read back by -resume.
 //
 // It lives apart from config because the two are opposites. Settings, keys and
 // permissions are input a person writes to change what uhai does; a session is
@@ -42,6 +44,37 @@ type Session struct {
 	Messages []provider.Message `json:"messages"`
 }
 
+// Store is where conversations are kept. Files is the one uhai ships; the
+// contract is here so a second — sqlite, postgres, something over a network —
+// can take its place without a caller knowing which it got. The composition
+// root picks one at startup and nothing downstream chooses again.
+//
+// Three methods, because that is what the front ends ask for. Latest is a
+// package function rather than a method: every backend can answer it from All,
+// and one that could do better (ORDER BY updated DESC LIMIT 1) should grow an
+// optional interface for it the way provider.ModelLister does, rather than
+// making every implementation carry a method most of them would fake.
+type Store interface {
+	// Save writes the conversation under its id, replacing what was there.
+	Save(Session) error
+
+	// All lists what has been kept, newest first.
+	All() ([]Session, error)
+
+	// Load finds one by id, or by any prefix of an id that names only one.
+	Load(id string) (Session, error)
+}
+
+// Latest is the most recently updated conversation, which is what -resume
+// takes when no id is given.
+func Latest(st Store) (Session, error) {
+	all, err := st.All()
+	if err != nil {
+		return Session{}, err
+	}
+	return all[0], nil
+}
+
 // idBytes is how much randomness an id carries. Eight bytes is 64 bits: a
 // directory of conversations will not collide, and base32 turns it into 13
 // characters of which the first four are already enough to name one.
@@ -68,7 +101,17 @@ func newID() string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]))
 }
 
-func sessionsDir() (string, error) {
+// Files keeps one JSON file per conversation. A zero Files uses
+// ~/.uhai/sessions; Dir is there so a test can point at a directory of its own
+// without moving HOME.
+type Files struct{ Dir string }
+
+var _ Store = Files{}
+
+func (f Files) dir() (string, error) {
+	if f.Dir != "" {
+		return f.Dir, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -76,9 +119,8 @@ func sessionsDir() (string, error) {
 	return filepath.Join(home, ".uhai", "sessions"), nil
 }
 
-// Save writes the session under its id, which sorts as a date, so the newest
-// one sorts last.
-func (s Session) Save() error {
+// Save writes the conversation under its id.
+func (f Files) Save(s Session) error {
 	if len(s.Messages) == 0 {
 		return nil // nothing said yet
 	}
@@ -89,7 +131,7 @@ func (s Session) Save() error {
 	// Whoever wrote last is who holds it: a resumed conversation is held by
 	// the process resuming it, not by the one that started it months ago.
 	s.PID = os.Getpid()
-	dir, err := sessionsDir()
+	dir, err := f.dir()
 	if err != nil {
 		return err
 	}
@@ -108,8 +150,8 @@ func (s Session) Save() error {
 //
 // ponytail: every file is read whole to list them, messages included. Fine for
 // a directory of conversations; sort out a header if it ever is not.
-func All() ([]Session, error) {
-	dir, err := sessionsDir()
+func (f Files) All() ([]Session, error) {
+	dir, err := f.dir()
 	if err != nil {
 		return nil, err
 	}
@@ -159,24 +201,21 @@ func readSession(dir, name string) (Session, error) {
 	return s, nil
 }
 
-// Latest returns the most recently saved session.
-func Latest() (Session, error) {
-	all, err := All()
+// Load finds one by id, or by any prefix of an id that names only one — four
+// characters normally do. The id is matched against what was found rather than
+// pasted into a path, so it cannot be used to read a file elsewhere.
+func (f Files) Load(id string) (Session, error) {
+	all, err := f.All()
 	if err != nil {
 		return Session{}, err
 	}
-	return all[0], nil
+	return pick(all, id)
 }
 
-// Load finds one by id, or by any prefix of an id that names only one —
-// typing the date is usually enough. The id is matched against what was found
-// rather than pasted into a path, so it cannot be used to read elsewhere.
-func Load(id string) (Session, error) {
-	all, err := All()
-	if err != nil {
-		return Session{}, err
-	}
-
+// pick is the matching rule itself, kept apart from the storage so every
+// backend answers Load the same way instead of inventing its own idea of what
+// a prefix is. Export it when a second backend lives outside this package.
+func pick(all []Session, id string) (Session, error) {
 	var found []Session
 	for _, s := range all {
 		if s.ID == id {

@@ -32,7 +32,7 @@ func TestResumeBringsBackTheModel(t *testing.T) {
 			Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "where were we"}},
 		}},
 	}
-	if err := saved.Save(); err != nil {
+	if err := store.Save(saved); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,7 +56,7 @@ func TestResumeBringsBackTheModel(t *testing.T) {
 
 	// A model that can no longer be built is a line, not a silent swap.
 	saved.Model = "nosuchprovider/x"
-	if err := saved.Save(); err != nil {
+	if err := store.Save(saved); err != nil {
 		t.Fatal(err)
 	}
 	b := agent.New(nil)
@@ -78,7 +78,7 @@ func TestResumeByID(t *testing.T) {
 	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "groq/older", []provider.Message{msg}
 	newer.Started, newer.Model, newer.Messages = time.Now(), "groq/newer", []provider.Message{msg}
 	for _, s := range []session.Session{older, newer} {
-		if err := s.Save(); err != nil {
+		if err := store.Save(s); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -166,7 +166,7 @@ func TestRunOnceAnswersOnStdout(t *testing.T) {
 	// -p used to be the one door that saved nothing: it answers from here
 	// rather than through cli, so it never met saveSession. An answer nobody
 	// can resume or even find in -sessions is an answer that did not happen.
-	saved, err := session.All()
+	saved, err := store.All()
 	if err != nil {
 		t.Fatalf("a one-shot answer must be saved like any other: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestListSessionsIsReadableEnoughToCopyFrom(t *testing.T) {
 	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "groq/llama-3.3-70b-versatile", msg("yang lama")
 	newer.Started, newer.Model, newer.Messages = time.Now(), "zai/glm-4.6", msg("yang baru")
 	for _, s := range []session.Session{older, newer} {
-		if err := s.Save(); err != nil {
+		if err := store.Save(s); err != nil {
 			t.Fatal(err)
 		}
 	}

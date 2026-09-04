@@ -189,6 +189,29 @@ does, and a session is output uhai produces by running. It sat in `config` for
 a while on the strength of sharing a directory — and nothing in `config` ever
 referenced a `Session`, which is what gave the mistake away.
 
+`Session` is the data; `Store` is the contract for keeping it — `Save`, `All`,
+`Load` — and `Files` is the one implementation shipped. `orchestrator` names
+the store in one line and hands it to `cli.UseStore`; nothing downstream ever
+learns which it got. A second backend replaces that line and changes nothing
+else.
+
+`Latest` is a package function taking a `Store` rather than a fourth method,
+since every backend can answer it from `All`. One that could do better —
+`ORDER BY updated DESC LIMIT 1` — should grow an optional interface the way
+`provider.ModelLister` does, instead of making every implementation carry a
+method most would fake. `pick`, the prefix rule, sits outside the storage for
+the same reason: `Load` means the same thing everywhere, and a backend
+reinventing what a prefix is would be a bug nobody could see. Export it when
+a backend lives outside this package.
+
+The argument against building this was that a Go package is already a seam —
+nothing outside `internal/session` knew a session was a file, so swapping the
+insides for sqlite would have changed no caller either way. What the interface
+buys over that is two implementations at once, and the honest version of it
+has two: `TestStoreContract` runs the same scenario against `Files` and
+against an in-memory store, so the contract is checked rather than asserted.
+A backend added later is finished when that test passes for it.
+
 `cli` keeps the live one in a package-level `current`, renamed from `session`
 when the package took that name.
 

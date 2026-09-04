@@ -100,10 +100,20 @@ func providerItems() []command {
 	return items
 }
 
-// current is this conversation on disk, rewritten after every turn. Its id is
-// minted here, at startup, so the line printed on the way out names the file
-// that was actually written.
+// current is this conversation, rewritten after every turn. Its id is minted
+// here, at startup, so the line printed on the way out names what was actually
+// written.
 var current = session.New()
+
+// store is where current is kept. The composition root picks one and calls
+// UseStore; cli never chooses, and never learns which it got. The default is
+// only so a test that does not care still has somewhere to write.
+var store session.Store = session.Files{}
+
+// UseStore points the front ends at a store. It sits beside ContinueSession
+// for the same reason: cli owns the live conversation, and orchestrator is the
+// one place allowed to say how a running uhai is put together.
+func UseStore(st session.Store) { store = st }
 
 // savedSessionID is this conversation's id, "" when nothing was said and so
 // nothing was written.
@@ -129,7 +139,7 @@ func SaveSession(a *agent.Agent) error {
 	if a.Provider != nil {
 		current.Model = a.Provider.Name()
 	}
-	return current.Save()
+	return store.Save(current)
 }
 
 // reported remembers which finished tasks the user has already been told

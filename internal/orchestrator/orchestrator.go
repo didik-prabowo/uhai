@@ -25,6 +25,7 @@ import (
 // named by id, or the newest when there is no id.
 func Run(resume bool, id string) {
 	a, err := newAgent()
+	cli.UseStore(store)
 	if resume {
 		if note, rerr := restore(a, id); rerr != nil {
 			fmt.Fprintln(os.Stderr, "uhai:", rerr)
@@ -44,9 +45,9 @@ func Run(resume bool, id string) {
 // Failing to find the session at all is an error: starting empty would look
 // like the history was lost.
 func restore(a *agent.Agent, id string) (string, error) {
-	s, err := session.Latest()
+	s, err := session.Latest(store)
 	if id != "" {
-		s, err = session.Load(id)
+		s, err = store.Load(id)
 	}
 	if err != nil {
 		return "", err
@@ -80,7 +81,7 @@ func use(a *agent.Agent, p provider.Provider) {
 // rather than a screen: the answer is usually one id, and copying it out of a
 // terminal beats arrowing through a list.
 func ListSessions() error {
-	all, err := session.All()
+	all, err := store.All()
 	if err != nil {
 		return err
 	}
@@ -109,6 +110,7 @@ func RunOnce(prompt string, allowTools bool) error {
 	if err != nil {
 		return err // no provider is fatal here: nothing can be done about it
 	}
+	cli.UseStore(store)
 
 	a.OnText = func(text string) { fmt.Println(text) }
 	a.OnNotice = func(text string) { fmt.Fprintln(os.Stderr, text) }
@@ -130,6 +132,12 @@ func RunOnce(prompt string, allowTools bool) error {
 	}
 	return err
 }
+
+// store is where conversations are kept. One line, in the composition root,
+// because that is the whole point of the Store contract: the choice is made
+// once here and nothing downstream repeats it. A second backend replaces this
+// expression and changes nothing else.
+var store session.Store = session.Files{}
 
 // newAgent builds the agent from the saved settings, the credentials, and the
 // project's own instructions. A provider that cannot be built is not fatal for
