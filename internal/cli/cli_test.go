@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1304,7 +1303,7 @@ func TestFailedTaskShowsWhatItWrote(t *testing.T) {
 // The id is printed on the way out, which is the moment it is needed — but
 // only when something was actually saved to resume.
 func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
-	current = session.Session{Started: time.Now()}
+	current = session.New()
 	if got := savedSessionID(); got != "" {
 		t.Fatalf("nothing was said, so there is nothing to resume: %q", got)
 	}
@@ -1313,9 +1312,10 @@ func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
 		Role:    provider.RoleUser,
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
 	}}
-	want := current.Started.Format("2006-01-02T15-04-05") + "-" + strconv.Itoa(os.Getpid())
-	if got := savedSessionID(); got != want {
-		t.Fatalf("the id is the moment it started plus the pid holding it, got %q", got)
+	// The id is minted at startup, not at save time, so the line printed on
+	// the way out names the file that will actually be on disk.
+	if got := savedSessionID(); got != current.ID {
+		t.Fatalf("the id offered must be the one held, got %q want %q", got, current.ID)
 	}
 }
 

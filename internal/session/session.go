@@ -8,6 +8,8 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,19 +30,43 @@ import (
 
 // Session is what gets saved and what -resume brings back.
 type Session struct {
-	// ID names the file and is what -resume takes: the moment the conversation
-	// started, which sorts and reads as a date at the same time, plus the pid
-	// of the process holding it.
+	// ID names the file and is what -resume takes. It carries no meaning on
+	// purpose: a name that encodes when or where a thing was made is a fact
+	// duplicated in two places, and the copy in the name is the one that goes
+	// stale. When and what are fields, and the listing prints them.
 	ID       string             `json:"id"`
 	Started  time.Time          `json:"started"`
 	Updated  time.Time          `json:"updated"` // moves every turn, so a listing shows what was worked on last
+	PID      int                `json:"pid"`     // the process that held it, for telling two live sessions apart
 	Model    string             `json:"model"`
 	Messages []provider.Message `json:"messages"`
 }
 
-// idLayout is the shape of the date half of an id: a timestamp with nothing in
-// it a filesystem dislikes, so the id and the file name are the same string.
-const idLayout = "2006-01-02T15-04-05"
+// idBytes is how much randomness an id carries. Eight bytes is 64 bits: a
+// directory of conversations will not collide, and base32 turns it into 13
+// characters of which the first four are already enough to name one.
+const idBytes = 8
+
+// New starts a conversation with an id of its own, minted here rather than at
+// save time so the id is the same string before and after the first turn — the
+// prompt prints it on the way out, and it has to be the one on disk.
+func New() Session {
+	return Session{ID: newID(), Started: time.Now(), PID: os.Getpid()}
+}
+
+// newID is opaque and says nothing, which is the point. It is lower case and
+// has no padding so it survives being read aloud, typed by hand, and pasted
+// into a shell without quoting.
+func newID() string {
+	var b [idBytes]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand does not fail in practice; if it ever does, a clashing
+		// id would overwrite a conversation, so fall back to something that
+		// cannot repeat within a process rather than to the empty string.
+		return strconv.FormatInt(time.Now().UnixNano(), 32)
+	}
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b[:]))
+}
 
 func sessionsDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -56,8 +82,13 @@ func (s Session) Save() error {
 	if len(s.Messages) == 0 {
 		return nil // nothing said yet
 	}
-	s.ID = s.Identity()
+	if s.ID == "" {
+		s.ID = newID() // a Session built as a literal rather than by New
+	}
 	s.Updated = time.Now()
+	// Whoever wrote last is who holds it: a resumed conversation is held by
+	// the process resuming it, not by the one that started it months ago.
+	s.PID = os.Getpid()
 	dir, err := sessionsDir()
 	if err != nil {
 		return err
@@ -71,26 +102,6 @@ func (s Session) Save() error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, s.ID+".json"), data, 0o644)
-}
-
-// Identity is the id this session has or will have once it is saved. One
-// place decides what an id looks like, so nothing has to spell the layout out
-// a second time.
-//
-// The pid is there because the timestamp alone is only good to the second, and
-// two conversations started in the same second used to be one file: the second
-// to save silently replaced the first, whole. One process holds one
-// conversation, so a same-second clash is always two processes and their pids
-// always differ — which makes the pid the one disambiguator that is both
-// certain and worth reading, since it also says which process to look for.
-//
-// It goes on the end so the date still sorts and still prefixes: -resume takes
-// the part you would have typed before.
-func (s Session) Identity() string {
-	if s.ID != "" {
-		return s.ID
-	}
-	return s.Started.Format(idLayout) + "-" + strconv.Itoa(os.Getpid())
 }
 
 // All lists what has been saved, newest first.
@@ -107,22 +118,21 @@ func All() ([]Session, error) {
 		return nil, fmt.Errorf("no saved sessions yet")
 	}
 
-	var names []string
-	for _, e := range entries {
-		if !e.IsDir() && filepath.Ext(e.Name()) == ".json" {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(names))) // the names are timestamps
-
 	var out []Session
-	for _, name := range names {
-		s, err := readSession(dir, name)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		s, err := readSession(dir, e.Name())
 		if err != nil {
 			continue // one corrupt file must not hide the rest
 		}
 		out = append(out, s)
 	}
+	// Sorted on what the sessions say rather than on what they are called.
+	// The names used to be timestamps and sorting them was the same thing;
+	// now the name says nothing, and every file is read here anyway.
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no saved sessions yet")
 	}

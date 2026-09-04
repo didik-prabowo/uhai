@@ -74,8 +74,9 @@ func TestResumeByID(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	msg := provider.Message{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "older"}}}
-	older := session.Session{Started: time.Now().Add(-2 * time.Hour), Messages: []provider.Message{msg}}
-	newer := session.Session{Started: time.Now(), Messages: []provider.Message{msg}}
+	older, newer := session.New(), session.New()
+	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "groq/older", []provider.Message{msg}
+	newer.Started, newer.Model, newer.Messages = time.Now(), "groq/newer", []provider.Message{msg}
 	for _, s := range []session.Session{older, newer} {
 		if err := s.Save(); err != nil {
 			t.Fatal(err)
@@ -83,10 +84,10 @@ func TestResumeByID(t *testing.T) {
 	}
 
 	a := agent.New(nil)
-	if _, err := restore(a, older.Started.Format("2006-01-02T15-04-05")); err != nil {
+	if _, err := restore(a, older.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restore(a, "2029-01-01T00-00-00"); err == nil {
+	if _, err := restore(a, "nosuchid"); err == nil {
 		t.Error("an id nobody saved must be an error, not an empty start")
 	}
 }
@@ -198,8 +199,9 @@ func TestListSessionsIsReadableEnoughToCopyFrom(t *testing.T) {
 	msg := func(text string) []provider.Message {
 		return []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
 	}
-	older := session.Session{Started: time.Now().Add(-2 * time.Hour), Model: "groq/llama-3.3-70b-versatile", Messages: msg("yang lama")}
-	newer := session.Session{Started: time.Now(), Model: "zai/glm-4.6", Messages: msg("yang baru")}
+	older, newer := session.New(), session.New()
+	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "groq/llama-3.3-70b-versatile", msg("yang lama")
+	newer.Started, newer.Model, newer.Messages = time.Now(), "zai/glm-4.6", msg("yang baru")
 	for _, s := range []session.Session{older, newer} {
 		if err := s.Save(); err != nil {
 			t.Fatal(err)
@@ -211,7 +213,7 @@ func TestListSessionsIsReadableEnoughToCopyFrom(t *testing.T) {
 	if listErr != nil {
 		t.Fatal(listErr)
 	}
-	for _, want := range []string{"yang lama", "yang baru", "zai/glm-4.6", newer.Started.Format("2006-01-02T15-04-05")} {
+	for _, want := range []string{"yang lama", "yang baru", "zai/glm-4.6", newer.ID, fmt.Sprintf("pid %d", os.Getpid())} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the listing must carry %q, got:\n%s", want, out)
 		}

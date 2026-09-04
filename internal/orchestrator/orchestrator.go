@@ -85,7 +85,13 @@ func ListSessions() error {
 		return err
 	}
 	for _, s := range all {
-		fmt.Printf("%s  %s  %-28s %3d messages", s.ID, s.Updated.Format("2006-01-02 15:04"), s.Model, len(s.Messages))
+		// A session saved before the pid was recorded has none, and "pid 0"
+		// is a worse answer than a blank.
+		held := fmt.Sprintf("pid %-7d", s.PID)
+		if s.PID == 0 {
+			held = fmt.Sprintf("%-11s", "")
+		}
+		fmt.Printf("%-13s  %s  %s %-28s %3d messages", s.ID, s.Updated.Format("2006-01-02 15:04"), held, s.Model, len(s.Messages))
 		if prompt := s.Prompt(); prompt != "" {
 			fmt.Printf("  %s", prompt)
 		}

@@ -157,22 +157,31 @@ carries its own lock.
 ## Sessions
 
 One conversation, one file under `~/.uhai/sessions`, rewritten after every
-turn. The name is the id, and the id is the moment it started plus the pid of
-the process holding it — `2026-09-04T18-30-00-42888`. The date half sorts and
-reads as a date, so a listing needs no index and `-resume <id>` takes any
-prefix that names only one, which is usually the part you would have typed
-anyway.
+turn. The name is the id, and the id says nothing: eight random bytes in
+base32, thirteen characters, `gijvqxlaulhjq`. `-resume` takes any prefix that
+names only one, so four characters is normally enough to type.
 
-The pid is on the end because a timestamp alone is only good to the second,
-and two conversations started in the same second were one file: the second to
-save replaced the first, whole and without a word. One process holds one
-conversation, so a same-second clash is always two processes and their pids
-always differ — which makes the pid the only disambiguator that is both certain
-and worth reading, since it also names the process to go looking for. A random
-suffix would have been unique and said nothing.
+It used to be the start time, which read well and sorted for free — and was
+wrong twice. It was only good to the second, so two conversations begun in the
+same second were one file and the second to save replaced the first, whole and
+without a word; a pid was pinned on the end to fix that. And a name that
+encodes when a thing was made states a fact the file already carries, which
+makes the copy in the name the one that can go stale — a resumed conversation
+kept the date it was first opened.
 
-It stopped being hypothetical when `-p` started saving: a script calling it in
-a loop starts several runs a second.
+So when, and who holds it, are fields — `started`, `updated`, `pid` — and
+`-sessions` prints them. `pid` is rewritten on every save, because a resumed
+conversation is held by the process resuming it, not by the one that opened it
+in August. Sessions written before it existed show a blank rather than `pid 0`.
+
+Nothing sorts on the file name any more; `All` sorts on `updated`. That cost
+nothing: it already read every file whole to build the listing, which is the
+`ponytail:` note in the same function.
+
+The id is minted by `session.New` at startup rather than at save time, because
+the prompt prints it on the way out and it has to be the string that ends up on
+disk. Old date-named files still list and resume: an id missing from the JSON
+falls back to the file name.
 
 It lives in `internal/session`, not in `config`, because the two are opposites:
 settings, keys and permissions are input a person writes to change what uhai

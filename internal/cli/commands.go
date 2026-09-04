@@ -100,8 +100,10 @@ func providerItems() []command {
 	return items
 }
 
-// current is this conversation on disk, rewritten after every turn.
-var current = session.Session{Started: time.Now()}
+// current is this conversation on disk, rewritten after every turn. Its id is
+// minted here, at startup, so the line printed on the way out names the file
+// that was actually written.
+var current = session.New()
 
 // savedSessionID is this conversation's id, "" when nothing was said and so
 // nothing was written.
@@ -109,7 +111,7 @@ func savedSessionID() string {
 	if len(current.Messages) == 0 {
 		return ""
 	}
-	return current.Identity()
+	return current.ID
 }
 
 // ContinueSession makes the saves go back into a conversation that was
