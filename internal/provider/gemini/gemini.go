@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -391,7 +392,7 @@ func (c *Client) Models() ([]string, error) {
 	for _, m := range wire.Models {
 		// Embedding and other models cannot hold a conversation; offering them
 		// would only produce a puzzling error later.
-		if m.Deprecated || !contains(m.Supported, "generateContent") {
+		if m.Deprecated || !slices.Contains(m.Supported, "generateContent") {
 			continue
 		}
 		ids = append(ids, strings.TrimPrefix(m.Name, "models/"))
@@ -401,15 +402,6 @@ func (c *Client) Models() ([]string, error) {
 	}
 	sort.Strings(ids)
 	return ids, nil
-}
-
-func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 // post sends the request. The body is kept as bytes so every attempt can send

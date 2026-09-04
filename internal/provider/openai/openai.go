@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -275,10 +276,10 @@ func (c *Client) Models() ([]string, error) {
 		// Chat completions need text input and text output. Older
 		// OpenAI-compatible endpoints may omit modality metadata, so keep
 		// those models and only filter when the fields are present.
-		if len(m.InputModalities) > 0 && (!contains(m.InputModalities, "text") || !contains(m.OutputModalities, "text")) {
+		if len(m.InputModalities) > 0 && (!slices.Contains(m.InputModalities, "text") || !slices.Contains(m.OutputModalities, "text")) {
 			continue
 		}
-		if len(m.SupportedFeatures) > 0 && !contains(m.SupportedFeatures, "tools") {
+		if len(m.SupportedFeatures) > 0 && !slices.Contains(m.SupportedFeatures, "tools") {
 			continue
 		}
 		if strings.Contains(strings.ToLower(m.ID), "prompt-guard") {
@@ -301,15 +302,6 @@ func (c *Client) Models() ([]string, error) {
 		return nil, fmt.Errorf("the endpoint returned no models")
 	}
 	return ids, nil
-}
-
-func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Response, error) {
