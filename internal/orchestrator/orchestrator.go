@@ -112,7 +112,17 @@ func RunOnce(prompt string, allowTools bool) error {
 	// Without a terminal in raw mode, Ctrl+C arrives as a signal again.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	return a.Ask(ctx, prompt)
+
+	err = a.Ask(ctx, prompt)
+	// Saved whether or not the turn worked, the way both other front ends do
+	// it: a turn that died halfway has already been paid for, and the history
+	// closeTurn left behind is what a -resume would carry on from. The Ask
+	// error is what the caller gets — a script's exit code is about the
+	// answer, not about the bookkeeping.
+	if serr := cli.SaveSession(a); serr != nil {
+		fmt.Fprintln(os.Stderr, "uhai: the session is not being saved:", serr)
+	}
+	return err
 }
 
 // newAgent builds the agent from the saved settings, the credentials, and the

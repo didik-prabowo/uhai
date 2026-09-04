@@ -941,7 +941,7 @@ func (m *teaModel) menuWindow(found int) (first, rows int) {
 // that ended while the model was busy. Both belong between turns: a task
 // finishing cannot paint the screen itself.
 func (m *teaModel) afterTurn() {
-	if err := saveSession(m.agent); err != nil && !m.saveFailed {
+	if err := SaveSession(m.agent); err != nil && !m.saveFailed {
 		m.saveFailed = true // said once; losing the history quietly would be worse
 		m.addHistory(teaDim.Render("the session is not being saved: " + err.Error()))
 	}

@@ -170,6 +170,17 @@ referenced a `Session`, which is what gave the mistake away.
 `cli` keeps the live one in a package-level `current`, renamed from `session`
 when the package took that name.
 
+All three ways of asking save: the terminal after every turn, the pipe after
+every line, and `-p` after its one answer. `-p` did not, for a while, and not
+by decision — it answers from `orchestrator.RunOnce`, which bypasses `cli`
+entirely and so never met `saveSession`. An answer that cannot be resumed and
+does not appear in `-sessions` is one nobody can prove happened. The function
+is `cli.SaveSession` now, for the same reason `cli.ContinueSession` is
+exported.
+
+A failed turn is saved too, everywhere. The tokens were paid for, and the
+history `closeTurn` leaves behind is exactly what a `-resume` carries on from.
+
 Two things `-resume` does that took a bug to learn:
 
 - **It brings back the model.** `Session.Model` was written and never read, so

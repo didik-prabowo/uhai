@@ -119,9 +119,10 @@ func ContinueSession(s session.Session) {
 	current.ID, current.Started, current.Model = s.ID, s.Started, s.Model
 }
 
-// saveSession writes the conversation, so both front ends keep it recoverable
-// the same way.
-func saveSession(a *agent.Agent) error {
+// SaveSession writes the conversation, so every way of asking keeps it
+// recoverable the same way. Exported because -p answers from orchestrator,
+// which is outside this package and was the one door that saved nothing.
+func SaveSession(a *agent.Agent) error {
 	current.Messages = a.History
 	if a.Provider != nil {
 		current.Model = a.Provider.Name()

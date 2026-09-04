@@ -52,7 +52,7 @@ func runPipe(a *agent.Agent, startupErr error) {
 		if err := a.Ask(context.Background(), prompt); err != nil {
 			fmt.Fprintln(os.Stderr, "uhai:", err)
 		}
-		if err := saveSession(a); err != nil {
+		if err := SaveSession(a); err != nil {
 			fmt.Fprintln(os.Stderr, "uhai: the session is not being saved:", err)
 			return
 		}

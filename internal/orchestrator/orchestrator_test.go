@@ -161,6 +161,20 @@ func TestRunOnceAnswersOnStdout(t *testing.T) {
 	if !strings.Contains(out, "halo") {
 		t.Errorf("the answer must reach stdout, got %q", out)
 	}
+
+	// -p used to be the one door that saved nothing: it answers from here
+	// rather than through cli, so it never met saveSession. An answer nobody
+	// can resume or even find in -sessions is an answer that did not happen.
+	saved, err := session.All()
+	if err != nil {
+		t.Fatalf("a one-shot answer must be saved like any other: %v", err)
+	}
+	if len(saved) != 1 || saved[0].Prompt() != "hi" {
+		t.Fatalf("the prompt asked must be what was saved: %+v", saved)
+	}
+	if len(saved[0].Messages) != 2 {
+		t.Errorf("both sides of the turn belong in the file, got %d", len(saved[0].Messages))
+	}
 }
 
 // No provider is fatal here and nowhere else: the interactive session opens
