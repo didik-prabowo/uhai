@@ -25,7 +25,10 @@ takes one glance to spot.
 
 - `tea.go` — a bubbletea program on the alternate screen, for a terminal.
 - `pipe.go` — a prompt per line, answers on stdout, for a pipe. Nobody is there
-  to answer a confirmation, so tools that write or run commands are refused.
+  to answer a confirmation, so tools that write or run commands are refused,
+  and a slash command is answered here rather than sent to the model: `/help`
+  works, the rest are refused by name. Sending one as a question spent a turn
+  to be told it was not a question.
 
 `commands.go` holds what both do — the command list, the providers, the session
 on disk, the background tasks — with no printing in it, so neither front end

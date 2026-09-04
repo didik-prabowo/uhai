@@ -39,6 +39,11 @@ func runPipe(a *agent.Agent, startupErr error) {
 			continue
 		case prompt == "/exit" || prompt == "/quit":
 			return
+		case strings.HasPrefix(prompt, "/"):
+			// A command is not a question: sending it to the model spends a
+			// turn to be told it is not a question.
+			fmt.Fprintln(os.Stderr, pipeAnswer(prompt))
+			continue
 		case a.Provider == nil:
 			fmt.Fprintln(os.Stderr, "ouhai: no provider connected — run ouhai in a terminal and type /connect")
 			return

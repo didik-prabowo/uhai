@@ -1415,3 +1415,22 @@ func TestDiffSkipsFarAwayLines(t *testing.T) {
 		t.Fatalf("two lines either side are context:\n%s", got)
 	}
 }
+
+// Without a terminal a slash command used to be sent to the model as if it
+// were a question: a turn spent, nothing answered.
+func TestPipeAnswersCommandsItself(t *testing.T) {
+	help := pipeAnswer("/help")
+	if !strings.Contains(help, "/connect") || !strings.Contains(help, "one prompt per line") {
+		t.Fatalf("/help must list the commands and say how this mode works:\n%s", help)
+	}
+
+	for _, prompt := range []string{"/connect", "/model zai/glm-4.7", "/tasks t1"} {
+		got := pipeAnswer(prompt)
+		if !strings.Contains(got, "interactive prompt") {
+			t.Errorf("%q should be refused by name, got %q", prompt, got)
+		}
+		if strings.Contains(got, "/connect ") && strings.Contains(prompt, "/model") {
+			t.Errorf("the refusal must name the command asked for: %q", got)
+		}
+	}
+}

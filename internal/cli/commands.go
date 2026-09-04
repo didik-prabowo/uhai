@@ -38,6 +38,27 @@ var commands = []command{
 	{"/mouse", "hand the mouse back to the terminal, for selecting text"},
 }
 
+// pipeAnswer is what a slash command does when there is no screen: the few
+// that mean something without one, and a plain refusal by name for the rest.
+//
+// It returns the text rather than printing it, so this file stays free of
+// printing and the answer can be tested. Sending "/help" to the model as a
+// question is what this replaces — it spent a turn and answered nothing.
+func pipeAnswer(prompt string) string {
+	name := strings.Fields(prompt)[0]
+	if name != "/help" {
+		return "ouhai: " + name + " needs the interactive prompt — run ouhai in a terminal"
+	}
+
+	var b strings.Builder
+	b.WriteString("ouhai reads one prompt per line here and answers on stdout.\n")
+	for _, c := range commands {
+		fmt.Fprintf(&b, "  %-9s %s\n", c.name, c.desc)
+	}
+	b.WriteString("Only /help and /exit work without a terminal; the rest need the prompt.")
+	return b.String()
+}
+
 // matches returns the commands whose name starts with the input. The menu
 // only opens for input starting with "/" — plain text is left alone.
 func matches(input string) []command {
