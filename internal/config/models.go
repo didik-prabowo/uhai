@@ -25,7 +25,6 @@ type modelInfo struct {
 	// NoTools marks the rare model that cannot be given tools, so the zero
 	// value is the common case: it can.
 	NoTools bool
-	Vision  bool
 }
 
 const (
@@ -41,17 +40,17 @@ const (
 // their own limits could fill it in, but none of the ones here do it the same
 // way, and what is unlisted still works — quietly, at safe defaults.
 var models = map[string]modelInfo{
-	"claude-opus":   {Context: 200_000, MaxOutput: 8_192, InputUSD: 15, OutputUSD: 75, Vision: true},
-	"claude-sonnet": {Context: 200_000, MaxOutput: 8_192, InputUSD: 3, OutputUSD: 15, Vision: true},
-	"claude-haiku":  {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5, Vision: true},
-	"claude-":       {Context: 200_000, MaxOutput: 8_192, Vision: true},
+	"claude-opus":   {Context: 200_000, MaxOutput: 8_192, InputUSD: 15, OutputUSD: 75},
+	"claude-sonnet": {Context: 200_000, MaxOutput: 8_192, InputUSD: 3, OutputUSD: 15},
+	"claude-haiku":  {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
+	"claude-":       {Context: 200_000, MaxOutput: 8_192},
 
-	"gpt-4o-mini": {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60, Vision: true},
-	"gpt-4o":      {Context: 128_000, MaxOutput: 16_384, InputUSD: 2.50, OutputUSD: 10, Vision: true},
-	"gpt-4.1":     {Context: 128_000, MaxOutput: 16_384, Vision: true},
+	"gpt-4o-mini": {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
+	"gpt-4o":      {Context: 128_000, MaxOutput: 16_384, InputUSD: 2.50, OutputUSD: 10},
+	"gpt-4.1":     {Context: 128_000, MaxOutput: 16_384},
 
-	"gemini-2.5": {Context: 1_000_000, MaxOutput: 8_192, Vision: true},
-	"gemini-2.0": {Context: 1_000_000, MaxOutput: 8_192, Vision: true},
+	"gemini-2.5": {Context: 1_000_000, MaxOutput: 8_192},
+	"gemini-2.0": {Context: 1_000_000, MaxOutput: 8_192},
 
 	// GLM, from Z.ai, which makes and sells them — so they are priced. The
 	// pricing page publishes no context windows: 128k is the figure that is
@@ -105,10 +104,6 @@ func MaxOutput(modelSetting string) int { return infoFor(modelSetting).MaxOutput
 // than the error the provider returns.
 func SupportsTools(modelSetting string) bool { return !infoFor(modelSetting).NoTools }
 
-// SupportsVision reports whether the model reads images. Unknown models are
-// assumed not to, which is the way round that cannot waste a request.
-func SupportsVision(modelSetting string) bool { return infoFor(modelSetting).Vision }
-
 // CostUSD prices one turn, "" when the model's price depends on who is hosting
 // it. Rounded to something a person can read rather than to the cent, since
 // a turn often costs less than one.
@@ -136,9 +131,6 @@ func ModelSummary(modelSetting string) string {
 	parts := []string{fmtContext(info.Context) + " context"}
 	if info.NoTools {
 		parts = append(parts, "no tools")
-	}
-	if info.Vision {
-		parts = append(parts, "images")
 	}
 	if info.InputUSD > 0 || info.OutputUSD > 0 {
 		parts = append(parts, fmt.Sprintf("$%s/$%s per Mtok", trimZeros(info.InputUSD), trimZeros(info.OutputUSD)))

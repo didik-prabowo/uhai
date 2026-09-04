@@ -102,6 +102,11 @@ order. Each is small; the point is that *use* picks which.
 - **Reading the web.** No tool fetches a URL, so a stack trace mentioning a
   library's docs ends the trail. *Build it when a session is regularly
   interrupted to paste a page in.*
+- **Images.** No tool takes one, no client sends one, and the model picker no
+  longer claims otherwise — it advertised "images" on models ouhai had no way
+  to show an image to. A screenshot of a broken layout is the case that would
+  earn it. *Build it when a bug is being described in words that a picture
+  would have settled.*
 - **A visible plan.** Long jobs are a wall of tool calls with no shape.
   *Build it when a turn's steps stop fitting in the status row.*
 - **Incremental task output.** `/tasks t1` keeps the last 8,000 characters, and

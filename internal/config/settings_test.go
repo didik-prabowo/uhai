@@ -71,10 +71,10 @@ func TestProjectNotesReadsAgentsFile(t *testing.T) {
 // something it has never heard of has to be safe rather than optimistic.
 func TestModelLimits(t *testing.T) {
 	for setting, want := range map[string]modelInfo{
-		"anthropic/claude-sonnet-5":                    {Context: 200_000, MaxOutput: 8_192, InputUSD: 3, OutputUSD: 15, Vision: true},
-		"anthropic/claude-haiku-4-5-20251001":          {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5, Vision: true},
-		"openai/gpt-4o-mini":                           {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60, Vision: true},
-		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192, Vision: true},
+		"anthropic/claude-sonnet-5":                    {Context: 200_000, MaxOutput: 8_192, InputUSD: 3, OutputUSD: 15},
+		"anthropic/claude-haiku-4-5-20251001":          {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
+		"openai/gpt-4o-mini":                           {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
+		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192},
 		"ollama/qwen2.5-coder":                         {Context: 32_768, MaxOutput: 4_096},
 		"openrouter/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
 		"zai/glm-4.7":                                  {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
@@ -101,10 +101,10 @@ func TestModelLimits(t *testing.T) {
 // Pricing and capabilities are shown, so they have to read the way they are
 // quoted — and stay quiet when the host, not the model, sets the price.
 func TestModelSummaryAndCost(t *testing.T) {
-	if got := ModelSummary("anthropic/claude-sonnet-5"); got != "200k context · images · $3/$15 per Mtok" {
+	if got := ModelSummary("anthropic/claude-sonnet-5"); got != "200k context · $3/$15 per Mtok" {
 		t.Fatalf("claude summary = %q", got)
 	}
-	if got := ModelSummary("openai/gpt-4o-mini"); got != "128k context · images · $0.15/$0.6 per Mtok" {
+	if got := ModelSummary("openai/gpt-4o-mini"); got != "128k context · $0.15/$0.6 per Mtok" {
 		t.Fatalf("gpt-4o-mini summary = %q", got)
 	}
 	// An open model is hosted by everyone at a different price, so it carries
@@ -128,9 +128,6 @@ func TestModelSummaryAndCost(t *testing.T) {
 
 	if !SupportsTools("openrouter/amazon/nova-lite-v1") {
 		t.Error("an unknown model must be assumed to manage tools")
-	}
-	if SupportsVision("groq/llama-3.3-70b-versatile") {
-		t.Error("vision must not be assumed")
 	}
 }
 

@@ -191,7 +191,9 @@ already had a constant for.
 ## The model registry
 
 `config/models.go` answers four questions about a model, and each is answered
-because something asks it: how much history fits before `agent` compacts, how
+because something asks it — a fifth, whether the model reads images, was
+removed once it turned out nothing did: the picker was printing "images" beside
+models ouhai has no way to send an image to, which is worse than saying nothing: how much history fits before `agent` compacts, how
 long an answer may be (the Messages API refuses to guess), whether tools may be
 sent at all, and what the turn costs — shown in the model picker and in the
 status row while the model works.
