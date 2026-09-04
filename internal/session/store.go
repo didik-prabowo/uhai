@@ -38,11 +38,10 @@ func Latest(st Store) (Session, error) {
 	return all[0], nil
 }
 
-// idBytes is how much randomness an id carries. Eight bytes is 64 bits: a
-
+// Pick is the matching rule behind Load, kept apart from the storage so every
 // backend answers Load the same way instead of inventing its own idea of what
-// a prefix is. Export it when a second backend lives outside this package.
-func pick(all []Session, id string) (Session, error) {
+// a prefix is. A store that reinvented it would be a bug nobody could see.
+func Pick(all []Session, id string) (Session, error) {
 	var found []Session
 	for _, s := range all {
 		if s.ID == id {

@@ -18,6 +18,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/session"
+	"github.com/didik-prabowo/uhai/internal/session/filestore"
 )
 
 // Run assembles an interactive session and hands it to the terminal front end.
@@ -137,7 +138,7 @@ func RunOnce(prompt string, allowTools bool) error {
 // because that is the whole point of the Store contract: the choice is made
 // once here and nothing downstream repeats it. A second backend replaces this
 // expression and changes nothing else.
-var store session.Store = session.Files{}
+var store session.Store = filestore.New("")
 
 // newAgent builds the agent from the saved settings, the credentials, and the
 // project's own instructions. A provider that cannot be built is not fatal for

@@ -1,10 +1,11 @@
-// Files is the store uhai ships: one JSON file per conversation under
-// ~/.uhai/sessions, rewritten after every turn so a closed terminal — or a
-// crash — does not take the work with it.
+// Package filestore keeps conversations as one JSON file each, under
+// ~/.uhai/sessions. It is the store uhai ships, and the only place that knows
+// a conversation is ever a file: session holds the contract, this holds the
+// answer to it, and the import only ever points this way.
 //
 // ponytail: whole history rewritten each turn, one file per session. Fine for
 // conversations that fit in a model's context; revisit if they ever do not.
-package session
+package filestore
 
 import (
 	"encoding/json"
@@ -14,18 +15,22 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/didik-prabowo/uhai/internal/session"
 )
 
-// Files keeps one JSON file per conversation. A zero Files uses
-// ~/.uhai/sessions; Dir is there so a test can point at a directory of its own
-// without moving HOME.
-type Files struct{ Dir string }
+// store is unexported because nothing outside needs the type — New hands back
+// the contract, and a caller that named the concrete type would be back where
+// it started.
+type store struct{ dir string }
 
-var _ Store = Files{}
+// New keeps conversations under dir. An empty dir means ~/.uhai/sessions; it
+// is a parameter so a test can point somewhere of its own without moving HOME.
+func New(dir string) session.Store { return store{dir: dir} }
 
-func (f Files) dir() (string, error) {
-	if f.Dir != "" {
-		return f.Dir, nil
+func (f store) root() (string, error) {
+	if f.dir != "" {
+		return f.dir, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -35,18 +40,18 @@ func (f Files) dir() (string, error) {
 }
 
 // Save writes the conversation under its id.
-func (f Files) Save(s Session) error {
+func (f store) Save(s session.Session) error {
 	if len(s.Messages) == 0 {
 		return nil // nothing said yet
 	}
 	if s.ID == "" {
-		s.ID = newID() // a Session built as a literal rather than by New
+		s.ID = session.NewID() // a session.Session built as a literal rather than by New
 	}
 	s.Updated = time.Now()
 	// Whoever wrote last is who holds it: a resumed conversation is held by
 	// the process resuming it, not by the one that started it months ago.
 	s.PID = os.Getpid()
-	dir, err := f.dir()
+	dir, err := f.root()
 	if err != nil {
 		return err
 	}
@@ -65,8 +70,8 @@ func (f Files) Save(s Session) error {
 //
 // ponytail: every file is read whole to list them, messages included. Fine for
 // a directory of conversations; sort out a header if it ever is not.
-func (f Files) All() ([]Session, error) {
-	dir, err := f.dir()
+func (f store) All() ([]session.Session, error) {
+	dir, err := f.root()
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +80,7 @@ func (f Files) All() ([]Session, error) {
 		return nil, fmt.Errorf("no saved sessions yet")
 	}
 
-	var out []Session
+	var out []session.Session
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
@@ -98,8 +103,8 @@ func (f Files) All() ([]Session, error) {
 
 // readSession fills in what sessions saved before ids existed do not carry, so
 // an old file resumes like any other.
-func readSession(dir, name string) (Session, error) {
-	var s Session
+func readSession(dir, name string) (session.Session, error) {
+	var s session.Session
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
 		return s, err
@@ -119,12 +124,10 @@ func readSession(dir, name string) (Session, error) {
 // Load finds one by id, or by any prefix of an id that names only one — four
 // characters normally do. The id is matched against what was found rather than
 // pasted into a path, so it cannot be used to read a file elsewhere.
-func (f Files) Load(id string) (Session, error) {
+func (f store) Load(id string) (session.Session, error) {
 	all, err := f.All()
 	if err != nil {
-		return Session{}, err
+		return session.Session{}, err
 	}
-	return pick(all, id)
+	return session.Pick(all, id)
 }
-
-// pick is the matching rule itself, kept apart from the storage so every

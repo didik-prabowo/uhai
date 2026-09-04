@@ -15,6 +15,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/session"
+	"github.com/didik-prabowo/uhai/internal/session/filestore"
 	"github.com/didik-prabowo/uhai/internal/task"
 	"github.com/didik-prabowo/uhai/internal/tools"
 )
@@ -108,7 +109,7 @@ var current = session.New()
 // store is where current is kept. The composition root picks one and calls
 // UseStore; cli never chooses, and never learns which it got. The default is
 // only so a test that does not care still has somewhere to write.
-var store session.Store = session.Files{}
+var store session.Store = filestore.New("")
 
 // UseStore points the front ends at a store. It sits beside ContinueSession
 // for the same reason: cli owns the live conversation, and orchestrator is the

@@ -40,6 +40,7 @@ type Session struct {
 	Messages []provider.Message `json:"messages"`
 }
 
+// idBytes is how much randomness an id carries. Eight bytes is 64 bits: a
 // directory of conversations will not collide, and base32 turns it into 13
 // characters of which the first four are already enough to name one.
 const idBytes = 8
@@ -48,13 +49,14 @@ const idBytes = 8
 // save time so the id is the same string before and after the first turn — the
 // prompt prints it on the way out, and it has to be the one on disk.
 func New() Session {
-	return Session{ID: newID(), Started: time.Now(), PID: os.Getpid()}
+	return Session{ID: NewID(), Started: time.Now(), PID: os.Getpid()}
 }
 
-// newID is opaque and says nothing, which is the point. It is lower case and
+// NewID is opaque and says nothing, which is the point. It is lower case and
 // has no padding so it survives being read aloud, typed by hand, and pasted
-// into a shell without quoting.
-func newID() string {
+// into a shell without quoting. Exported for stores, which live in their own
+// packages and have to name a Session that reached them without an id.
+func NewID() string {
 	var b [idBytes]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		// crypto/rand does not fail in practice; if it ever does, a clashing

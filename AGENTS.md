@@ -190,10 +190,24 @@ a while on the strength of sharing a directory — and nothing in `config` ever
 referenced a `Session`, which is what gave the mistake away.
 
 `Session` is the data; `Store` is the contract for keeping it — `Save`, `All`,
-`Load` — and `Files` is the one implementation shipped. One per file, so the
-split is visible before reading any of it: `session.go` knows nothing about
-storage, `store.go` nothing about files, `files.go` everything about them. A
-second backend is a fourth file and touches none of the other three. `orchestrator` names
+`Load`. Both live in `internal/session`, which holds no storage at all. The
+implementation that ships is `internal/session/filestore`, behind
+`filestore.New(dir)`, and a second one is a sibling package: `pgstore`,
+`sqlitestore`. The concrete type is unexported — `New` hands back the contract,
+since a caller that could name the type would be back where it started.
+
+The split is a package boundary rather than a file boundary because a file
+boundary is only a convention: in one package nothing stops `session.go`
+importing the disk tomorrow. The import graph is the proof now —
+`internal/session` pulls in neither `encoding/json` nor `path/filepath`, and
+`go list -deps ./internal/session` does not mention `filestore`. It points one
+way and cannot point back.
+
+That forced `Pick`, the prefix rule, to be exported: `filestore` lives outside
+the package and needs it, and so will the next backend. Which is the argument
+for the shape — the rule is shared rather than reimplemented, and `Load` means
+the same thing in every store. `NewID` is exported for the same reason: a store
+handed a `Session` with no id has to name it. `orchestrator` names
 the store in one line and hands it to `cli.UseStore`; nothing downstream ever
 learns which it got. A second backend replaces that line and changes nothing
 else.
@@ -213,7 +227,9 @@ insides for sqlite would have changed no caller either way. What the interface
 buys over that is two implementations at once, and the honest version of it
 has two: `TestStoreContract` runs the same scenario against `Files` and
 against an in-memory store, so the contract is checked rather than asserted.
-A backend added later is finished when that test passes for it.
+A backend added later is finished when that test passes for it. That test is
+`package session_test` — an external test package, which is what lets it import
+`filestore` without `session` importing it back.
 
 `cli` keeps the live one in a package-level `current`, renamed from `session`
 when the package took that name.

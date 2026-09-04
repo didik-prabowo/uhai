@@ -1,4 +1,4 @@
-package session
+package filestore
 
 import (
 	"os"
@@ -8,32 +8,33 @@ import (
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/session"
 )
 
 func TestSessionRoundTrip(t *testing.T) {
-	st := Files{Dir: t.TempDir()}
+	st := New(t.TempDir())
 
-	if _, err := Latest(st); err == nil {
+	if _, err := session.Latest(st); err == nil {
 		t.Fatal("with nothing saved, resuming must say so rather than return an empty session")
 	}
 
 	msg := func(text string) provider.Message {
 		return provider.Message{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}
 	}
-	older := Session{Started: time.Now().Add(-time.Hour), Model: "groq/a", Messages: []provider.Message{msg("older")}}
-	newer := Session{Started: time.Now(), Model: "groq/b", Messages: []provider.Message{msg("newer")}}
-	for _, s := range []Session{older, newer} {
+	older := session.Session{Started: time.Now().Add(-time.Hour), Model: "groq/a", Messages: []provider.Message{msg("older")}}
+	newer := session.Session{Started: time.Now(), Model: "groq/b", Messages: []provider.Message{msg("newer")}}
+	for _, s := range []session.Session{older, newer} {
 		if err := st.Save(s); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// An empty session is not worth a file.
-	if err := st.Save(Session{Started: time.Now()}); err != nil {
+	if err := st.Save(session.Session{Started: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Latest(st)
+	got, err := session.Latest(st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,18 +47,18 @@ func TestSessionRoundTrip(t *testing.T) {
 // id is enough as long as it names only one.
 func TestSessionsAreFoundByID(t *testing.T) {
 	dir := t.TempDir()
-	st := Files{Dir: dir}
+	st := New(dir)
 
 	msg := func(text string) provider.Message {
 		return provider.Message{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}
 	}
 	start := time.Date(2026, 9, 1, 10, 30, 0, 0, time.UTC)
-	first := New()
+	first := session.New()
 	first.Started, first.Model, first.Messages = start, "groq/a", []provider.Message{msg("first prompt\nsecond line")}
 	if err := st.Save(first); err != nil {
 		t.Fatal(err)
 	}
-	second := New()
+	second := session.New()
 	second.Started, second.Model, second.Messages = start.Add(2*time.Hour), "groq/b", []provider.Message{msg("later")}
 	if err := st.Save(second); err != nil {
 		t.Fatal(err)
