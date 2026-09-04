@@ -17,6 +17,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/cli"
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/session"
 )
 
 // Run assembles an interactive session and hands it to the terminal front end.
@@ -43,9 +44,9 @@ func Run(resume bool, id string) {
 // Failing to find the session at all is an error: starting empty would look
 // like the history was lost.
 func restore(a *agent.Agent, id string) (string, error) {
-	s, err := config.LatestSession()
+	s, err := session.Latest()
 	if id != "" {
-		s, err = config.LoadSession(id)
+		s, err = session.Load(id)
 	}
 	if err != nil {
 		return "", err
@@ -79,7 +80,7 @@ func use(a *agent.Agent, p provider.Provider) {
 // rather than a screen: the answer is usually one id, and copying it out of a
 // terminal beats arrowing through a list.
 func ListSessions() error {
-	all, err := config.Sessions()
+	all, err := session.All()
 	if err != nil {
 		return err
 	}

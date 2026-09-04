@@ -1,4 +1,11 @@
-package config
+// Package session is the conversation on disk: one file per conversation
+// under ~/.uhai/sessions, written after every turn and read back by -resume.
+//
+// It lives apart from config because the two are opposites. Settings, keys and
+// permissions are input a person writes to change what uhai does; a session is
+// output uhai produces by running. Nothing in config ever needed a Session —
+// it only shared the directory.
+package session
 
 import (
 	"encoding/json"
@@ -74,11 +81,11 @@ func (s Session) Identity() string {
 	return s.Started.Format(idLayout)
 }
 
-// Sessions lists what has been saved, newest first.
+// All lists what has been saved, newest first.
 //
 // ponytail: every file is read whole to list them, messages included. Fine for
 // a directory of conversations; sort out a header if it ever is not.
-func Sessions() ([]Session, error) {
+func All() ([]Session, error) {
 	dir, err := sessionsDir()
 	if err != nil {
 		return nil, err
@@ -130,20 +137,20 @@ func readSession(dir, name string) (Session, error) {
 	return s, nil
 }
 
-// LatestSession returns the most recently saved session.
-func LatestSession() (Session, error) {
-	all, err := Sessions()
+// Latest returns the most recently saved session.
+func Latest() (Session, error) {
+	all, err := All()
 	if err != nil {
 		return Session{}, err
 	}
 	return all[0], nil
 }
 
-// LoadSession finds one by id, or by any prefix of an id that names only one —
+// Load finds one by id, or by any prefix of an id that names only one —
 // typing the date is usually enough. The id is matched against what was found
 // rather than pasted into a path, so it cannot be used to read elsewhere.
-func LoadSession(id string) (Session, error) {
-	all, err := Sessions()
+func Load(id string) (Session, error) {
+	all, err := All()
 	if err != nil {
 		return Session{}, err
 	}

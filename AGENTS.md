@@ -161,6 +161,15 @@ turn. The name is the id, and the id is the moment it started — it sorts as a
 date and reads as one, so a listing needs no index and `-resume <id>` takes any
 prefix that names only one.
 
+It lives in `internal/session`, not in `config`, because the two are opposites:
+settings, keys and permissions are input a person writes to change what uhai
+does, and a session is output uhai produces by running. It sat in `config` for
+a while on the strength of sharing a directory — and nothing in `config` ever
+referenced a `Session`, which is what gave the mistake away.
+
+`cli` keeps the live one in a package-level `current`, renamed from `session`
+when the package took that name.
+
 Two things `-resume` does that took a bug to learn:
 
 - **It brings back the model.** `Session.Model` was written and never read, so

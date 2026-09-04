@@ -1,4 +1,4 @@
-package config
+package session
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 func TestSessionRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	if _, err := LatestSession(); err == nil {
+	if _, err := Latest(); err == nil {
 		t.Fatal("with nothing saved, resuming must say so rather than return an empty session")
 	}
 
@@ -32,7 +32,7 @@ func TestSessionRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := LatestSession()
+	got, err := Latest()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestSessionsAreFoundByID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	all, err := Sessions()
+	all, err := All()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,20 +77,20 @@ func TestSessionsAreFoundByID(t *testing.T) {
 		t.Fatalf("a file written before ids existed must still be resumable: %+v", all[2])
 	}
 
-	got, err := LoadSession("2026-09-01T10-30-00")
+	got, err := Load("2026-09-01T10-30-00")
 	if err != nil || got.Model != "groq/a" {
 		t.Fatalf("load by id: %+v %v", got, err)
 	}
 	if got.Prompt() != "first prompt" {
 		t.Errorf("the listing shows the first line asked, got %q", got.Prompt())
 	}
-	if _, err := LoadSession("2026-09-01"); err == nil {
+	if _, err := Load("2026-09-01"); err == nil {
 		t.Error("a prefix matching two sessions must ask for more of the id")
 	}
-	if got, err := LoadSession("2026-08"); err != nil || got.Model != "groq/c" {
+	if got, err := Load("2026-08"); err != nil || got.Model != "groq/c" {
 		t.Errorf("a prefix matching one session is enough: %+v %v", got, err)
 	}
-	if _, err := LoadSession("nope"); err == nil {
+	if _, err := Load("nope"); err == nil {
 		t.Error("an id nobody saved must be reported")
 	}
 
@@ -99,7 +99,7 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	if err := second.Save(); err != nil {
 		t.Fatal(err)
 	}
-	if all, _ := Sessions(); len(all) != 3 {
+	if all, _ := All(); len(all) != 3 {
 		t.Fatalf("resaving must not fork a file: %d sessions", len(all))
 	}
 }

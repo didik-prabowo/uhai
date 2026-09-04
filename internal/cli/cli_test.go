@@ -19,6 +19,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/provider/anthropic"
+	"github.com/didik-prabowo/uhai/internal/session"
 	"github.com/didik-prabowo/uhai/internal/task"
 )
 
@@ -430,7 +431,7 @@ func TestPortedCommands(t *testing.T) {
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
 	}}
 	m.Update(teaDoneMsg{})
-	saved, err := config.LatestSession()
+	saved, err := session.Latest()
 	if err != nil {
 		t.Fatalf("the session must be saved after a turn: %v", err)
 	}
@@ -1302,16 +1303,16 @@ func TestFailedTaskShowsWhatItWrote(t *testing.T) {
 // The id is printed on the way out, which is the moment it is needed — but
 // only when something was actually saved to resume.
 func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
-	session = config.Session{Started: time.Now()}
+	current = session.Session{Started: time.Now()}
 	if got := savedSessionID(); got != "" {
 		t.Fatalf("nothing was said, so there is nothing to resume: %q", got)
 	}
 
-	session.Messages = []provider.Message{{
+	current.Messages = []provider.Message{{
 		Role:    provider.RoleUser,
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
 	}}
-	if got := savedSessionID(); got != session.Started.Format("2006-01-02T15-04-05") {
+	if got := savedSessionID(); got != current.Started.Format("2006-01-02T15-04-05") {
 		t.Fatalf("the id is the moment it started, got %q", got)
 	}
 }

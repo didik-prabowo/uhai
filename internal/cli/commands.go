@@ -14,6 +14,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/session"
 	"github.com/didik-prabowo/uhai/internal/task"
 	"github.com/didik-prabowo/uhai/internal/tools"
 )
@@ -99,33 +100,33 @@ func providerItems() []command {
 	return items
 }
 
-// session is this conversation on disk, rewritten after every turn.
-var session = config.Session{Started: time.Now()}
+// current is this conversation on disk, rewritten after every turn.
+var current = session.Session{Started: time.Now()}
 
 // savedSessionID is this conversation's id, "" when nothing was said and so
 // nothing was written.
 func savedSessionID() string {
-	if len(session.Messages) == 0 {
+	if len(current.Messages) == 0 {
 		return ""
 	}
-	return session.Identity()
+	return current.Identity()
 }
 
 // ContinueSession makes the saves go back into a conversation that was
 // resumed, keeping its id and its start time. Without it every -resume forks
 // a fresh copy of the history and the id nobody could hold on to.
-func ContinueSession(s config.Session) {
-	session.ID, session.Started, session.Model = s.ID, s.Started, s.Model
+func ContinueSession(s session.Session) {
+	current.ID, current.Started, current.Model = s.ID, s.Started, s.Model
 }
 
 // saveSession writes the conversation, so both front ends keep it recoverable
 // the same way.
 func saveSession(a *agent.Agent) error {
-	session.Messages = a.History
+	current.Messages = a.History
 	if a.Provider != nil {
-		session.Model = a.Provider.Name()
+		current.Model = a.Provider.Name()
 	}
-	return session.Save()
+	return current.Save()
 }
 
 // reported remembers which finished tasks the user has already been told

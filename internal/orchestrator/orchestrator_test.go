@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
-	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/session"
 )
 
 // A conversation is resumed with the model it was held with. Carrying on with
@@ -24,7 +24,7 @@ func TestResumeBringsBackTheModel(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("GROQ_API_KEY", "k")
 
-	saved := config.Session{
+	saved := session.Session{
 		Started: time.Now(),
 		Model:   "groq/openai/gpt-oss-120b",
 		Messages: []provider.Message{{
@@ -74,9 +74,9 @@ func TestResumeByID(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	msg := provider.Message{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "older"}}}
-	older := config.Session{Started: time.Now().Add(-2 * time.Hour), Messages: []provider.Message{msg}}
-	newer := config.Session{Started: time.Now(), Messages: []provider.Message{msg}}
-	for _, s := range []config.Session{older, newer} {
+	older := session.Session{Started: time.Now().Add(-2 * time.Hour), Messages: []provider.Message{msg}}
+	newer := session.Session{Started: time.Now(), Messages: []provider.Message{msg}}
+	for _, s := range []session.Session{older, newer} {
 		if err := s.Save(); err != nil {
 			t.Fatal(err)
 		}
@@ -184,9 +184,9 @@ func TestListSessionsIsReadableEnoughToCopyFrom(t *testing.T) {
 	msg := func(text string) []provider.Message {
 		return []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
 	}
-	older := config.Session{Started: time.Now().Add(-2 * time.Hour), Model: "groq/llama-3.3-70b-versatile", Messages: msg("yang lama")}
-	newer := config.Session{Started: time.Now(), Model: "zai/glm-4.6", Messages: msg("yang baru")}
-	for _, s := range []config.Session{older, newer} {
+	older := session.Session{Started: time.Now().Add(-2 * time.Hour), Model: "groq/llama-3.3-70b-versatile", Messages: msg("yang lama")}
+	newer := session.Session{Started: time.Now(), Model: "zai/glm-4.6", Messages: msg("yang baru")}
+	for _, s := range []session.Session{older, newer} {
 		if err := s.Save(); err != nil {
 			t.Fatal(err)
 		}
