@@ -125,3 +125,63 @@ func TestSessionsAreFoundByID(t *testing.T) {
 		t.Fatalf("resaving must not fork a file: %d sessions", len(all))
 	}
 }
+
+// A saved conversation is provider.Message and provider.ContentBlock written
+// straight to disk, which quietly made those two the file format. This pins
+// the names: rename a field in provider — a change that touches no storage
+// code and looks entirely safe — and this fails, instead of every saved
+// conversation coming back with its tool calls empty and nothing saying so.
+func TestSavedSessionKeepsItsWireNames(t *testing.T) {
+	dir := t.TempDir()
+	st := New(dir)
+
+	s := session.New()
+	s.Model = "groq/a"
+	s.Messages = []provider.Message{
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{
+			{Type: provider.BlockText, Text: "jalankan testnya"},
+		}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{
+			{Type: provider.BlockToolUse, ToolUseID: "call_1", ToolName: "run_bash",
+				ToolInput: []byte(`{"command":"go test ./..."}`)},
+		}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{
+			{Type: provider.BlockToolResult, ToolResultForID: "call_1",
+				ToolResultText: "ok", ToolResultError: false},
+		}},
+	}
+	if err := st.Save(s); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, s.ID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		`"Role"`, `"Content"`, `"Type"`, `"Text"`,
+		`"ToolUseID"`, `"ToolName"`, `"ToolInput"`,
+		`"ToolResultForID"`, `"ToolResultText"`, `"ToolResultError"`,
+	} {
+		if !strings.Contains(string(raw), key) {
+			t.Errorf("the file format lost %s — a rename in provider changed what is on disk:\n%s", key, raw)
+		}
+	}
+
+	// The half that matters: a file written before this test existed still
+	// comes back whole, tool call and all.
+	back, err := st.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Messages) != 3 {
+		t.Fatalf("three messages went in, %d came back", len(back.Messages))
+	}
+	call := back.Messages[1].Content[0]
+	if call.ToolUseID != "call_1" || call.ToolName != "run_bash" || string(call.ToolInput) != `{"command":"go test ./..."}` {
+		t.Errorf("the tool call did not survive the round trip: %+v", call)
+	}
+	if back.Messages[2].Content[0].ToolResultForID != "call_1" {
+		t.Errorf("the result lost the call it answers: %+v", back.Messages[2].Content[0])
+	}
+}

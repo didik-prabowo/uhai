@@ -27,27 +27,41 @@ const (
 
 // ContentBlock is a vendor-neutral piece of content: plain text, a request
 // to call a tool, or the result of running one.
+//
+// The json tags spell the names out because these types are written to disk: a
+// saved session is a Session whose Messages are these blocks, so without tags
+// the file format was whatever the fields happened to be called. Renaming
+// ToolUseID — a change that touches no storage code and reads as entirely safe
+// — would have brought every saved conversation back with its tool calls
+// silently empty. The name on disk is stated now, and a rename leaves it be.
+//
+// They are capitalised because that is what encoding/json already wrote, and
+// the sessions on disk are worth more than tidy-looking tags. Moving to
+// snake_case is a migration, not a tidy-up: Go matches keys case-insensitively,
+// so "Role" would still find `json:"role"` — but "ToolUseID" would never find
+// `json:"tool_use_id"`, and that is exactly the field whose loss says nothing.
 type ContentBlock struct {
-	Type BlockType
+	Type BlockType `json:"Type"`
 
 	// Set when Type == BlockText
-	Text string
+	Text string `json:"Text"`
 
 	// Set when Type == BlockToolUse
-	ToolUseID string
-	ToolName  string
-	ToolInput json.RawMessage
+	ToolUseID string          `json:"ToolUseID"`
+	ToolName  string          `json:"ToolName"`
+	ToolInput json.RawMessage `json:"ToolInput"`
 
 	// Set when Type == BlockToolResult
-	ToolResultForID string
-	ToolResultText  string
-	ToolResultError bool
+	ToolResultForID string `json:"ToolResultForID"`
+	ToolResultText  string `json:"ToolResultText"`
+	ToolResultError bool   `json:"ToolResultError"`
 }
 
-// Message is one turn in the conversation.
+// Message is one turn in the conversation. Tagged for the same reason as
+// ContentBlock: it is the other half of what a saved session is made of.
 type Message struct {
-	Role    Role
-	Content []ContentBlock
+	Role    Role           `json:"Role"`
+	Content []ContentBlock `json:"Content"`
 }
 
 // ToolSpec describes a tool the model may call. JSONSchema uses standard

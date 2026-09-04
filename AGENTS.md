@@ -261,6 +261,16 @@ cannot be used to read a file elsewhere. Sessions saved before ids existed
 still resume: the id comes from the file name, and `updated` falls back to
 `started`.
 
+The neutral types carry `json` tags spelling their own field names —
+`provider.Message` and `provider.ContentBlock` are what a session file is made
+of, so those two are the file format whether or not anyone meant them to be.
+Untagged, renaming `ToolUseID` would have changed what is written without
+touching a line of storage code, and every saved conversation would have come
+back with its tool calls empty and nothing saying why. The tags are capitalised
+because that is what was already on disk; snake_case is a migration rather than
+a tidy-up, since Go's case-insensitive key matching rescues `Role` but never
+`ToolUseID`. `TestSavedSessionKeepsItsWireNames` fails if the format moves.
+
 ### Credentials
 
 `auth.json` maps a provider to a *map* of fields rather than to a key, because
