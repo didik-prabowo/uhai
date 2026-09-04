@@ -1,6 +1,6 @@
-# ouhai
+# uhai
 
-A CLI coding agent. `cmd/ouhai` is the entry point and holds nothing but flag
+A CLI coding agent. `cmd/uhai` is the entry point and holds nothing but flag
 parsing; everything else lives in `internal/`.
 
 These are the things the code cannot tell you: what was decided, what was tried
@@ -14,7 +14,7 @@ naming, how a function works — read from the source, which is commented for it
 The `CGO_ENABLED=0` is not optional here: the sandboxed linker cannot build cgo
 test binaries, and the failure it produces says nothing about your change.
 
-`go build -o ouhai ./cmd/ouhai` after touching the UI, then restart the running
+`go build -o uhai ./cmd/uhai` after touching the UI, then restart the running
 session — a session started before the build behaves like the build it was
 started with. The welcome box prints the binary's build time so that mistake
 takes one glance to spot.
@@ -145,7 +145,7 @@ silently, since the rules can only judge what they can read.
 
 Two ways to stop being asked, and they are deliberately different:
 
-- `permissions` in the project's `.ouhai/settings.json`, read fresh each time,
+- `permissions` in the project's `.uhai/settings.json`, read fresh each time,
   so editing it takes effect at once.
 - `a` at the prompt allows that tool for the rest of the session only. It is
   in memory, so nothing a session waves through outlives it.
@@ -156,7 +156,7 @@ carries its own lock.
 
 ## Sessions
 
-One conversation, one file under `~/.ouhai/sessions`, rewritten after every
+One conversation, one file under `~/.uhai/sessions`, rewritten after every
 turn. The name is the id, and the id is the moment it started — it sorts as a
 date and reads as one, so a listing needs no index and `-resume <id>` takes any
 prefix that names only one.
@@ -196,7 +196,7 @@ already had a constant for.
 `config/models.go` answers four questions about a model, and each is answered
 because something asks it — a fifth, whether the model reads images, was
 removed once it turned out nothing did: the picker was printing "images" beside
-models ouhai has no way to send an image to, which is worse than saying nothing: how much history fits before `agent` compacts, how
+models uhai has no way to send an image to, which is worse than saying nothing: how much history fits before `agent` compacts, how
 long an answer may be (the Messages API refuses to guess), whether tools may be
 sent at all, and what the turn costs — shown in the model picker and in the
 status row while the model works.
@@ -228,12 +228,12 @@ Two things keep the note from crying wolf, and both were bugs first:
 
 - **A prefix counts as listed.** An alias is never in the list itself, only
   the dated id it points at, so the exact match warned about
-  `anthropic/claude-sonnet-5` — the name ouhai recommends and ships as its own
+  `anthropic/claude-sonnet-5` — the name uhai recommends and ships as its own
   default. A note that fires on the happy path is a note nobody reads.
 - **`Models()` drops only what cannot hold a conversation.** It is two things
   at once — the picker's offer and what this check compares against — so
   anything filtered out is reported as a model the provider never heard of.
-  Lacking tool support is not such a reason (ouhai runs those with `UseTools`
+  Lacking tool support is not such a reason (uhai runs those with `UseTools`
   off), and neither is a small window or Google's `deprecated`, which is set
   months before a model stops answering.
 
@@ -290,7 +290,7 @@ that away and saying only "failed" wastes the work twice, once in tokens and
 once in the asking again.
 
 What `/check` runs is the project's own business: `check` in its
-`.ouhai/settings.json`, or a guess from the files present (go.mod, package.json,
+`.uhai/settings.json`, or a guess from the files present (go.mod, package.json,
 Makefile) when it says nothing.
 
 ## Drawing
@@ -377,12 +377,12 @@ is free, changing it needs a human.
 
 ## Project notes and skills
 
-`OUHAI.md`, `AGENTS.md` or `CLAUDE.md` — first one found, each checked in a
+`UHAI.md`, `AGENTS.md` or `CLAUDE.md` — first one found, each checked in a
 `.local` variant first — is read into the system prompt every session, with
 `@path` lines replaced by the file they name, three deep and cycle-guarded. The
 `.local` files and the `@` imports are conventions rather than anything the
 AGENTS.md standard defines; they are supported because projects use them. Skills are the other half: a folder
-per skill with a `SKILL.md` under `.ouhai/skills/` or `.claude/skills/`, of
+per skill with a `SKILL.md` under `.uhai/skills/` or `.claude/skills/`, of
 which only the name and description reach the prompt. The body is a path the
 model reads when the work calls for it, which is what keeps a project's fifty
 pages of procedure from costing anything on a turn that does not need them.
@@ -396,7 +396,7 @@ Each of these was considered, argued for, and left out. The trigger matters
 more than the verdict: build it when the trigger fires, not because the list
 looks short.
 
-- **Typed agents** (`.ouhai/agents/*.md`: a name, a prompt, its own tools and
+- **Typed agents** (`.uhai/agents/*.md`: a name, a prompt, its own tools and
   model). Buys permission per kind — a reviewer with no `edit_file` cannot
   write, as a fact rather than an instruction — and a cheap model for cheap
   work. Costs a frontmatter parser, definition loading, tool-name validation

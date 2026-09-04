@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // events writes chunks the way the API does with alt=sse: one JSON object per

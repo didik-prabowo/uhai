@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
-	"github.com/didik-prabowo/ouhai/internal/task"
-	"github.com/didik-prabowo/ouhai/internal/tools"
+	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
-const DefaultSystemPrompt = `You are ouhai, a CLI coding agent running in the user's terminal.
+const DefaultSystemPrompt = `You are uhai, a CLI coding agent running in the user's terminal.
 You help with software engineering tasks.
 
 # Harness

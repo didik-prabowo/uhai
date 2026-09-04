@@ -1,5 +1,5 @@
 // Package gemini is the client for Google's generateContent API — the third
-// wire format ouhai speaks, and the one that bends the neutral types furthest.
+// wire format uhai speaks, and the one that bends the neutral types furthest.
 //
 // Three differences worth knowing before reading this. The assistant is called
 // "model" here. A tool call and its result are parts of a message rather than
@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // headerTimeout bounds the wait for the first byte only. A whole-request

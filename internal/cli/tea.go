@@ -17,9 +17,9 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
-	"github.com/didik-prabowo/ouhai/internal/config"
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 const maxInputLines = 5
@@ -149,7 +149,7 @@ func (m *teaModel) render(e chatEntry) string {
 		return m.rendererText(e.text)
 	case entryBanner:
 		return strings.Join(boxLines(m.cols(),
-			accentAt+"✻"+reset+" Welcome to ouhai!  "+dim+builtAt()+reset,
+			accentAt+"✻"+reset+" Welcome to uhai!  "+dim+builtAt()+reset,
 			dim+"provider:"+reset+" "+e.text,
 			dim+"cwd:"+reset+" "+workingDir(),
 			dim+"type / for commands, /exit to quit"+reset,
@@ -189,7 +189,7 @@ type teaConfirmMsg struct{ request teaConfirm }
 
 func newTeaModel(a *agent.Agent, startupErr error) *teaModel {
 	input := textarea.New()
-	input.Placeholder = "Ask ouhai anything..."
+	input.Placeholder = "Ask uhai anything..."
 	input.Prompt = "❯ "
 	input.CharLimit = 0
 	input.ShowLineNumbers = false
@@ -1123,14 +1123,14 @@ func (m *teaModel) submit() tea.Cmd {
   in the back    /bg runs a prompt read-only, /check runs the tests; both
                  report into the chat and into the model's next prompt
   allow it once  a at the question allows that tool for this session only;
-                 .ouhai/settings.json "permissions" makes it permanent
+                 .uhai/settings.json "permissions" makes it permanent
 
 ` + teaTitle.Render("outside this session") + `
-  ouhai -p "..."      one answer and exit — and a pipe works: cat q | ouhai
-  ouhai -sessions     the conversations saved so far
-  ouhai -resume [id]  carry on with one, on the model it was held with
+  uhai -p "..."      one answer and exit — and a pipe works: cat q | uhai
+  uhai -sessions     the conversations saved so far
+  uhai -resume [id]  carry on with one, on the model it was held with
   AGENTS.md           this project's own instructions, read every prompt —
-                      CLAUDE.md and OUHAI.md are read the same way
+                      CLAUDE.md and UHAI.md are read the same way
   .claude/skills/     instructions for particular jobs, opened when needed`)
 		return nil
 	case strings.HasPrefix(value, "/model"):
@@ -1238,7 +1238,7 @@ func unlistedNote(setting string, models []string) string {
 		// A prefix counts as listed. An alias is never in the list itself,
 		// only the dated id it points at: Anthropic answers /models with
 		// claude-sonnet-5-20260115 and never with claude-sonnet-5, which is
-		// the name ouhai recommends and ships as its own default.
+		// the name uhai recommends and ships as its own default.
 		if len(listed) >= len(want) && strings.EqualFold(listed[:len(want)], want) {
 			return ""
 		}
@@ -1258,7 +1258,7 @@ func (m *teaModel) confirmChoices() []string {
 	return []string{
 		"Yes",
 		"Yes, and don't ask again for " + m.confirm.name + " this session",
-		"No, and tell ouhai what to do instead",
+		"No, and tell uhai what to do instead",
 	}
 }
 
@@ -1304,7 +1304,7 @@ func (m *teaModel) answerConfirm() tea.Cmd {
 
 func (m *teaModel) View() string {
 	if m.width == 0 {
-		return "starting ouhai..."
+		return "starting uhai..."
 	}
 	m.resizeInput()
 	status := m.status

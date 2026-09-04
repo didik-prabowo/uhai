@@ -15,8 +15,8 @@ second implementation proved the first one had the seams in the right places.
 
 The skeleton, and the loop that makes it an agent rather than a chat window.
 
-- `cmd/ouhai` parses flags and nothing else; `internal/orchestrator` is the one
-  place that says which parts make up a running ouhai.
+- `cmd/uhai` parses flags and nothing else; `internal/orchestrator` is the one
+  place that says which parts make up a running uhai.
 - Two front ends behind one set of commands: a bubbletea program for a
   terminal, a prompt-per-line for a pipe.
 - The agent loop — send, read tool calls, run them, send the results back —
@@ -25,7 +25,7 @@ The skeleton, and the loop that makes it an agent rather than a chat window.
   `run_bash`.
 - `internal/task`: a registry, two jobs at once, the rest queued; `/bg`,
   `/check`, `spawn_task` and `/stop` all reaching it through `Registry.Run`.
-- One conversation per file under `~/.ouhai/sessions`, named by an id that is
+- One conversation per file under `~/.uhai/sessions`, named by an id that is
   the moment it started. `-sessions` lists them; `-resume <id>` takes any
   prefix that names only one, and brings back the model the conversation was
   held with rather than whatever `settings.json` says today.
@@ -103,7 +103,7 @@ order. Each is small; the point is that *use* picks which.
   library's docs ends the trail. *Build it when a session is regularly
   interrupted to paste a page in.*
 - **Images.** No tool takes one, no client sends one, and the model picker no
-  longer claims otherwise — it advertised "images" on models ouhai had no way
+  longer claims otherwise — it advertised "images" on models uhai had no way
   to show an image to. A screenshot of a broken layout is the case that would
   earn it. *Build it when a bug is being described in words that a picture
   would have settled.*
@@ -117,7 +117,7 @@ order. Each is small; the point is that *use* picks which.
 ## Phase 6 — Work that outlives the process *(triggered, not scheduled)*
 
 A conversation survives being closed; the work inside it does not. Killing
-ouhai kills the tasks with it — `/stop` takes the whole process group on
+uhai kills the tasks with it — `/stop` takes the whole process group on
 purpose — and nothing about a task is on disk. That is a shape, not an
 oversight: a task here is a side quest that reads ten files so the main
 conversation pays for one report, and a side quest whose parent is gone has
@@ -145,7 +145,7 @@ comes back, the model comes back, and re-asking is one arrow key.
 
 ## Phase 7 — Splitting the work *(triggered, not scheduled)*
 
-- **Typed agents** (`.ouhai/agents/*.md`: a name, a prompt, its own tools and
+- **Typed agents** (`.uhai/agents/*.md`: a name, a prompt, its own tools and
   model). Buys permission per kind — a reviewer with no `edit_file` cannot
   write, as a fact rather than an instruction — and a cheap model for cheap
   work. Costs a frontmatter parser, definition loading, tool-name validation
@@ -160,7 +160,7 @@ comes back, the model comes back, and re-asking is one arrow key.
 
 ## Phase 8 — Tools that are not ours *(not started)*
 
-MCP would let a project hand ouhai its own tools — a database, an issue
+MCP would let a project hand uhai its own tools — a database, an issue
 tracker — without any of them being written here. It is the one item on this
 page that changes the shape of `internal/tools` rather than adding to it: a
 tool list that is discovered at runtime, and a permission rule for a name

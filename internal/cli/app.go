@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/agent"
 )
 
 // Run takes over the terminal and blocks until the user quits or stdin ends.
@@ -23,13 +23,13 @@ func Run(a *agent.Agent, startupErr error) {
 		return
 	}
 	if err := runTea(a, startupErr); err != nil {
-		fmt.Fprintln(os.Stderr, "ouhai:", err)
+		fmt.Fprintln(os.Stderr, "uhai:", err)
 	}
 	// The id is printed on the way out because that is the moment it is
 	// needed and the last moment it is free: hunting for it later means
 	// -sessions and reading timestamps.
 	if id := savedSessionID(); id != "" {
-		fmt.Printf("\nResume this conversation with:\n  ouhai -resume %s\n", id)
+		fmt.Printf("\nResume this conversation with:\n  uhai -resume %s\n", id)
 	}
 }
 

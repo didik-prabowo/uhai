@@ -17,7 +17,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/didik-prabowo/ouhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/config"
 )
 
 // diffContext is how many unchanged lines are shown around a change: enough to

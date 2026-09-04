@@ -15,11 +15,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
-	"github.com/didik-prabowo/ouhai/internal/config"
-	"github.com/didik-prabowo/ouhai/internal/provider"
-	"github.com/didik-prabowo/ouhai/internal/provider/anthropic"
-	"github.com/didik-prabowo/ouhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider/anthropic"
+	"github.com/didik-prabowo/uhai/internal/task"
 )
 
 // waitTries is how long a test waits for a goroutine to get somewhere, at 5ms
@@ -727,7 +727,7 @@ func TestBackgroundTaskInheritsTheModelsLimits(t *testing.T) {
 func TestConnectOffersToReplaceASavedKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	for _, env := range []string{"GROQ_API_KEY", "OUHAI_API_KEY", "OUHAI_MODEL"} {
+	for _, env := range []string{"GROQ_API_KEY", "UHAI_API_KEY", "UHAI_MODEL"} {
 		t.Setenv(env, "")
 	}
 	if err := config.Save("groq", config.Creds{config.FieldKey: "kunci-lama-yang-salah"}); err != nil {
@@ -783,7 +783,7 @@ func TestConnectWarnsWhenTheEnvironmentWins(t *testing.T) {
 // Nobody remembers a console URL, and leaving to look it up loses the prompt.
 func TestKeyEntryShowsWhereToGetOne(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	for _, env := range []string{"ANTHROPIC_API_KEY", "OUHAI_API_KEY", "OUHAI_MODEL"} {
+	for _, env := range []string{"ANTHROPIC_API_KEY", "UHAI_API_KEY", "UHAI_MODEL"} {
 		t.Setenv(env, "")
 	}
 
@@ -814,11 +814,11 @@ func TestKeyEntryShowsWhereToGetOne(t *testing.T) {
 func TestCommandPatternsDecideBeforeAnyoneIsAsked(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, ".ouhai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rules := `{"permissions":{"allow":["Bash(git:*)"],"deny":["Bash(git push:*)"]}}`
-	if err := os.WriteFile(filepath.Join(home, ".ouhai", "settings.json"), []byte(rules), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1241,7 +1241,7 @@ func TestCommandMenuKeepsTheSelectionOnScreen(t *testing.T) {
 // the key — and connects anyway when there is nothing to give.
 func TestConnectAsksForTheWorkspaceAfterTheKey(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OUHAI_API_KEY", "OUHAI_MODEL"} {
+	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "UHAI_API_KEY", "UHAI_MODEL"} {
 		t.Setenv(env, "")
 	}
 
@@ -1460,7 +1460,7 @@ func TestUnlistedModelIsANoteNotARefusal(t *testing.T) {
 	}
 
 	// An alias is never in the list itself, only the dated id it points at.
-	// Anthropic answers /models that way, and claude-sonnet-5 is what ouhai
+	// Anthropic answers /models that way, and claude-sonnet-5 is what uhai
 	// ships as its own default: a note there would fire on the happy path.
 	dated := []string{"claude-sonnet-5-20260115", "claude-opus-5-20260115"}
 	if note := unlistedNote("anthropic/claude-sonnet-5", dated); note != "" {

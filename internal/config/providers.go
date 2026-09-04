@@ -2,7 +2,7 @@ package config
 
 import "sort"
 
-// providerInfo is everything ouhai knows about one provider. Keeping it in one
+// providerInfo is everything uhai knows about one provider. Keeping it in one
 // struct means adding a provider is a single entry in the table below, instead
 // of remembering to edit a parallel map for the endpoint, the default model,
 // the key page and the price.

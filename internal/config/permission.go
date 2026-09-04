@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/didik-prabowo/ouhai/internal/tools"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // The three answers, as named in settings.json.
@@ -34,7 +34,7 @@ type Permissions struct {
 }
 
 // toolNames maps what a rule may call a tool to what the code calls it. Both
-// spellings are accepted: the familiar one from Claude Code, and ouhai's own.
+// spellings are accepted: the familiar one from Claude Code, and uhai's own.
 var toolNames = map[string]string{
 	"bash": "run_bash", "run_bash": "run_bash",
 	"read": "read_file", "read_file": "read_file",

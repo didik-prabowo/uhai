@@ -1,7 +1,7 @@
 # Tools
 
 Tools are what let the model do something rather than only say something: read
-your files, search them, change them, run a command. ouhai has six, and the
+your files, search them, change them, run a command. uhai has six, and the
 model is given exactly that list — there is no hidden capability, and no
 network access beyond what a command you approved can reach.
 

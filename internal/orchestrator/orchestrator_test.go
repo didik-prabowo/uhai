@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
-	"github.com/didik-prabowo/ouhai/internal/config"
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // A conversation is resumed with the model it was held with. Carrying on with

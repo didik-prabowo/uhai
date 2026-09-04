@@ -3,17 +3,17 @@
 # binaries in a sandbox, and says nothing useful about why.
 
 GO ?= go
-BINARY := ouhai
+BINARY := uhai
 ENV := CGO_ENABLED=0
 SOURCES := $(shell git ls-files '*.go')
 
 .PHONY: build install run test race vet fmt check clean
 
 build: ## the binary, here
-	$(ENV) $(GO) build -o $(BINARY) ./cmd/ouhai
+	$(ENV) $(GO) build -o $(BINARY) ./cmd/uhai
 
 install: ## the binary, onto your PATH
-	$(ENV) $(GO) install ./cmd/ouhai
+	$(ENV) $(GO) install ./cmd/uhai
 
 run: build ## build it and open it
 	./$(BINARY)

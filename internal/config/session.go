@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
-// A session is one conversation, written to ~/.ouhai/sessions after every turn
+// A session is one conversation, written to ~/.uhai/sessions after every turn
 // so a closed terminal — or a crash — does not take the work with it.
 //
 // ponytail: whole history rewritten each turn, one file per session. Fine for
@@ -38,7 +38,7 @@ func sessionsDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".ouhai", "sessions"), nil
+	return filepath.Join(home, ".uhai", "sessions"), nil
 }
 
 // Save writes the session under its id, which sorts as a date, so the newest

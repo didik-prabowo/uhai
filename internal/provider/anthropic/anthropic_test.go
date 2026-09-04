@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // events writes one server-sent event per line pair, the way the Messages API

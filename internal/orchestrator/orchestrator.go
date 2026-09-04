@@ -1,5 +1,5 @@
-// Package orchestrator is ouhai's composition root: the one place that says
-// which parts make up a running ouhai and in what order they are built.
+// Package orchestrator is uhai's composition root: the one place that says
+// which parts make up a running uhai and in what order they are built.
 //
 // It exists so the pieces stay independent of each other — the agent does not
 // know where its provider came from, the terminal does not know how the agent
@@ -13,10 +13,10 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
-	"github.com/didik-prabowo/ouhai/internal/cli"
-	"github.com/didik-prabowo/ouhai/internal/config"
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/cli"
+	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // Run assembles an interactive session and hands it to the terminal front end.
@@ -26,9 +26,9 @@ func Run(resume bool, id string) {
 	a, err := newAgent()
 	if resume {
 		if note, rerr := restore(a, id); rerr != nil {
-			fmt.Fprintln(os.Stderr, "ouhai:", rerr)
+			fmt.Fprintln(os.Stderr, "uhai:", rerr)
 		} else if note != "" {
-			fmt.Fprintln(os.Stderr, "ouhai:", note)
+			fmt.Fprintln(os.Stderr, "uhai:", note)
 		}
 	}
 	cli.Run(a, err)
@@ -126,7 +126,7 @@ func newAgent() (*agent.Agent, error) {
 	}
 	a.AllowTool = func(name string) bool { return !config.ToolDenied(name) }
 	if notes := config.ProjectNotes(); notes != "" {
-		a.System += "\n\n# Project instructions\nThese come from OUHAI.md, AGENTS.md or CLAUDE.md in the working directory. Follow them.\n\n" + notes
+		a.System += "\n\n# Project instructions\nThese come from UHAI.md, AGENTS.md or CLAUDE.md in the working directory. Follow them.\n\n" + notes
 	}
 	// Only the names travel with every prompt; the instructions themselves are
 	// a file to open when the work turns out to be that work.

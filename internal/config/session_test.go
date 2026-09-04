@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 func TestSessionRoundTrip(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	}
 
 	// A session saved before ids existed: no id, no updated.
-	old := filepath.Join(dir, ".ouhai", "sessions", "2026-08-30T09-00-00.json")
+	old := filepath.Join(dir, ".uhai", "sessions", "2026-08-30T09-00-00.json")
 	if err := os.WriteFile(old, []byte(`{"started":"2026-08-30T09:00:00Z","model":"groq/c","messages":[{"role":"user","content":[{"type":"text","text":"ancient"}]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}

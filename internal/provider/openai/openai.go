@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // headerTimeout bounds the wait for the first byte only. A whole-request
@@ -271,7 +271,7 @@ func (c *Client) Models() ([]string, error) {
 		// Only what cannot hold a conversation is dropped, because this list
 		// is also what /model checks a typed name against: a model filtered
 		// out here is reported as one the provider never heard of. Lacking
-		// tools is not such a reason — ouhai runs those with UseTools off —
+		// tools is not such a reason — uhai runs those with UseTools off —
 		// and neither is a small window, which only compacts sooner.
 		//
 		// Older OpenAI-compatible endpoints may omit modality metadata, so

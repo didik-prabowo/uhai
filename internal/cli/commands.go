@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
-	"github.com/didik-prabowo/ouhai/internal/config"
-	"github.com/didik-prabowo/ouhai/internal/provider"
-	"github.com/didik-prabowo/ouhai/internal/task"
-	"github.com/didik-prabowo/ouhai/internal/tools"
+	"github.com/didik-prabowo/uhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // command is one slash command shown in the menu while the user types "/".
@@ -28,7 +28,7 @@ var commands = []command{
 	{"/connect", "connect to a provider (saves the API key)"},
 	{"/help", "show the command list"},
 	{"/clear", "clear the screen"},
-	{"/exit", "quit ouhai"},
+	{"/exit", "quit uhai"},
 	{"/model", "select a model for the provider"},
 	{"/compact", "summarize the history to free up context"},
 	{"/tasks", "list tasks, or /tasks t1 to read one's report"},
@@ -47,11 +47,11 @@ var commands = []command{
 func pipeAnswer(prompt string) string {
 	name := strings.Fields(prompt)[0]
 	if name != "/help" {
-		return "ouhai: " + name + " needs the interactive prompt — run ouhai in a terminal"
+		return "uhai: " + name + " needs the interactive prompt — run uhai in a terminal"
 	}
 
 	var b strings.Builder
-	b.WriteString("ouhai reads one prompt per line here and answers on stdout.\n")
+	b.WriteString("uhai reads one prompt per line here and answers on stdout.\n")
 	for _, c := range commands {
 		fmt.Fprintf(&b, "  %-9s %s\n", c.name, c.desc)
 	}

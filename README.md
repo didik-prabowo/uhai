@@ -1,4 +1,4 @@
-# ouhai
+# uhai
 
 A coding agent that lives in the terminal. It reads and writes files, runs
 commands, and asks before doing anything it cannot take back.
@@ -10,17 +10,17 @@ lines of Go, small enough to read in an afternoon.
 ## Getting started
 
 ```sh
-go install ./cmd/ouhai   # onto your PATH, to use anywhere
-ouhai
+go install ./cmd/uhai   # onto your PATH, to use anywhere
+uhai
 ```
 
-Or `go build -o ouhai ./cmd/ouhai` and run `./ouhai`, if you would rather keep
+Or `go build -o uhai ./cmd/uhai` and run `./uhai`, if you would rather keep
 it here. Either way the binary is a copy: after changing the source, install or
 build again. The welcome box prints the time the running binary was built,
 which is the quickest way to catch having forgotten.
 
 It opens without a provider, so the first thing to type is `/connect`, which
-asks for a key and remembers it in `~/.ouhai/auth.json`. If an API key is
+asks for a key and remembers it in `~/.uhai/auth.json`. If an API key is
 already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
 used as it is, and there is nothing to connect.
@@ -47,15 +47,15 @@ rather than letting you wonder why nothing changed.
 For a script or a pipe there is no UI:
 
 ```sh
-ouhai -p "what does cmd/ouhai do?"          # answer one prompt and exit
-ouhai -p "run the tests and fix the build" -y   # ...and let it write and run things
-echo "sebutkan dua warna" | ouhai            # a prompt per line
-ouhai -resume                                # carry on from the last conversation
-ouhai -sessions                              # what can be carried on
-ouhai -resume 2026-09-03T14-05             # ...carry on with that one
+uhai -p "what does cmd/uhai do?"          # answer one prompt and exit
+uhai -p "run the tests and fix the build" -y   # ...and let it write and run things
+echo "sebutkan dua warna" | uhai            # a prompt per line
+uhai -resume                                # carry on from the last conversation
+uhai -sessions                              # what can be carried on
+uhai -resume 2026-09-03T14-05             # ...carry on with that one
 ```
 
-On the way out ouhai prints the line that brings the conversation back, which
+On the way out uhai prints the line that brings the conversation back, which
 is the moment the id is worth having. A resumed conversation comes back with
 the model it was held with, and keeps writing to the same file — its id survives being picked up and put down. Any
 prefix of an id that names only one session is enough to type.
@@ -66,13 +66,13 @@ Run it from the root of whatever you are working on: every tool works relative
 to the working directory, and so does everything it reads about the project.
 
 Credentials and the chosen model are yours, not the project's — they live in
-`~/.ouhai/` and follow you everywhere. A project can override what it needs to
-in a `.ouhai/settings.json` of its own, and state its conventions once in an
-`AGENTS.md` or `OUHAI.md`, which is read at the start of every session.
+`~/.uhai/` and follow you everywhere. A project can override what it needs to
+in a `.uhai/settings.json` of its own, and state its conventions once in an
+`AGENTS.md` or `UHAI.md`, which is read at the start of every session.
 
 ```sh
 cd ~/code/some-project
-ouhai
+uhai
 ```
 
 ## Commands
@@ -102,7 +102,7 @@ ouhai
 
 ## Settings
 
-`~/.ouhai/settings.json` holds what you choose; a `.ouhai/settings.json` beside
+`~/.uhai/settings.json` holds what you choose; a `.uhai/settings.json` beside
 the code holds what the project needs, and wins.
 
 ```json
@@ -123,14 +123,14 @@ the code holds what the project needs, and wins.
 - **permissions** — what each tool may do without asking; see
   [`docs/permissions.md`](docs/permissions.md).
 
-Environment wins over both: `OUHAI_MODEL`, `OUHAI_BASE_URL`, `OUHAI_API_KEY`.
+Environment wins over both: `UHAI_MODEL`, `UHAI_BASE_URL`, `UHAI_API_KEY`.
 
 An Anthropic key that is linked to an identity rather than to one workspace has
 to say which workspace it acts in, so `/connect anthropic` asks for a workspace
 id after the key — press enter to skip it, since an ordinary key carries its
 own. `ANTHROPIC_WORKSPACE_ID` sets it from the environment.
 
-Conversations are written to `~/.ouhai/sessions` after every turn, one file per
+Conversations are written to `~/.uhai/sessions` after every turn, one file per
 session named by its id, which is what `-resume` picks up. `-sessions` lists
 them: id, when it was last touched, the model, how much was said, and the first
 thing that was asked.
@@ -148,7 +148,7 @@ A seventh, `spawn_task`, lets the model hand a self-contained job to a fresh
 agent and get back only its report, which keeps a long search out of the
 conversation.
 
-Each tool is `allow`, `ask` or `deny` in `.ouhai/settings.json`, so a project
+Each tool is `allow`, `ask` or `deny` in `.uhai/settings.json`, so a project
 can hand out less than the default — a session that reads a repository and says
 what is wrong with it, but cannot touch it:
 
@@ -172,7 +172,7 @@ the build.
 
 ## Telling it about your project
 
-A file named `OUHAI.md`, `AGENTS.md` or `CLAUDE.md` in the working directory is
+A file named `UHAI.md`, `AGENTS.md` or `CLAUDE.md` in the working directory is
 read at the start of every session, so a repository can state its own
 conventions once instead of you repeating them. This one has an `AGENTS.md`,
 which doubles as the map of the code.
@@ -184,7 +184,7 @@ personal file can import the shared one. Neither is part of the AGENTS.md
 standard; both are what projects already do.
 
 Longer instructions for particular jobs go in skills — a folder per skill with
-a `SKILL.md` inside, under `.ouhai/skills/` or `.claude/skills/`, which is the
+a `SKILL.md` inside, under `.uhai/skills/` or `.claude/skills/`, which is the
 layout Claude Code uses:
 
 ```

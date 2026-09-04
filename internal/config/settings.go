@@ -9,31 +9,31 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
-	"github.com/didik-prabowo/ouhai/internal/provider/anthropic"
-	"github.com/didik-prabowo/ouhai/internal/provider/gemini"
-	"github.com/didik-prabowo/ouhai/internal/provider/openai"
+	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider/anthropic"
+	"github.com/didik-prabowo/uhai/internal/provider/gemini"
+	"github.com/didik-prabowo/uhai/internal/provider/openai"
 )
 
 // defaultModel is used when both settings.json and the env vars are empty.
-// Groq is free and OpenAI-compatible, so ouhai runs as soon as the user has
+// Groq is free and OpenAI-compatible, so uhai runs as soon as the user has
 // a GROQ_API_KEY.
 const defaultModel = "groq/llama-3.3-70b-versatile"
 
-// SaveModel stores the chosen model in ~/.ouhai/settings.json. /connect uses
+// SaveModel stores the chosen model in ~/.uhai/settings.json. /connect uses
 // it so the provider just connected is the one actually used.
 func SaveModel(model string) error {
 	return save(func(s *Settings) { s.Model = model })
 }
 
-// save edits ~/.ouhai/settings.json in place, leaving the fields it does not
+// save edits ~/.uhai/settings.json in place, leaving the fields it does not
 // touch alone.
 func save(edit func(*Settings)) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(home, ".ouhai", "settings.json")
+	path := filepath.Join(home, ".uhai", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func save(edit func(*Settings)) error {
 // reason — it is the more specific of the two, and it knows how to pull the
 // other in.
 var projectNotesFiles = []string{
-	"OUHAI.local.md", "OUHAI.md",
+	"UHAI.local.md", "UHAI.md",
 	"AGENTS.local.md", "AGENTS.md",
 	"CLAUDE.local.md", "CLAUDE.md",
 }
@@ -147,12 +147,12 @@ type Settings struct {
 	Permissions Permissions `json:"permissions,omitempty"`
 
 	// SkillDirs are extra folders to look for skills in, for a project that
-	// keeps them somewhere other than .ouhai, .claude or .agents.
+	// keeps them somewhere other than .uhai, .claude or .agents.
 	SkillDirs []string `json:"skills,omitempty"`
 
 	// Check is how this project verifies itself, for /check, when guessing
 	// from the files present would get it wrong. Belongs in the project's own
-	// .ouhai/settings.json rather than in the home one.
+	// .uhai/settings.json rather than in the home one.
 	Check string `json:"check,omitempty"`
 }
 
@@ -160,11 +160,11 @@ type Settings struct {
 func settingsFiles() []string {
 	var out []string
 	if home, err := os.UserHomeDir(); err == nil {
-		out = append(out, filepath.Join(home, ".ouhai", "settings.json"))
+		out = append(out, filepath.Join(home, ".uhai", "settings.json"))
 	}
 	return append(out,
-		filepath.Join(".ouhai", "settings.json"),
-		filepath.Join(".ouhai", "settings.local.json"),
+		filepath.Join(".uhai", "settings.json"),
+		filepath.Join(".uhai", "settings.local.json"),
 	)
 }
 
@@ -209,10 +209,10 @@ func LoadSettings() (Settings, error) {
 		s.SkillDirs = append(s.SkillDirs, file.SkillDirs...)
 	}
 
-	if v := strings.TrimSpace(os.Getenv("OUHAI_MODEL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("UHAI_MODEL")); v != "" {
 		s.Model = v
 	}
-	if v := strings.TrimSpace(os.Getenv("OUHAI_BASE_URL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("UHAI_BASE_URL")); v != "" {
 		s.BaseURL = v
 	}
 	if s.Model == "" {
@@ -278,7 +278,7 @@ func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 
 	key := APIKey(name)
 	if key == "" && NeedsKey(name) {
-		env := "OUHAI_API_KEY"
+		env := "UHAI_API_KEY"
 		if v := vendorEnv[name][FieldKey]; v != "" {
 			env = v
 		}

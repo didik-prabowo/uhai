@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 func TestToWireToolResultBecomesOwnMessage(t *testing.T) {

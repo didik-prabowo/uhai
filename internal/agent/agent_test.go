@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
-	"github.com/didik-prabowo/ouhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/task"
 )
 
 // fakeProvider asks for write_file on the first call, then finishes.

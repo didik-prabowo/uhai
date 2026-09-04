@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
-	"github.com/didik-prabowo/ouhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/task"
 )
 
 // spawnSpec is offered to the model on top of the ordinary tools, but never to

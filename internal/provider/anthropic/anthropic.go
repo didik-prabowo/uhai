@@ -1,5 +1,5 @@
 // Package anthropic is the client for Anthropic's Messages API. It is the
-// second wire format ouhai speaks, and the one the neutral types in package
+// second wire format uhai speaks, and the one the neutral types in package
 // provider were shaped around: content arrives as blocks, a tool call is a
 // block like any other, and the result of running it goes back as one too.
 package anthropic
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/didik-prabowo/ouhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // headerTimeout bounds the wait for the first byte only. A whole-request

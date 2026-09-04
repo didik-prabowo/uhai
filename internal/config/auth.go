@@ -53,13 +53,13 @@ var vendorEnv = map[string]map[string]string{
 	},
 }
 
-// AuthPath returns the credentials file location: ~/.ouhai/auth.json.
+// AuthPath returns the credentials file location: ~/.uhai/auth.json.
 func AuthPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".ouhai", "auth.json"), nil
+	return filepath.Join(home, ".uhai", "auth.json"), nil
 }
 
 // LoadAuth reads all of auth.json. A missing file is not an error — it
@@ -87,7 +87,7 @@ func LoadAuth() (map[string]Creds, error) {
 
 // Get returns one provider's credentials, merged from file and env. Lowest
 // to highest precedence: auth.json, the vendor env vars (GROQ_API_KEY,
-// ANTHROPIC_WORKSPACE_ID, ...), then OUHAI_API_KEY. Fields set nowhere are
+// ANTHROPIC_WORKSPACE_ID, ...), then UHAI_API_KEY. Fields set nowhere are
 // simply absent from the result.
 func Get(provider string) Creds {
 	out := Creds{}
@@ -101,7 +101,7 @@ func Get(provider string) Creds {
 			out[field] = v
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv("OUHAI_API_KEY")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("UHAI_API_KEY")); v != "" {
 		out[FieldKey] = v
 	}
 
@@ -130,7 +130,7 @@ func EnvKeyVar(provider string) string { return EnvVar(provider, FieldKey) }
 func EnvVar(provider, field string) string {
 	vars := []string{vendorEnv[provider][field]}
 	if field == FieldKey {
-		vars = append(vars, "OUHAI_API_KEY")
+		vars = append(vars, "UHAI_API_KEY")
 	}
 	for _, env := range vars {
 		if env != "" && strings.TrimSpace(os.Getenv(env)) != "" {

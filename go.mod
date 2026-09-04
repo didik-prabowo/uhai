@@ -1,4 +1,4 @@
-module github.com/didik-prabowo/ouhai
+module github.com/didik-prabowo/uhai
 
 go 1.22.0
 

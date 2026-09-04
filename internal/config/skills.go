@@ -4,7 +4,7 @@
 // opens when the work turns out to be that work.
 //
 // The layout is the one Claude Code uses — a folder per skill with a SKILL.md
-// inside, under .ouhai/skills or .claude/skills — so a project that already
+// inside, under .uhai/skills or .claude/skills — so a project that already
 // has them needs nothing added here.
 package config
 
@@ -18,7 +18,7 @@ import (
 // skillDirs are where skills are looked for, ours first. The other two are
 // what projects already use — a repository should not have to move its files
 // to be read here.
-var skillDirs = []string{".ouhai/skills", ".claude/skills", ".agents/skills"}
+var skillDirs = []string{".uhai/skills", ".claude/skills", ".agents/skills"}
 
 // Skill is one of them, as the model is told about it.
 type Skill struct {

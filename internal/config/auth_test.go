@@ -8,14 +8,14 @@ import (
 
 // isolate gives a test a home of its own and takes the environment out of the
 // picture: settings read the env last and let it win, so a shell that happens
-// to export OUHAI_MODEL would otherwise decide what these tests see. It
+// to export UHAI_MODEL would otherwise decide what these tests see. It
 // returns the home directory, for tests that write files into it.
 func isolate(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	for _, env := range []string{
-		"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OPENAI_API_KEY", "OUHAI_API_KEY",
-		"OUHAI_MODEL", "OUHAI_BASE_URL",
+		"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OPENAI_API_KEY", "UHAI_API_KEY",
+		"UHAI_MODEL", "UHAI_BASE_URL",
 	} {
 		t.Setenv(env, "")
 	}
@@ -98,9 +98,9 @@ func TestEnvBeatsFile(t *testing.T) {
 		t.Fatalf("the vendor env var should win, got %q", got)
 	}
 
-	t.Setenv("OUHAI_API_KEY", "dari-ouhai")
-	if got := APIKey("anthropic"); got != "dari-ouhai" {
-		t.Fatalf("OUHAI_API_KEY should win over everything, got %q", got)
+	t.Setenv("UHAI_API_KEY", "dari-uhai")
+	if got := APIKey("anthropic"); got != "dari-uhai" {
+		t.Fatalf("UHAI_API_KEY should win over everything, got %q", got)
 	}
 }
 
@@ -119,9 +119,9 @@ func TestSaveModelIsReadBack(t *testing.T) {
 	}
 
 	// Env still beats the file.
-	t.Setenv("OUHAI_MODEL", "ollama/qwen2.5-coder")
+	t.Setenv("UHAI_MODEL", "ollama/qwen2.5-coder")
 	if got, _ := LoadSettings(); got.Model != "ollama/qwen2.5-coder" {
-		t.Fatalf("OUHAI_MODEL should win, got %q", got.Model)
+		t.Fatalf("UHAI_MODEL should win, got %q", got.Model)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestSaveModelIsReadBack(t *testing.T) {
 // not erase the first.
 func TestSaveMergesFields(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "OUHAI_API_KEY"} {
+	for _, env := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_WORKSPACE_ID", "UHAI_API_KEY"} {
 		t.Setenv(env, "")
 	}
 

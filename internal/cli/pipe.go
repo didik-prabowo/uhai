@@ -10,12 +10,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/didik-prabowo/ouhai/internal/agent"
+	"github.com/didik-prabowo/uhai/internal/agent"
 )
 
 func runPipe(a *agent.Agent, startupErr error) {
 	if startupErr != nil {
-		fmt.Fprintln(os.Stderr, "ouhai:", startupErr)
+		fmt.Fprintln(os.Stderr, "uhai:", startupErr)
 	}
 
 	// The answer goes to stdout so it can be piped; everything else to stderr,
@@ -45,15 +45,15 @@ func runPipe(a *agent.Agent, startupErr error) {
 			fmt.Fprintln(os.Stderr, pipeAnswer(prompt))
 			continue
 		case a.Provider == nil:
-			fmt.Fprintln(os.Stderr, "ouhai: no provider connected — run ouhai in a terminal and type /connect")
+			fmt.Fprintln(os.Stderr, "uhai: no provider connected — run uhai in a terminal and type /connect")
 			return
 		}
 
 		if err := a.Ask(context.Background(), prompt); err != nil {
-			fmt.Fprintln(os.Stderr, "ouhai:", err)
+			fmt.Fprintln(os.Stderr, "uhai:", err)
 		}
 		if err := saveSession(a); err != nil {
-			fmt.Fprintln(os.Stderr, "ouhai: the session is not being saved:", err)
+			fmt.Fprintln(os.Stderr, "uhai: the session is not being saved:", err)
 			return
 		}
 	}

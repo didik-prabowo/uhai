@@ -11,10 +11,10 @@ import (
 // copies them one by one, so a field nobody adds here is silently ignored.
 func TestLoadSettingsMergesEveryField(t *testing.T) {
 	home := isolate(t)
-	if err := os.MkdirAll(filepath.Join(home, ".ouhai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(home, ".ouhai", "settings.json")
+	file := filepath.Join(home, ".uhai", "settings.json")
 	if err := os.WriteFile(file, []byte(`{"model":"groq/x","baseUrl":"http://localhost:1234/v1"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestLoadSettingsMergesEveryField(t *testing.T) {
 }
 
 // A repository that already writes AGENTS.md for agents in general needs
-// nothing added for ouhai; OUHAI.md wins when a project has something to say
+// nothing added for uhai; UHAI.md wins when a project has something to say
 // to this agent in particular.
 func TestProjectNotesReadsAgentsFile(t *testing.T) {
 	dir := isolate(t)
@@ -59,11 +59,11 @@ func TestProjectNotesReadsAgentsFile(t *testing.T) {
 	if got := ProjectNotes(); got != "for every agent" {
 		t.Fatalf("AGENTS.md must be read, got %q", got)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "OUHAI.md"), []byte("for ouhai\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "UHAI.md"), []byte("for uhai\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := ProjectNotes(); got != "for ouhai" {
-		t.Fatalf("OUHAI.md must win, got %q", got)
+	if got := ProjectNotes(); got != "for uhai" {
+		t.Fatalf("UHAI.md must win, got %q", got)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestModelSummaryAndCost(t *testing.T) {
 // allow, and the longest specifier wins within a list.
 func TestPermissionRules(t *testing.T) {
 	home := isolate(t)
-	if err := os.MkdirAll(filepath.Join(home, ".ouhai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rules := `{"permissions":{
@@ -153,7 +153,7 @@ func TestPermissionRules(t *testing.T) {
 		"ask":   ["Read(*.env)"],
 		"deny":  ["Bash(git push:*)", "Write"]
 	}}`
-	if err := os.WriteFile(filepath.Join(home, ".ouhai", "settings.json"), []byte(rules), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -187,11 +187,11 @@ func TestPermissionRules(t *testing.T) {
 // prefix matching leaves wide open: everything after && rides in for free.
 func TestChainedCommandsAreJudgedInFull(t *testing.T) {
 	home := isolate(t)
-	if err := os.MkdirAll(filepath.Join(home, ".ouhai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rules := `{"permissions":{"allow":["Bash(git:*)","Bash(ls:*)"],"deny":["Bash(rm:*)"]}}`
-	if err := os.WriteFile(filepath.Join(home, ".ouhai", "settings.json"), []byte(rules), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -252,11 +252,11 @@ func TestClaudeStyleProjectIsUnderstood(t *testing.T) {
 		t.Fatalf("skill notes = %q", notes)
 	}
 
-	// OUHAI.md still wins, for a project with something to say to this agent
+	// UHAI.md still wins, for a project with something to say to this agent
 	// in particular.
-	write("OUHAI.md", "# Khusus ouhai\n")
-	if got := ProjectNotes(); got != "# Khusus ouhai" {
-		t.Fatalf("OUHAI.md must win, got %q", got)
+	write("UHAI.md", "# Khusus uhai\n")
+	if got := ProjectNotes(); got != "# Khusus uhai" {
+		t.Fatalf("UHAI.md must win, got %q", got)
 	}
 }
 
@@ -329,10 +329,10 @@ func TestSkillsFromASettingsFolder(t *testing.T) {
 		[]byte("---\nname: planning\ndescription: Rencanakan sebelum menulis kode\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".ouhai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".ouhai", "settings.json"),
+	if err := os.WriteFile(filepath.Join(dir, ".uhai", "settings.json"),
 		[]byte(`{"skills":["local-docs/skills"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -349,15 +349,15 @@ func TestSkillsFromASettingsFolder(t *testing.T) {
 func TestBaseURLPerProvider(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	t.Setenv("OUHAI_BASE_URL", "")
+	t.Setenv("UHAI_BASE_URL", "")
 	t.Setenv("ZAI_API_KEY", "k")
 	t.Setenv("GROQ_API_KEY", "k")
 
-	if err := os.MkdirAll(filepath.Join(dir, ".ouhai"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	settings := `{"model":"zai/glm-4.7","baseUrls":{"zai":"https://api.z.ai/api/coding/paas/v4"}}`
-	if err := os.WriteFile(filepath.Join(dir, ".ouhai", "settings.json"), []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".uhai", "settings.json"), []byte(settings), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

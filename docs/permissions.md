@@ -1,10 +1,10 @@
 # Permissions
 
-ouhai asks before it does anything it cannot take back. Permissions decide what
+uhai asks before it does anything it cannot take back. Permissions decide what
 it asks about — and what it may do, or must never do, without asking.
 
-They go in `.ouhai/settings.json`: the project's, beside the code, or your own
-in `~/.ouhai/`.
+They go in `.uhai/settings.json`: the project's, beside the code, or your own
+in `~/.uhai/`.
 
 ## Actions
 
@@ -37,7 +37,7 @@ act on:
 }
 ```
 
-- `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` — ouhai's own names
+- `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` — uhai's own names
   (`run_bash`, `read_file`, …) are accepted too.
 - A rule with no specifier covers the whole tool: `"deny": ["Write"]` means
   nothing gets written, ever.
@@ -119,7 +119,7 @@ the command, or a diff of the lines that change — and the answers:
 │ Do you want to proceed?                                  │
 │ ❯ 1. Yes                                                 │
 │   2. Yes, and don't ask again for run_bash this session  │
-│   3. No, and tell ouhai what to do instead               │
+│   3. No, and tell uhai what to do instead               │
 ╰──────────────────────────────────────────────────────────╯
 ```
 
@@ -145,5 +145,5 @@ you quit — and it cannot overrule a `deny`.
 ## Without a terminal
 
 Piped input has nobody to ask, so everything that would ask is refused instead.
-`ouhai -p` needs `-y` to write files or run commands, and that flag says as much
+`uhai -p` needs `-y` to write files or run commands, and that flag says as much
 at the point of use.
