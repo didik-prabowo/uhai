@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,8 +28,9 @@ import (
 
 // Session is what gets saved and what -resume brings back.
 type Session struct {
-	// ID names the file and is what -resume takes. It is the moment the
-	// conversation started, which sorts and reads as a date at the same time.
+	// ID names the file and is what -resume takes: the moment the conversation
+	// started, which sorts and reads as a date at the same time, plus the pid
+	// of the process holding it.
 	ID       string             `json:"id"`
 	Started  time.Time          `json:"started"`
 	Updated  time.Time          `json:"updated"` // moves every turn, so a listing shows what was worked on last
@@ -36,8 +38,8 @@ type Session struct {
 	Messages []provider.Message `json:"messages"`
 }
 
-// idLayout is the shape of an id: a timestamp with nothing in it a filesystem
-// dislikes, so the id and the file name are the same string.
+// idLayout is the shape of the date half of an id: a timestamp with nothing in
+// it a filesystem dislikes, so the id and the file name are the same string.
 const idLayout = "2006-01-02T15-04-05"
 
 func sessionsDir() (string, error) {
@@ -74,11 +76,21 @@ func (s Session) Save() error {
 // Identity is the id this session has or will have once it is saved. One
 // place decides what an id looks like, so nothing has to spell the layout out
 // a second time.
+//
+// The pid is there because the timestamp alone is only good to the second, and
+// two conversations started in the same second used to be one file: the second
+// to save silently replaced the first, whole. One process holds one
+// conversation, so a same-second clash is always two processes and their pids
+// always differ — which makes the pid the one disambiguator that is both
+// certain and worth reading, since it also says which process to look for.
+//
+// It goes on the end so the date still sorts and still prefixes: -resume takes
+// the part you would have typed before.
 func (s Session) Identity() string {
 	if s.ID != "" {
 		return s.ID
 	}
-	return s.Started.Format(idLayout)
+	return s.Started.Format(idLayout) + "-" + strconv.Itoa(os.Getpid())
 }
 
 // All lists what has been saved, newest first.

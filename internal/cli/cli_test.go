@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1312,8 +1313,9 @@ func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
 		Role:    provider.RoleUser,
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
 	}}
-	if got := savedSessionID(); got != current.Started.Format("2006-01-02T15-04-05") {
-		t.Fatalf("the id is the moment it started, got %q", got)
+	want := current.Started.Format("2006-01-02T15-04-05") + "-" + strconv.Itoa(os.Getpid())
+	if got := savedSessionID(); got != want {
+		t.Fatalf("the id is the moment it started plus the pid holding it, got %q", got)
 	}
 }
 

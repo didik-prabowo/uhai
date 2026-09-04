@@ -157,9 +157,22 @@ carries its own lock.
 ## Sessions
 
 One conversation, one file under `~/.uhai/sessions`, rewritten after every
-turn. The name is the id, and the id is the moment it started — it sorts as a
-date and reads as one, so a listing needs no index and `-resume <id>` takes any
-prefix that names only one.
+turn. The name is the id, and the id is the moment it started plus the pid of
+the process holding it — `2026-09-04T18-30-00-42888`. The date half sorts and
+reads as a date, so a listing needs no index and `-resume <id>` takes any
+prefix that names only one, which is usually the part you would have typed
+anyway.
+
+The pid is on the end because a timestamp alone is only good to the second,
+and two conversations started in the same second were one file: the second to
+save replaced the first, whole and without a word. One process holds one
+conversation, so a same-second clash is always two processes and their pids
+always differ — which makes the pid the only disambiguator that is both certain
+and worth reading, since it also names the process to go looking for. A random
+suffix would have been unique and said nothing.
+
+It stopped being hypothetical when `-p` started saving: a script calling it in
+a loop starts several runs a second.
 
 It lives in `internal/session`, not in `config`, because the two are opposites:
 settings, keys and permissions are input a person writes to change what uhai

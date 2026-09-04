@@ -3,6 +3,8 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,7 +72,7 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 3 || all[0].ID != "2026-09-01T12-30-00" {
+	if len(all) != 3 || !strings.HasPrefix(all[0].ID, "2026-09-01T12-30-00-") {
 		t.Fatalf("sessions should come back newest first: %+v", all)
 	}
 	if all[2].ID != "2026-08-30T09-00-00" || all[2].Updated.IsZero() {
@@ -92,6 +94,22 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	}
 	if _, err := Load("nope"); err == nil {
 		t.Error("an id nobody saved must be reported")
+	}
+
+	// The date is only good to the second, so it cannot be the whole id: two
+	// conversations started in the same second were one file, and the second
+	// to save replaced the first whole. One process holds one conversation,
+	// so a same-second clash is always two processes — hence the pid.
+	if want := "-" + strconv.Itoa(os.Getpid()); !strings.HasSuffix(first.Identity(), want) {
+		t.Errorf("an id must carry the pid holding it, got %q", first.Identity())
+	}
+	if first.Identity() == second.Identity() {
+		t.Error("two conversations must never share an id")
+	}
+	// Typing the date is still enough: the pid is on the end, so what you
+	// would have typed before is still a prefix that names one.
+	if got, err := Load("2026-09-01T12-30-00"); err != nil || got.Model != "groq/b" {
+		t.Errorf("the date alone must still name a session: %+v %v", got, err)
 	}
 
 	// Saving again under the same id continues that file rather than adding one.
