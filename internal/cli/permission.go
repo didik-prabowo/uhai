@@ -211,17 +211,85 @@ func confirmDetail(name, input string) string {
 	return teaDim.Render("  " + name + " " + truncate(input, 200))
 }
 
-// diff shows what changes between two pieces of text, as the lines removed and
-// the lines added, with a little of what surrounds them.
+// diff shows what changes between two pieces of text: the lines removed, the
+// lines added, and a little of what surrounds them.
 //
-// ponytail: matching only equal heads and tails, not a real line diff. A change
-// in the middle of a long block therefore reads as the whole block being
-// replaced, which is honest if verbose; reach for a proper diff when that
-// starts costing more than it says.
+// It matches lines that are really equal rather than assuming everything
+// between the common head and tail changed, because the diff is the whole
+// reason a confirmation is worth reading. One renamed variable in the middle
+// of a function used to read as the function being replaced, and a diff that
+// cries wolf gets answered with y without being read.
 func diff(before, after string, start int) string {
-	old, new := splitLines(before), splitLines(after)
+	ops := lineDiff(splitLines(before), splitLines(after))
 
-	// Trim what the two have in common, so the change is what is left.
+	// Two counters. A removed line keeps its number in the file as it stands;
+	// everything else — the lines added and the ones around them — is
+	// numbered as the file will read once the change is made, which is the
+	// file you will be looking at next.
+	oldLine, newLine := start, start
+
+	var rows []string
+	skipped := false
+	for i, op := range ops {
+		if op.kind == ' ' && !nearAChange(ops, i) {
+			// Far from anything that changed: not worth a row, but the gap
+			// has to be visible or the line numbers look like a mistake.
+			oldLine, newLine, skipped = oldLine+1, newLine+1, true
+			continue
+		}
+		if skipped {
+			rows = append(rows, teaDim.Render("  ⋮"))
+			skipped = false
+		}
+
+		switch op.kind {
+		case '-':
+			rows = append(rows, teaRemoved.Render(gutter(oldLine, "-")+op.text))
+			oldLine++
+		case '+':
+			rows = append(rows, teaAdded.Render(gutter(newLine, "+")+op.text))
+			newLine++
+		default:
+			rows = append(rows, teaDim.Render(gutter(newLine, " ")+op.text))
+			oldLine, newLine = oldLine+1, newLine+1
+		}
+	}
+
+	if len(rows) > diffMaxLines {
+		rows = append(rows[:diffMaxLines], teaDim.Render("  … and more"))
+	}
+	if len(rows) == 0 {
+		return teaDim.Render("  (no change)")
+	}
+	return strings.Join(rows, "\n")
+}
+
+// diffOp is one line of the answer: kept, removed or added.
+type diffOp struct {
+	kind byte // ' ', '-' or '+'
+	text string
+}
+
+// nearAChange reports whether a kept line is close enough to a change to be
+// worth its row.
+func nearAChange(ops []diffOp, at int) bool {
+	for i := max(0, at-diffContext); i <= min(len(ops)-1, at+diffContext); i++ {
+		if ops[i].kind != ' ' {
+			return true
+		}
+	}
+	return false
+}
+
+// diffBudget caps the table middleDiff is willing to build. Beyond it the
+// change is far too large to read in a confirmation anyway, and the cheap
+// honest answer — all of the old, then all of the new — is what a rewrite is.
+const diffBudget = 250_000
+
+// lineDiff turns old into new as a list of operations.
+func lineDiff(old, new []string) []diffOp {
+	// The common head and tail are matched directly. Nearly every edit here
+	// changes a few lines of a long file, which leaves the table below tiny.
 	head := 0
 	for head < len(old) && head < len(new) && old[head] == new[head] {
 		head++
@@ -232,42 +300,73 @@ func diff(before, after string, start int) string {
 		tail++
 	}
 
-	// Two counters. A removed line keeps its number in the file as it stands;
-	// everything else — the lines added and the ones around them — is
-	// numbered as the file will read once the change is made, which is the
-	// file you will be looking at next.
-	oldLine, newLine := start, start
+	ops := make([]diffOp, 0, len(old)+len(new))
+	for _, line := range old[:head] {
+		ops = append(ops, diffOp{' ', line})
+	}
+	ops = append(ops, middleDiff(old[head:len(old)-tail], new[head:len(new)-tail])...)
+	for _, line := range old[len(old)-tail:] {
+		ops = append(ops, diffOp{' ', line})
+	}
+	return ops
+}
 
-	var rows []string
-	from := head - diffContext
-	if from < 0 {
-		from = 0
-	}
-	oldLine, newLine = oldLine+from, newLine+from
-	for _, line := range around(old, from, head) {
-		rows = append(rows, teaDim.Render(gutter(newLine, " ")+line))
-		oldLine, newLine = oldLine+1, newLine+1
-	}
-	for _, line := range old[head : len(old)-tail] {
-		rows = append(rows, teaRemoved.Render(gutter(oldLine, "-")+line))
-		oldLine++
-	}
-	for _, line := range new[head : len(new)-tail] {
-		rows = append(rows, teaAdded.Render(gutter(newLine, "+")+line))
-		newLine++
-	}
-	for _, line := range around(old, len(old)-tail, len(old)-tail+diffContext) {
-		rows = append(rows, teaDim.Render(gutter(newLine, " ")+line))
-		oldLine, newLine = oldLine+1, newLine+1
+// middleDiff settles the part the head and tail could not: a longest common
+// subsequence, walked back into operations.
+func middleDiff(old, new []string) []diffOp {
+	n, m := len(old), len(new)
+	if n == 0 || m == 0 || n*m > diffBudget {
+		ops := make([]diffOp, 0, n+m)
+		for _, line := range old {
+			ops = append(ops, diffOp{'-', line})
+		}
+		for _, line := range new {
+			ops = append(ops, diffOp{'+', line})
+		}
+		return ops
 	}
 
-	if len(rows) > diffMaxLines {
-		rows = append(rows[:diffMaxLines], teaDim.Render("  … and more"))
+	// table[i][j] is the length of the longest common subsequence of old[i:]
+	// and new[j:], filled from the end so the walk below can go forwards and
+	// keep the lines in file order.
+	table := make([][]int, n+1)
+	for i := range table {
+		table[i] = make([]int, m+1)
 	}
-	if len(rows) == 0 {
-		return teaDim.Render("  (no change)")
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			if old[i] == new[j] {
+				table[i][j] = table[i+1][j+1] + 1
+			} else {
+				table[i][j] = max(table[i+1][j], table[i][j+1])
+			}
+		}
 	}
-	return strings.Join(rows, "\n")
+
+	var ops []diffOp
+	i, j := 0, 0
+	for i < n && j < m {
+		switch {
+		case old[i] == new[j]:
+			ops = append(ops, diffOp{' ', old[i]})
+			i, j = i+1, j+1
+		case table[i+1][j] >= table[i][j+1]:
+			// Removed before added, so a replaced line sits next to the line
+			// replacing it — which is how a change reads.
+			ops = append(ops, diffOp{'-', old[i]})
+			i++
+		default:
+			ops = append(ops, diffOp{'+', new[j]})
+			j++
+		}
+	}
+	for ; i < n; i++ {
+		ops = append(ops, diffOp{'-', old[i]})
+	}
+	for ; j < m; j++ {
+		ops = append(ops, diffOp{'+', new[j]})
+	}
+	return ops
 }
 
 // gutter is the number and the marker down the left of a diff. A line nobody
@@ -305,17 +404,4 @@ func splitLines(text string) []string {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-}
-
-func around(lines []string, from, to int) []string {
-	if from < 0 {
-		from = 0
-	}
-	if to > len(lines) {
-		to = len(lines)
-	}
-	if from >= to {
-		return nil
-	}
-	return lines[from:to]
 }

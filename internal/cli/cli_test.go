@@ -1344,3 +1344,74 @@ func TestThinkingIsShownThenCollapsed(t *testing.T) {
 		t.Fatal("the wait must be accounted for, even after the thinking goes")
 	}
 }
+
+// The diff is the whole reason a confirmation is worth reading, so it has to
+// show the change and not the block around it. This used to match only the
+// common head and tail, which made one changed line in the middle read as the
+// whole function being replaced — and a diff that cries wolf is answered with
+// y without being read.
+func TestDiffShowsTheChangedLinesOnly(t *testing.T) {
+	before := strings.Join([]string{
+		"func handler(w http.ResponseWriter, r *http.Request) {",
+		"\tuser, err := auth.User(r.Context())",
+		"\tif err != nil {",
+		"\t\thttp.Error(w, \"unauthorized\", 401)",
+		"\t\treturn",
+		"\t}",
+		"\trender(w, user)",
+		"}",
+	}, "\n")
+	after := strings.ReplaceAll(before, "401", "http.StatusUnauthorized")
+
+	got := diff(before, after, 1)
+	removed, added := strings.Count(got, "-"), strings.Count(got, "+")
+	if removed == 0 || added == 0 {
+		t.Fatalf("a change needs both sides:\n%s", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "func handler") && (strings.Contains(line, "-") || strings.Contains(line, "+")) {
+			t.Fatalf("an untouched line was reported as changed:\n%s", got)
+		}
+	}
+	if !strings.Contains(got, "http.StatusUnauthorized") {
+		t.Fatalf("the new line must be there:\n%s", got)
+	}
+	// Only the one line changed, so only one line may be marked on each side.
+	if n := strings.Count(got, "401"); n != 1 {
+		t.Fatalf("the old line should appear once, appeared %d times:\n%s", n, got)
+	}
+}
+
+// A file with nothing in common with its replacement is a rewrite, and reads
+// as one: everything out, everything in.
+func TestDiffOfARewrite(t *testing.T) {
+	got := diff("one\ntwo\nthree", "alpha\nbeta", 1)
+	for _, want := range []string{"one", "two", "three", "alpha", "beta"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("%q missing from a rewrite:\n%s", want, got)
+		}
+	}
+}
+
+// Lines far from any change are skipped, and the gap is marked — otherwise the
+// numbers jump and look like a mistake.
+func TestDiffSkipsFarAwayLines(t *testing.T) {
+	var lines []string
+	for i := 0; i < 40; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+	before := strings.Join(lines, "\n")
+	lines[20] = "line twenty, changed"
+	after := strings.Join(lines, "\n")
+
+	got := diff(before, after, 1)
+	if strings.Contains(got, "line 0") {
+		t.Fatalf("a line forty rows from the change is not context:\n%s", got)
+	}
+	if !strings.Contains(got, "⋮") {
+		t.Fatalf("a skipped stretch has to be visible:\n%s", got)
+	}
+	if !strings.Contains(got, "line 18") || !strings.Contains(got, "line 22") {
+		t.Fatalf("two lines either side are context:\n%s", got)
+	}
+}

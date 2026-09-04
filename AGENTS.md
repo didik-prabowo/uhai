@@ -118,6 +118,14 @@ the question shows what will happen: a path and a diff for an edit, the command
 itself for a shell call. A blob of JSON can only be trusted; a diff can be
 judged.
 
+The diff matches lines properly — a common head and tail, then a longest common
+subsequence over what is left, with a budget past which a rewrite is simply
+shown as one. It began as head-and-tail matching alone, which made one changed
+line in the middle of a function read as the whole function being replaced. That
+is not a cosmetic difference: a diff that cries wolf is answered with `y`
+without being read, and the diff is the only reason the question beats a blob of
+JSON.
+
 `permissions` in the settings is three lists of rules — `allow`, `ask`, `deny`
 — in the shape Claude Code uses, `Bash(git push:*)` and `Read(*.env)`. Deny
 beats ask beats allow, and the longest specifier wins, so ordering in the file
