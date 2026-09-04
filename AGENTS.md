@@ -213,7 +213,15 @@ Anything unlisted falls back to figures small enough to be safe anywhere: being
 wrong low costs an early compaction, being wrong high costs the turn.
 
 The window follows the model, not the session, so `/model` and `/connect` move
-it (`useProvider` in tea.go). Add a family when a model behaves oddly, not
+it (`useProvider` in tea.go).
+
+`/model` checks the name against the provider's own list — afterwards, in the
+background, and only as a note. Not before, because a list is not the truth:
+Z.ai answers `/models` with ten paid models and none of the free ones, which
+work perfectly well, so refusing what a vendor forgot to list would block a
+working model in order to catch a typo. The typo still gets a line, which is
+better than what it used to get: a failed turn one prompt later, with an error
+about the model that never mentions the spelling. Add a family when a model behaves oddly, not
 because the table looks short.
 
 ## Tasks

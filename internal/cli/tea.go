@@ -421,6 +421,8 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// to happen is on screen while it is being decided rather than
 		// scrolled past in one line.
 		m.confirm = &msg.request
+	case teaNoteMsg:
+		m.addHistory(teaDim.Render(string(msg)))
 	case teaModelsMsg:
 		m.status = ""
 		if msg.err != nil || len(msg.items) == 0 {
@@ -678,6 +680,9 @@ func (m *teaModel) beginModels() tea.Cmd {
 		return teaModelsMsg{items: items, err: err}
 	}
 }
+
+// teaNoteMsg is a dim line from work that finished after the command did.
+type teaNoteMsg string
 
 type teaModelsMsg struct {
 	items []list.Item
@@ -1185,7 +1190,52 @@ func (m *teaModel) changeModel(setting string) tea.Cmd {
 	}
 	m.useProvider(p)
 	m.addHistory(teaDim.Render("using " + p.Name()))
-	return nil
+	return checkModelExists(setting)
+}
+
+// checkModelExists asks the provider whether it has heard of the model, after
+// the switch rather than before it.
+//
+// After, and as a note rather than a refusal, because a list is not the truth:
+// Z.ai answers /models with ten paid models and none of the free ones, which
+// work perfectly well. Refusing what the vendor forgot to list would be a
+// typo check that blocks a working model. A typo, meanwhile, otherwise shows
+// up as a failed turn one prompt later, with an error about the model that
+// never mentions the spelling.
+func checkModelExists(setting string) tea.Cmd {
+	return func() tea.Msg {
+		p, err := config.LoadProviderFor(setting)
+		if err != nil {
+			return nil
+		}
+		lister, ok := p.(provider.ModelLister)
+		if !ok {
+			return nil // nothing to check against
+		}
+		models, err := lister.Models()
+		if err != nil || len(models) == 0 {
+			return nil // could not ask; silence beats a guess
+		}
+
+		note := unlistedNote(setting, models)
+		if note == "" {
+			return nil
+		}
+		return teaNoteMsg(note)
+	}
+}
+
+// unlistedNote is what to say about a model the provider did not list, and ""
+// when it did.
+func unlistedNote(setting string, models []string) string {
+	name, want, _ := strings.Cut(setting, "/")
+	for _, listed := range models {
+		if strings.EqualFold(listed, want) {
+			return ""
+		}
+	}
+	return want + " is not in the list " + name + " returns — it may still work, " +
+		"but check the spelling if the next turn fails"
 }
 
 // confirmChoices are the answers, in the order they are offered.

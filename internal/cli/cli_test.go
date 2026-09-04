@@ -1434,3 +1434,28 @@ func TestPipeAnswersCommandsItself(t *testing.T) {
 		}
 	}
 }
+
+// A model is checked against the provider's list after the switch, and only as
+// a note: Z.ai answers /models with ten paid models and none of the free ones,
+// which work perfectly well. Refusing what a vendor forgot to list would block
+// a working model to catch a typo.
+func TestUnlistedModelIsANoteNotARefusal(t *testing.T) {
+	listed := []string{"glm-4.5", "glm-4.6", "glm-4.7", "glm-5.3"}
+
+	if note := unlistedNote("zai/glm-4.7", listed); note != "" {
+		t.Errorf("a listed model needs no note, got %q", note)
+	}
+	if note := unlistedNote("zai/GLM-4.7", listed); note != "" {
+		t.Errorf("the comparison is not case-sensitive, got %q", note)
+	}
+
+	// Unlisted but real: said out loud, and not refused.
+	note := unlistedNote("zai/glm-4.7-flash", listed)
+	if !strings.Contains(note, "glm-4.7-flash") || !strings.Contains(note, "may still work") {
+		t.Errorf("an unlisted model should be named and allowed: %q", note)
+	}
+	// A typo reads the same way, which is the point: one line, no blocking.
+	if note := unlistedNote("zai/glm-4.7-flsh", listed); note == "" {
+		t.Error("a typo must at least be mentioned")
+	}
+}
