@@ -69,6 +69,12 @@ What the second and third implementations taught:
   request stays as it was.
 - `Request.Stream` carries text only. Tool arguments stream too, and are
   buffered rather than reported — fine while nothing shows them being typed.
+- `Request.Reasoning` carries a thinking model's working out, which the
+  vendors send apart from the answer under two different names
+  (`reasoning_content`, `reasoning`) and which is emphatically not the answer:
+  it is shown dimmed, never kept, never sent back. Mixed into `Stream` it
+  would be spoken as the reply and stored in the history as one. GLM made this
+  visible — twenty seconds of silence that looked exactly like a hang.
 - Tool calls are identified by an id the neutral types require and Gemini does
   not have. That client invents one, which works because the id only has to be
   unique within the conversation it is used in.
@@ -267,6 +273,12 @@ Four rules the layout keeps, each of which took a bug to learn:
   for a hanging indent is what turned the welcome box into rubble.
 - **Anything the chat draws to a fixed width is cut by columns, not by
   characters.** A coloured line is mostly escape codes.
+
+A model that thinks shows its working out live, dimmed, above the answer, and
+the moment the answer starts it collapses to `✻ thought for 12s`. Both halves
+are the point: keeping all of it buries the reply, since a thinking model
+writes more working out than reply; dropping it silently leaves the wait
+unexplained.
 
 The rhythm is a blank line before each question, one after it, and one before
 the line that closes the turn. A tool call is one row, cut to the width: it is

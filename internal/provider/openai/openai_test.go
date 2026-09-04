@@ -98,7 +98,7 @@ data: {"choices":[],"usage":{"prompt_tokens":1200,"completion_tokens":34}}
 data: [DONE]
 `
 	var streamed string
-	resp, err := parseStream(strings.NewReader(sse), func(d string) { streamed += d })
+	resp, err := parseStream(strings.NewReader(sse), func(d string) { streamed += d }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ data: [DONE]
 }
 
 func TestParseStreamError(t *testing.T) {
-	if _, err := parseStream(strings.NewReader(`data: {"error":{"message":"rate limited"}}`), nil); err == nil {
+	if _, err := parseStream(strings.NewReader(`data: {"error":{"message":"rate limited"}}`), nil, nil); err == nil {
 		t.Fatal("an error chunk must be surfaced")
 	}
 }
@@ -220,5 +220,35 @@ func TestEmptyToolResultStillHasContent(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"content"`) {
 		t.Fatalf("content was dropped on the way to JSON: %s", raw)
+	}
+}
+
+// A thinking model sends its working out apart from the answer, under a name
+// that depends on the vendor. It reaches its own hook and never the answer's:
+// mixed in, the thinking would be spoken as if it were the reply.
+func TestReasoningIsStreamedApartFromTheAnswer(t *testing.T) {
+	sse := `data: {"choices":[{"delta":{"reasoning_content":"the file is"}}]}
+
+data: {"choices":[{"delta":{"reasoning":" probably main.go"}}]}
+
+data: {"choices":[{"delta":{"content":"Reading main.go"}}]}
+
+data: [DONE]
+`
+	var answer, thinking string
+	resp, err := parseStream(strings.NewReader(sse),
+		func(d string) { answer += d },
+		func(d string) { thinking += d })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if thinking != "the file is probably main.go" {
+		t.Errorf("both spellings are the same thing, got %q", thinking)
+	}
+	if answer != "Reading main.go" {
+		t.Errorf("the answer must not carry the thinking, got %q", answer)
+	}
+	if len(resp.Content) != 1 || resp.Content[0].Text != "Reading main.go" {
+		t.Errorf("the response keeps the answer only: %+v", resp.Content)
 	}
 }

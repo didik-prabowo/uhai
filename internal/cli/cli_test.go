@@ -1315,3 +1315,32 @@ func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
 		t.Fatalf("the id is the moment it started, got %q", got)
 	}
 }
+
+// A thinking model can be quiet for twenty seconds before it writes anything.
+// The working out is shown while it is all there is, then collapses to a line:
+// keeping it would bury the answer, dropping it would leave the wait
+// unexplained.
+func TestThinkingIsShownThenCollapsed(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.Update(teaThinkMsg("the file is probably main.go"))
+	rows := strings.Join(m.streamRows(), "\n")
+	if !strings.Contains(rows, "the file is probably main.go") {
+		t.Fatalf("the working out must be visible while it is all there is: %q", rows)
+	}
+
+	m.Update(teaDeltaMsg("Reading main.go"))
+	if got := strings.Join(m.streamRows(), "\n"); strings.Contains(got, "probably") {
+		t.Fatalf("the answer starting must end the thinking: %q", got)
+	}
+	var note string
+	for _, line := range m.lines {
+		if strings.Contains(line.text, "thought for") {
+			note = line.text
+		}
+	}
+	if note == "" {
+		t.Fatal("the wait must be accounted for, even after the thinking goes")
+	}
+}

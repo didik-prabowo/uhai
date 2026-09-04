@@ -120,8 +120,13 @@ type wireResponse struct {
 type wireChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
+			Content string `json:"content"`
+			// Thinking models put their working out here, apart from the
+			// answer. GLM and DeepSeek call it reasoning_content; others say
+			// reasoning. Whichever arrives is the same thing.
+			ReasoningContent string `json:"reasoning_content"`
+			Reasoning        string `json:"reasoning"`
+			ToolCalls        []struct {
 				Index    int    `json:"index"`
 				ID       string `json:"id"`
 				Function struct {
@@ -351,7 +356,7 @@ func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Resp
 		raw, _ := io.ReadAll(resp.Body)
 		return parse(raw, resp.StatusCode)
 	}
-	return parseStream(resp.Body, req.Stream)
+	return parseStream(resp.Body, req.Stream, req.Reasoning)
 }
 
 // post sends the request. The body is kept as bytes so every attempt can send
@@ -375,7 +380,7 @@ func (c *Client) post(ctx context.Context, body []byte) (*http.Response, error) 
 // reporting text as it arrives and assembling everything into one response.
 // Tool calls arrive in pieces too: the first chunk carries id and name, later
 // ones append fragments of the argument JSON, keyed by index.
-func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, error) {
+func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.Response, error) {
 	var text strings.Builder
 	var usage provider.Usage
 	calls := map[int]*wireCall{}
@@ -409,6 +414,9 @@ func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, erro
 		}
 
 		delta := chunk.Choices[0].Delta
+		if thought := delta.ReasoningContent + delta.Reasoning; thought != "" && onReasoning != nil {
+			onReasoning(thought)
+		}
 		if delta.Content != "" {
 			text.WriteString(delta.Content)
 			if onDelta != nil {

@@ -77,6 +77,12 @@ type Request struct {
 	// arrives. The complete text is still returned in the Response, so a
 	// caller that does not want live output simply leaves this nil.
 	Stream func(delta string)
+
+	// Reasoning receives a thinking model's working out, which the vendors
+	// send apart from the answer and which is not the answer: it is shown
+	// differently, it is not kept, and it is never sent back. Without it a
+	// model that thinks for twenty seconds looks like a model that has hung.
+	Reasoning func(delta string)
 }
 
 // Usage is what one call cost in tokens. Zero means the provider did not say.

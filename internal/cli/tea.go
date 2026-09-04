@@ -28,21 +28,28 @@ const maxInputLines = 5
 const promptHistory = 5
 
 type teaModel struct {
-	agent       *agent.Agent
-	input       textarea.Model
-	chat        viewport.Model
-	spinner     spinner.Model
-	renderer    *glamour.TermRenderer
-	lines       []chatEntry
-	width       int
-	height      int
-	busy        bool
-	status      string
-	confirm     *teaConfirm
-	mode        teaMode
-	picker      list.Model
-	keyInput    textarea.Model
-	credField   string // which credential the entry box is collecting
+	agent     *agent.Agent
+	input     textarea.Model
+	chat      viewport.Model
+	spinner   spinner.Model
+	renderer  *glamour.TermRenderer
+	lines     []chatEntry
+	width     int
+	height    int
+	busy      bool
+	status    string
+	confirm   *teaConfirm
+	mode      teaMode
+	picker    list.Model
+	keyInput  textarea.Model
+	credField string // which credential the entry box is collecting
+
+	// thinking is a model's working out while it arrives, and thinkStart is
+	// when it began. It is shown live and then collapsed to one line: it is
+	// how the answer was reached, not the answer, and on some models there is
+	// more of it than there is answer.
+	thinking    string
+	thinkStart  time.Time
 	provider    string
 	commandSel  int
 	inputHeight int
@@ -159,6 +166,9 @@ func (i teaItem) Description() string { return i.desc }
 
 type teaTextMsg string
 type teaDeltaMsg string
+
+// teaThinkMsg is a piece of the model's working out.
+type teaThinkMsg string
 type teaToolMsg string
 type teaDoneMsg struct{ err error }
 type teaCompactMsg struct {
@@ -379,13 +389,23 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			return m, nil
 		}
+	case teaThinkMsg:
+		if m.thinking == "" {
+			m.thinkStart = time.Now()
+		}
+		m.thinking += string(msg)
+		m.refresh()
 	case teaDeltaMsg:
+		// The answer starting is what ends the thinking: what it was working
+		// towards is here, and the working out collapses to a line.
+		m.collapseThinking()
 		m.streamed += len(msg)
 		m.stream += string(msg)
 		m.refresh()
 	case teaTextMsg:
 		// The complete text arrives once the call is done: the streamed copy
 		// makes way for the rendered one.
+		m.collapseThinking()
 		m.stream = ""
 		m.add(chatEntry{kind: entryAnswer, text: string(msg)})
 	case teaToolMsg:
@@ -433,6 +453,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addHistory(text)
 		}
 		m.status = ""
+		m.collapseThinking() // a turn that died mid-thought still says it thought
 		m.afterTurn()
 		// However a turn ended, the line saying so is about the turn rather
 		// than part of what was said, so it stands clear of it.
@@ -721,14 +742,37 @@ func fmtElapsed(d time.Duration) string {
 // the markdown again on every chunk is not worth it, and the finished answer
 // replaces it rendered.
 func (m *teaModel) streamRows() []string {
-	if m.stream == "" {
-		return nil
-	}
 	var rows []string
+	// The working out sits above the answer and is dimmed: it is worth
+	// watching while it is all there is, and worth nothing once the answer
+	// starts.
+	if m.thinking != "" {
+		for _, line := range strings.Split(m.thinking, "\n") {
+			for _, row := range wrapHanging(line, m.cols()) {
+				rows = append(rows, teaDim.Render(row))
+			}
+		}
+	}
+	if m.stream == "" {
+		return rows
+	}
 	for _, line := range strings.Split(m.stream, "\n") {
 		rows = append(rows, wrapHanging(line, m.cols())...)
 	}
 	return rows
+}
+
+// collapseThinking replaces the working out with a note that it happened.
+// Keeping all of it would bury the answer — a thinking model writes more of it
+// than of the reply — and dropping it silently would leave the twenty seconds
+// unexplained.
+func (m *teaModel) collapseThinking() {
+	if m.thinking == "" {
+		return
+	}
+	took := time.Since(m.thinkStart).Round(time.Second)
+	m.thinking = ""
+	m.addHistory(teaDim.Render(fmt.Sprintf("✻ thought for %s", took)))
 }
 
 func (m *teaModel) rendererText(text string) string {
@@ -1325,6 +1369,7 @@ func runTea(a *agent.Agent, startupErr error) error {
 	a.OnToolCall = func(name, input string) { p.Send(teaToolMsg(toolLine(name, input))) }
 	a.OnUsage = func(u provider.Usage) { p.Send(teaUsageMsg(u)) }
 	a.OnDelta = func(delta string) { p.Send(teaDeltaMsg(delta)) }
+	a.OnReasoning = func(delta string) { p.Send(teaThinkMsg(delta)) }
 	a.Confirm = func(name, input string) bool {
 		switch m.decide(name, input) {
 		case config.PermAllow:

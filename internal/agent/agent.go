@@ -103,6 +103,13 @@ type Agent struct {
 	OnDelta    func(delta string)
 	OnToolCall func(name string, input string)
 
+	// OnReasoning receives a thinking model's working out as it arrives — sent
+	// apart from the answer by the vendors that have it, and not the answer.
+	// It is shown and then let go: nothing keeps it, and it is never sent
+	// back. Without it a model that thinks for twenty seconds before writing
+	// anything looks like a model that has hung.
+	OnReasoning func(delta string)
+
 	// OnNotice reports something the agent did on its own, such as compacting
 	// the history.
 	OnNotice func(text string)
@@ -201,6 +208,10 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 					a.OnDelta(delta)
 				}
 			},
+			// Not written into partial: the working out is not the answer,
+			// and a turn that dies mid-thought should not leave a thought in
+			// the history pretending to be one.
+			Reasoning: a.OnReasoning,
 		})
 		if err != nil {
 			a.closeTurn(partial.String(), err.Error())
