@@ -379,9 +379,8 @@ func (c *Client) Models() ([]string, error) {
 
 	var wire struct {
 		Models []struct {
-			Name       string   `json:"name"` // "models/gemini-2.5-flash"
-			Supported  []string `json:"supportedGenerationMethods"`
-			Deprecated bool     `json:"deprecated"`
+			Name      string   `json:"name"` // "models/gemini-2.5-flash"
+			Supported []string `json:"supportedGenerationMethods"`
 		} `json:"models"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
@@ -391,8 +390,10 @@ func (c *Client) Models() ([]string, error) {
 	var ids []string
 	for _, m := range wire.Models {
 		// Embedding and other models cannot hold a conversation; offering them
-		// would only produce a puzzling error later.
-		if m.Deprecated || !slices.Contains(m.Supported, "generateContent") {
+		// would only produce a puzzling error later. Deprecated is not that
+		// reason: Google marks a model months before it stops answering, and
+		// this list is what /model checks a typed name against.
+		if !slices.Contains(m.Supported, "generateContent") {
 			continue
 		}
 		ids = append(ids, strings.TrimPrefix(m.Name, "models/"))

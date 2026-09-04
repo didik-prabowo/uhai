@@ -100,7 +100,7 @@ func TestPickerAlwaysReturnsToChat(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 
 	m.mode = teaModelPicker
-	m.changeModel("nope/not-a-model") // even a model that cannot load
+	m.changeModel("nope/not-a-model", true) // even a model that cannot load
 	if m.mode != teaPrompt {
 		t.Fatalf("after choosing a model the picker must close, mode = %v", m.mode)
 	}
@@ -1457,5 +1457,16 @@ func TestUnlistedModelIsANoteNotARefusal(t *testing.T) {
 	// A typo reads the same way, which is the point: one line, no blocking.
 	if note := unlistedNote("zai/glm-4.7-flsh", listed); note == "" {
 		t.Error("a typo must at least be mentioned")
+	}
+
+	// An alias is never in the list itself, only the dated id it points at.
+	// Anthropic answers /models that way, and claude-sonnet-5 is what ouhai
+	// ships as its own default: a note there would fire on the happy path.
+	dated := []string{"claude-sonnet-5-20260115", "claude-opus-5-20260115"}
+	if note := unlistedNote("anthropic/claude-sonnet-5", dated); note != "" {
+		t.Errorf("an alias must count as listed, got %q", note)
+	}
+	if note := unlistedNote("anthropic/claude-haiku-5", dated); note == "" {
+		t.Error("a name no listed id starts with is still worth a note")
 	}
 }

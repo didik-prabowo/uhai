@@ -544,7 +544,7 @@ func (m *teaModel) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.mode == teaProviderPicker {
 			return m, m.selectProvider(selected)
 		}
-		return m, m.changeModel(selected)
+		return m, m.changeModel(selected, false)
 	}
 	var cmd tea.Cmd
 	m.picker, cmd = m.picker.Update(msg)
@@ -1138,7 +1138,7 @@ func (m *teaModel) submit() tea.Cmd {
 		if arg == "" {
 			return m.beginModels()
 		}
-		return m.changeModel(arg)
+		return m.changeModel(arg, true)
 	case strings.HasPrefix(value, "/connect"):
 		return m.beginConnect(strings.TrimSpace(strings.TrimPrefix(value, "/connect")))
 	case strings.HasPrefix(value, "/"):
@@ -1170,7 +1170,10 @@ func (m *teaModel) submit() tea.Cmd {
 	})
 }
 
-func (m *teaModel) changeModel(setting string) tea.Cmd {
+// verify says whether the name is worth checking against the provider's list.
+// A name picked from that same list a moment ago is not: the check would spend
+// a second round-trip to confirm a match it cannot fail.
+func (m *teaModel) changeModel(setting string, verify bool) tea.Cmd {
 	// Whatever happens next, the picker is done: every path below reports
 	// through the history, which is only visible on the chat page.
 	m.mode = teaPrompt
@@ -1190,7 +1193,10 @@ func (m *teaModel) changeModel(setting string) tea.Cmd {
 	}
 	m.useProvider(p)
 	m.addHistory(teaDim.Render("using " + p.Name()))
-	return checkModelExists(setting)
+	if !verify {
+		return nil
+	}
+	return checkModelExists(p, setting)
 }
 
 // checkModelExists asks the provider whether it has heard of the model, after
@@ -1202,12 +1208,8 @@ func (m *teaModel) changeModel(setting string) tea.Cmd {
 // typo check that blocks a working model. A typo, meanwhile, otherwise shows
 // up as a failed turn one prompt later, with an error about the model that
 // never mentions the spelling.
-func checkModelExists(setting string) tea.Cmd {
+func checkModelExists(p provider.Provider, setting string) tea.Cmd {
 	return func() tea.Msg {
-		p, err := config.LoadProviderFor(setting)
-		if err != nil {
-			return nil
-		}
 		lister, ok := p.(provider.ModelLister)
 		if !ok {
 			return nil // nothing to check against
@@ -1228,9 +1230,16 @@ func checkModelExists(setting string) tea.Cmd {
 // unlistedNote is what to say about a model the provider did not list, and ""
 // when it did.
 func unlistedNote(setting string, models []string) string {
-	name, want, _ := strings.Cut(setting, "/")
+	name, want, ok := strings.Cut(setting, "/")
+	if !ok || want == "" {
+		return ""
+	}
 	for _, listed := range models {
-		if strings.EqualFold(listed, want) {
+		// A prefix counts as listed. An alias is never in the list itself,
+		// only the dated id it points at: Anthropic answers /models with
+		// claude-sonnet-5-20260115 and never with claude-sonnet-5, which is
+		// the name ouhai recommends and ships as its own default.
+		if len(listed) >= len(want) && strings.EqualFold(listed[:len(want)], want) {
 			return ""
 		}
 	}

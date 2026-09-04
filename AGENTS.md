@@ -210,19 +210,36 @@ It is matched by prefix against the last segment of the name, so a family is
 one entry — `claude-`, not one line per release — and
 `openrouter/meta-llama/llama-3.3-70b-instruct` finds `llama-3.3` all the same.
 Anything unlisted falls back to figures small enough to be safe anywhere: being
-wrong low costs an early compaction, being wrong high costs the turn.
+wrong low costs an early compaction, being wrong high costs the turn. Add a
+family when a model behaves oddly, not because the table looks short.
 
 The window follows the model, not the session, so `/model` and `/connect` move
 it (`useProvider` in tea.go).
 
-`/model` checks the name against the provider's own list — afterwards, in the
-background, and only as a note. Not before, because a list is not the truth:
-Z.ai answers `/models` with ten paid models and none of the free ones, which
-work perfectly well, so refusing what a vendor forgot to list would block a
-working model in order to catch a typo. The typo still gets a line, which is
+`/model` checks a typed name against the provider's own list — afterwards, in
+the background, and only as a note. Not before, because a list is not the
+truth: Z.ai answers `/models` with ten paid models and none of the free ones,
+which work perfectly well, so refusing what a vendor forgot to list would block
+a working model in order to catch a typo. The typo still gets a line, which is
 better than what it used to get: a failed turn one prompt later, with an error
-about the model that never mentions the spelling. Add a family when a model behaves oddly, not
-because the table looks short.
+about the model that never mentions the spelling.
+
+Two things keep the note from crying wolf, and both were bugs first:
+
+- **A prefix counts as listed.** An alias is never in the list itself, only
+  the dated id it points at, so the exact match warned about
+  `anthropic/claude-sonnet-5` — the name ouhai recommends and ships as its own
+  default. A note that fires on the happy path is a note nobody reads.
+- **`Models()` drops only what cannot hold a conversation.** It is two things
+  at once — the picker's offer and what this check compares against — so
+  anything filtered out is reported as a model the provider never heard of.
+  Lacking tool support is not such a reason (ouhai runs those with `UseTools`
+  off), and neither is a small window or Google's `deprecated`, which is set
+  months before a model stops answering.
+
+A name chosen *from* the picker is not checked at all: it came out of that same
+list a moment earlier, so the round-trip could only confirm a match it cannot
+fail.
 
 ## Tasks
 

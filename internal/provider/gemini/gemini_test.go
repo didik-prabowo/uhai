@@ -176,7 +176,9 @@ func TestErrorsAreSurfaced(t *testing.T) {
 }
 
 // Listing offers only what can hold a conversation: an embedding model in the
-// picker is a puzzling failure two steps later.
+// picker is a puzzling failure two steps later. A deprecated model still
+// answers, so it stays — the list is also what /model checks a typed name
+// against, and dropping a working model there reports it as a typo.
 func TestModelsOffersOnlyWhatCanChat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"models":[
@@ -192,7 +194,7 @@ func TestModelsOffersOnlyWhatCanChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 1 || models[0] != "gemini-2.5-flash" {
-		t.Fatalf("models = %v", models)
+	if len(models) != 2 || models[0] != "gemini-1.0-pro" || models[1] != "gemini-2.5-flash" {
+		t.Fatalf("the embedding model must go and the deprecated one stay, got %v", models)
 	}
 }

@@ -242,13 +242,11 @@ func (c *Client) Models() ([]string, error) {
 
 	var body struct {
 		Data []struct {
-			ID                string   `json:"id"`
-			Created           int64    `json:"created"`
-			Active            *bool    `json:"active"`
-			ContextWindow     int      `json:"context_window"`
-			InputModalities   []string `json:"input_modalities"`
-			OutputModalities  []string `json:"output_modalities"`
-			SupportedFeatures []string `json:"supported_features"`
+			ID               string   `json:"id"`
+			Created          int64    `json:"created"`
+			Active           *bool    `json:"active"`
+			InputModalities  []string `json:"input_modalities"`
+			OutputModalities []string `json:"output_modalities"`
 		} `json:"data"`
 		Error *struct {
 			Message string `json:"message"`
@@ -270,16 +268,15 @@ func (c *Client) Models() ([]string, error) {
 		if m.Active != nil && !*m.Active {
 			continue
 		}
-		if m.ContextWindow > 0 && m.ContextWindow < 8192 {
-			continue
-		}
-		// Chat completions need text input and text output. Older
-		// OpenAI-compatible endpoints may omit modality metadata, so keep
-		// those models and only filter when the fields are present.
+		// Only what cannot hold a conversation is dropped, because this list
+		// is also what /model checks a typed name against: a model filtered
+		// out here is reported as one the provider never heard of. Lacking
+		// tools is not such a reason — ouhai runs those with UseTools off —
+		// and neither is a small window, which only compacts sooner.
+		//
+		// Older OpenAI-compatible endpoints may omit modality metadata, so
+		// keep those models and only filter when the fields are present.
 		if len(m.InputModalities) > 0 && (!slices.Contains(m.InputModalities, "text") || !slices.Contains(m.OutputModalities, "text")) {
-			continue
-		}
-		if len(m.SupportedFeatures) > 0 && !slices.Contains(m.SupportedFeatures, "tools") {
 			continue
 		}
 		if strings.Contains(strings.ToLower(m.ID), "prompt-guard") {
