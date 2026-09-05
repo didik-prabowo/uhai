@@ -1482,32 +1482,34 @@ func TestSkillsReportSaysWhatWasFoundAndWhere(t *testing.T) {
 	write(filepath.Join(dir, ".uhai", "skills", "sunyi", "SKILL.md"), "# tanpa frontmatter\n")
 
 	got := skillsReport()
-	// The directory a skill came from, not its own path: the question being
-	// asked is "why is mine not listed", and that is always about the root.
+	// Names, what each costs, and the directory it came from. The question
+	// this answers is "what am I paying for and where did it come from" — the
+	// description is the model's business, and repeating it here turned four
+	// skills into a wall of prose.
 	for _, want := range []string{
-		"rilis", "Langkah merilis versi baru", ".uhai/skills",
-		"review", "Checklist sebelum merge", ".claude/skills",
-		"looked in",
+		"rilis", "review", "sunyi",
+		"tok", ".uhai/skills", ".claude/skills", "looked in",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the report must carry %q:\n%s", want, got)
 		}
 	}
-	// The model picks a skill by its description, so one without a description
-	// is one it has little reason to open — worth saying rather than hiding.
-	if !strings.Contains(got, "sunyi") || !strings.Contains(got, "no description") {
-		t.Errorf("a skill with no description must be listed and named as such:\n%s", got)
+	if strings.Contains(got, "Langkah merilis versi baru") {
+		t.Errorf("descriptions belong in the prompt, not in this list:\n%s", got)
+	}
+	// A skill with no description is found, paid for on every request, and
+	// never opened — the one case worth calling out.
+	if !strings.Contains(got, "no description") {
+		t.Errorf("a skill without a description must be named as such:\n%s", got)
 	}
 	// The bodies are the whole reason skills exist: they must not be in here,
 	// any more than they are in the prompt.
 	if strings.Contains(got, "badan yang panjang") {
 		t.Errorf("a skill's body must not be printed:\n%s", got)
 	}
-
-	// One row each. Two lines per skill is how a list of ten stops being a
-	// list you can read.
-	if lines := strings.Count(got, "\n") + 1; lines != 4 {
-		t.Errorf("three skills and the looked-in row make four lines, got %d:\n%s", lines, got)
+	// One row each, then the total and where it looked.
+	if lines := strings.Count(got, "\n") + 1; lines != 5 {
+		t.Errorf("three skills plus two trailing rows make five lines, got %d:\n%s", lines, got)
 	}
 	// A personal skill's absolute path is half the terminal and says nothing
 	// the ~ does not.

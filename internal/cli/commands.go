@@ -87,7 +87,7 @@ func skillsReport() string {
 			shortPath(dirs[0]) + "\n  looked in " + shortDirs(dirs) + reset
 	}
 
-	width := len("looked in") // the last row is a column too, so it sets the floor
+	width := 0
 	for _, s := range skills {
 		if n := len(s.Name); n > width {
 			width = n
@@ -95,19 +95,25 @@ func skillsReport() string {
 	}
 
 	var rows []string
+	total := 0
 	for _, s := range skills {
-		desc := s.Description
-		if desc == "" {
-			// Worth saying rather than leaving blank: the model picks a skill
-			// by its description, so one without it is one it has little
-			// reason ever to open.
-			desc = "no description — add one to the frontmatter"
+		// What it costs is the line it puts in the prompt, on every request,
+		// whether or not it is ever opened. That is the number worth showing:
+		// the description is the model's business, the bill is yours.
+		cost := len(s.Line()) / 4
+		total += cost
+		row := fmt.Sprintf("  %s%-*s%s %s· ~%s tok · %s",
+			accentAt, width, s.Name, reset, dim, fmtTokens(cost), shortPath(sourceDir(s.Path, dirs)))
+		if s.Description == "" {
+			// The model picks a skill by its description, so one without it is
+			// found, paid for, and never opened.
+			row += " · no description"
 		}
-		rows = append(rows, fmt.Sprintf("  %s%-*s%s %s%s · %s%s",
-			accentAt, width, s.Name, reset, dim, desc, shortPath(sourceDir(s.Path, dirs)), reset))
+		rows = append(rows, row+reset)
 	}
-	return strings.Join(rows, "\n") +
-		fmt.Sprintf("\n  %s%-*s %s%s", dim, width, "looked in", shortDirs(dirs), reset)
+	return strings.Join(rows, "\n") + fmt.Sprintf(
+		"\n  %s%d skill(s) · ~%s tok in every prompt\n  looked in %s%s",
+		dim, len(skills), fmtTokens(total), shortDirs(dirs), reset)
 }
 
 // sourceDir is which of the searched directories a skill came from, which is

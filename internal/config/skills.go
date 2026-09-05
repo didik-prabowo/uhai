@@ -153,11 +153,20 @@ func SkillNotes() string {
 
 	var b strings.Builder
 	for _, skill := range skills {
-		b.WriteString("- " + skill.Name)
-		if skill.Description != "" {
-			b.WriteString(" — " + skill.Description)
-		}
-		b.WriteString(" (read " + skill.Path + ")\n")
+		b.WriteString(skill.Line() + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// Line is this skill as the model is given it, and the only thing about it
+// that costs anything on a turn that does not use it. It is a method so that
+// what the prompt carries and what /skills prices are the same string — two
+// copies of this format would drift, and the second one would quietly be
+// wrong about the bill.
+func (s Skill) Line() string {
+	line := "- " + s.Name
+	if s.Description != "" {
+		line += " — " + s.Description
+	}
+	return line + " (read " + s.Path + ")"
 }
