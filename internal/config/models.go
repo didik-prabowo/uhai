@@ -13,6 +13,11 @@ import (
 // request without MaxOutput, the model picker shows the rest, and the status
 // row prices the turn.
 //
+// Context reaches every vendor. MaxOutput reaches only Anthropic and Gemini,
+// which are the two clients settings.go hands it to; the OpenAI-style endpoints
+// are left to their own defaults, so their MaxOutput here is documentation and
+// nothing reads it.
+//
 // Prices are list prices in US dollars per million tokens, and only for models
 // sold by the vendor that made them. The same open model costs different money
 // at OpenRouter or on a machine under the desk, so those are left at zero
@@ -43,9 +48,23 @@ const (
 // entry rather than one per release. The longest match wins, which is what
 // lets a specific model correct its family.
 //
-// ponytail: a hand-written table, and list prices drift. Providers that report
-// their own limits could fill it in, but none of the ones here do it the same
-// way, and what is unlisted still works — quietly, at safe defaults.
+// Checked against the providers themselves on 2026-09-06, and half of them do
+// report their own limits after all: Anthropic's /v1/models carries
+// max_input_tokens and max_tokens, Gemini's carries inputTokenLimit and
+// outputTokenLimit. Those two families are the API's numbers, not a page's.
+// OpenAI and Z.ai report ids only, so theirs are read off the pricing pages or
+// out of an error message — Z.ai names its output ceiling when you ask for too
+// much ("限制数值范围[1,131072]"), which is the whole documentation there is.
+//
+// Two figures are known to be missing rather than wrong. Z.ai now sells glm-5,
+// glm-5.1 and glm-5.2, and OpenAI sells gpt-5; neither could be sized, because
+// every paid key here is out of credit and a limit cannot be probed on an
+// account that cannot spend. They fall to their family entries, which is the
+// safe direction: a small window compacts early, a large one fails the turn.
+//
+// ponytail: a hand-written table, and list prices drift. Filling it from the
+// two APIs that do report would be real work for two of the five vendors, and
+// what is unlisted still works — quietly, at safe defaults.
 var models = map[string]modelInfo{
 	// The 5 generation moved to a million-token window and a 128k answer, and
 	// Opus came down to a third of what Opus 4 cost. 128k output is only safe
@@ -57,8 +76,16 @@ var models = map[string]modelInfo{
 	"claude-fable":  {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 10, OutputUSD: 50},
 	"claude-opus":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
 	"claude-sonnet": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15},
-	"claude-haiku":  {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
-	"claude-":       {Context: 200_000, MaxOutput: 8_192},
+	"claude-haiku":  {Context: 200_000, MaxOutput: 64_000, InputUSD: 1, OutputUSD: 5},
+
+	// The 4.5 releases answer shorter than the families they belong to, and
+	// MaxOutput is one of the two figures that reaches the wire: asking Opus
+	// 4.5 for its family's 128k output is a request the API refuses. Their
+	// prices are the family's, which is what they were already being given.
+	"claude-opus-4-5":   {Context: 200_000, MaxOutput: 64_000, InputUSD: 5, OutputUSD: 25},
+	"claude-sonnet-4-5": {Context: 1_000_000, MaxOutput: 64_000, InputUSD: 3, OutputUSD: 15},
+
+	"claude-": {Context: 200_000, MaxOutput: 8_192},
 
 	"gpt-4o-mini": {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
 	"gpt-4o":      {Context: 128_000, MaxOutput: 16_384, InputUSD: 2.50, OutputUSD: 10},

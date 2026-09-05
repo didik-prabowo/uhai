@@ -194,3 +194,17 @@ func TestPostDoesNotWaitOnAnEmptyWallet(t *testing.T) {
 		t.Errorf("the reason has to survive to be shown, got %q", body)
 	}
 }
+
+// The wording an exhausted OpenAI account actually sends, which the first
+// markers all missed: it says neither "quota" nor "recharge".
+func TestOpenAIRunningOutOfCreditsIsNotRetried(t *testing.T) {
+	const body = `{"error":{"message":"You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.","type":"insufficient_quota"}}`
+	if worthRetrying(reply(429, body)) {
+		t.Error("an account with no credits will not grow any in ten seconds")
+	}
+	// And without the type field, which is how it arrives from some paths.
+	plain := `{"error":{"message":"You have no credits remaining. Add credits to continue."}}`
+	if worthRetrying(reply(429, plain)) {
+		t.Error("the message alone has to be enough")
+	}
+}

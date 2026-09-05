@@ -61,8 +61,9 @@ func worthRetrying(resp *http.Response) bool {
 
 // outOfMoney reports whether a 429 is about the bill instead of the pace.
 // Z.ai answers an empty wallet with 429 and "Insufficient balance or no
-// resource package. Please recharge."; OpenAI says insufficient_quota and
-// points at billing details. Neither improves in ten seconds, so uhai used to
+// resource package. Please recharge."; OpenAI says either insufficient_quota
+// or "You have no credits remaining", which is the one an exhausted account
+// actually sends and which the first four markers here all missed. Neither improves in ten seconds, so uhai used to
 // spend fifteen of them failing three times identically.
 //
 // Matched on the words that mean money rather than on a vendor's error code,
@@ -73,6 +74,7 @@ func outOfMoney(resp *http.Response) bool {
 	for _, marker := range []string{
 		"insufficient balance",
 		"insufficient_quota",
+		"no credits",
 		"recharge",
 		"billing details",
 	} {

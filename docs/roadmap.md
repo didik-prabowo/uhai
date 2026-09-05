@@ -81,9 +81,14 @@ against servers we wrote ourselves.
 - [ ] One turn through Anthropic and one through Gemini on a live key. A fake
       endpoint proves the shape of a request, never that the vendor agrees
       with it.
-- [ ] Fix the model registry against what the APIs actually list. Z.ai now
-      sells `glm-5`, `glm-5.1` and `glm-5.2`, none of which the table knows,
-      and OpenAI's entries stop at `gpt-4.1`.
+- [x] Fix the model registry against what the APIs actually list. Anthropic
+      and Gemini report their own limits, and the table now carries theirs:
+      Haiku answers 64k rather than the 8k it was capped at, and Opus 4.5 and
+      Sonnet 4.5 have their own entries because their families would have
+      asked them for a 128k answer the API refuses.
+- [ ] Size `glm-5`, `glm-5.1`, `glm-5.2` and `gpt-5`, which Z.ai and OpenAI
+      list but do not measure. Needs a key with credit on it: an account that
+      cannot spend cannot be asked where its ceilings are.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 

@@ -76,13 +76,19 @@ func TestModelLimits(t *testing.T) {
 	for setting, want := range map[string]modelInfo{
 		"anthropic/claude-opus-5":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
 		"anthropic/claude-sonnet-5": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15},
-		// Haiku is the one in the family that did not move to a million.
-		"anthropic/claude-haiku-4-5-20251001": {Context: 200_000, MaxOutput: 8_192, InputUSD: 1, OutputUSD: 5},
 		// Anything older or unrecognised lands on the claude- fallback, which
 		// stays at the figures that are safe everywhere.
-		"anthropic/claude-3-5-sonnet-20241022":         {Context: 200_000, MaxOutput: 8_192},
-		"openai/gpt-4o-mini":                           {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
-		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
+		"anthropic/claude-3-5-sonnet-20241022": {Context: 200_000, MaxOutput: 8_192},
+		"openai/gpt-4o-mini":                   {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
+		"gemini/gemini-2.5-flash":              {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
+		// Anthropic reports all four itself. Haiku is the one in the family that
+		// did not move to a million, and the 4.5 releases answer shorter than
+		// the families they belong to — asking Opus 4.5 for its family's 128k
+		// output is a request the API refuses.
+		"anthropic/claude-haiku-4-5-20251001":          {Context: 200_000, MaxOutput: 64_000, InputUSD: 1, OutputUSD: 5},
+		"anthropic/claude-opus-4-5-20251101":           {Context: 200_000, MaxOutput: 64_000, InputUSD: 5, OutputUSD: 25},
+		"anthropic/claude-sonnet-4-5-20250929":         {Context: 1_000_000, MaxOutput: 64_000, InputUSD: 3, OutputUSD: 15},
+		"anthropic/claude-opus-4-8":                    {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
 		"gemini/gemini-3.5-flash":                      {Context: 1_000_000, MaxOutput: 65_536},
 		"ollama/qwen2.5-coder":                         {Context: 32_768, MaxOutput: 4_096},
 		"openrouter/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
