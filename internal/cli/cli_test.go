@@ -1903,3 +1903,60 @@ func TestUndecorated(t *testing.T) {
 		}
 	}
 }
+
+// /connect could put a key in and nothing could take one out, so a provider
+// stayed in /model for good once it had been tried once.
+func TestDisconnectForgetsTheKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, env := range []string{"OPENAI_API_KEY", "UHAI_API_KEY", "UHAI_MODEL"} {
+		t.Setenv(env, "")
+	}
+	if err := config.Save("openai", config.Creds{config.FieldKey: "kunci"}); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.disconnect("openai")
+	if got := config.APIKey("openai"); got != "" {
+		t.Errorf("the key survived: %q", got)
+	}
+	if slices.Contains(config.ConnectedProviders(), "openai") {
+		t.Error("a provider with no key is not connected")
+	}
+
+	// Saying it twice must not claim to have done it twice.
+	m.disconnect("openai")
+	if !strings.Contains(plain(m.lines[len(m.lines)-1].text), "no saved key") {
+		t.Errorf("want a note that there was nothing to forget, got %q", m.lines[len(m.lines)-1].text)
+	}
+	if m.disconnect("nowhere"); !strings.Contains(plain(m.lines[len(m.lines)-1].text), "unknown provider") {
+		t.Errorf("an unknown name must say so, got %q", m.lines[len(m.lines)-1].text)
+	}
+}
+
+// The environment beats the file, so forgetting the file alone would leave the
+// provider working and the message a lie.
+func TestDisconnectSaysWhenTheEnvironmentKeepsItAlive(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := config.Save("openai", config.Creds{config.FieldKey: "kunci"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENAI_API_KEY", "dari-env")
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.disconnect("openai")
+
+	var said bool
+	for _, e := range m.lines {
+		said = said || strings.Contains(plain(e.text), "OPENAI_API_KEY is still set")
+	}
+	if !said {
+		t.Errorf("the environment keeping it alive must be said: %+v", m.lines)
+	}
+	if config.APIKey("openai") != "dari-env" {
+		t.Error("the exported key is not uhai's to remove")
+	}
+}

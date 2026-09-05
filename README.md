@@ -20,7 +20,8 @@ build again. The welcome box prints the time the running binary was built,
 which is the quickest way to catch having forgotten.
 
 It opens without a provider, so the first thing to type is `/connect`, which
-asks for a key and remembers it in `~/.uhai/auth.json`. If an API key is
+asks for a key and remembers it in `~/.uhai/auth.json`. `/disconnect` forgets one
+again. If an API key is
 already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
 used as it is, and there is nothing to connect.

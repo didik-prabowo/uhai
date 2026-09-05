@@ -196,6 +196,9 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 			return m.beginModels()
 		}
 		return m.changeModel(arg, true)
+	case strings.HasPrefix(value, "/disconnect"):
+		return m.disconnect(strings.TrimSpace(strings.TrimPrefix(value, "/disconnect")))
+
 	case strings.HasPrefix(value, "/connect"):
 		return m.beginConnect(strings.TrimSpace(strings.TrimPrefix(value, "/connect")))
 	case strings.HasPrefix(value, "/"):

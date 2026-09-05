@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -53,6 +54,10 @@ func (m *teaModel) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.mode {
 		case teaProviderPicker:
 			return m, m.selectProvider(selected)
+		case teaDisconnectPicker:
+			m.mode = teaPrompt
+			m.input.Focus()
+			return m, m.disconnect(selected)
 		case teaSkillPicker:
 			return m, m.toggleSkill(selected)
 		}
@@ -182,6 +187,52 @@ func credLabel(field string) string {
 		return "workspace id"
 	}
 	return "API key"
+}
+
+// disconnect forgets a provider's saved key, the half of /connect that was
+// missing: a key could go in and nothing could take one out, so a provider
+// stayed in /model for good once it had been tried once.
+//
+// With no argument it offers the connected ones, since those are the only
+// ones there is anything to forget about.
+func (m *teaModel) disconnect(name string) tea.Cmd {
+	if name == "" {
+		var items []list.Item
+		for _, p := range config.ConnectedProviders() {
+			if config.NeedsKey(p) {
+				items = append(items, teaItem{title: p, desc: "forget the saved key"})
+			}
+		}
+		if len(items) == 0 {
+			m.addHistory(teaDim.Render("nothing to disconnect — no provider has a saved key"))
+			return nil
+		}
+		m.picker = m.newPicker(items, "Disconnect provider")
+		m.mode = teaDisconnectPicker
+		return nil
+	}
+
+	if !config.Known(name) {
+		m.addHistory(teaDim.Render("unknown provider: " + name))
+		return nil
+	}
+	had, err := config.Forget(name)
+	if err != nil {
+		m.addHistory(teaDim.Render("could not disconnect " + name + ": " + err.Error()))
+		return nil
+	}
+	if !had {
+		m.addHistory(teaDim.Render(name + " has no saved key"))
+		return nil
+	}
+	m.addHistory(teaDim.Render("disconnected " + name))
+
+	// Saying "disconnected" while an exported key still works would be a lie,
+	// and it is the same trap /connect warns about from the other side.
+	if env := config.EnvVar(name, config.FieldKey); env != "" && os.Getenv(env) != "" {
+		m.addHistory(teaDim.Render(env + " is still set, so " + name + " keeps working — unset it to finish"))
+	}
+	return nil
 }
 
 func (m *teaModel) selectProvider(name string) tea.Cmd {

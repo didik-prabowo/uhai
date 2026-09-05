@@ -139,6 +139,38 @@ func EnvVar(provider, field string) string {
 // Save merges the fields it is given into what is already stored, rather than
 // replacing the entry: the credentials arrive one question at a time, and
 // answering the second one must not erase the first.
+// Forget removes a provider's saved credentials, which is the half of Save
+// that was missing: /connect could put a key in and nothing could take one
+// out. It reports whether there was anything to remove, so the caller can say
+// "not connected" rather than claiming to have done something.
+//
+// It does not touch the environment. A GEMINI_API_KEY that is exported still
+// wins over the file, so forgetting the file alone would leave the provider
+// connected and the message a lie — the caller checks and says so.
+func Forget(provider string) (bool, error) {
+	all, err := LoadAuth()
+	if err != nil {
+		return false, err
+	}
+	if _, ok := all[provider]; !ok {
+		return false, nil
+	}
+	delete(all, provider)
+
+	path, err := AuthPath()
+	if err != nil {
+		return false, err
+	}
+	data, err := json.MarshalIndent(all, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(path, append(data, '\n'), authFilePerm); err != nil {
+		return false, err
+	}
+	return true, os.Chmod(path, authFilePerm)
+}
+
 func Save(provider string, c Creds) error {
 	if provider == "" || len(c) == 0 {
 		return errors.New("a provider and at least one credential are needed")

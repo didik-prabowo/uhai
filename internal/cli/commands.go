@@ -29,6 +29,7 @@ type command struct {
 
 var commands = []command{
 	{"/connect", "connect to a provider (saves the API key)"},
+	{"/disconnect", "forget a provider's saved key: /disconnect zai"},
 	{"/help", "show the command list"},
 	{"/clear", "clear the screen"},
 	{"/exit", "quit uhai"},

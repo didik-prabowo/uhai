@@ -368,7 +368,8 @@ func (m *teaModel) screen() string {
 		m.setChatHeight(m.height - len(panel))
 		return lipgloss.JoinVertical(lipgloss.Left, append([]string{m.chat.View()}, panel...)...)
 	}
-	if m.mode == teaProviderPicker || m.mode == teaModelPicker || m.mode == teaSkillPicker {
+	if m.mode == teaProviderPicker || m.mode == teaModelPicker ||
+		m.mode == teaSkillPicker || m.mode == teaDisconnectPicker {
 		return lipgloss.JoinVertical(lipgloss.Left, m.picker.View(), teaDim.Render("enter select · esc cancel"))
 	}
 	if m.mode == teaKeyEntry {

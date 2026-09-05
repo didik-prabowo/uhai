@@ -120,6 +120,7 @@ const (
 	teaKeyEntry
 	teaModelPicker
 	teaSkillPicker
+	teaDisconnectPicker
 )
 
 // chatEntry is one thing said, kept as it was written. What it looks like
