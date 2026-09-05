@@ -40,7 +40,7 @@ func TestSendAssemblesTextAndToolCall(t *testing.T) {
 		}
 
 		io.WriteString(w, events(
-			`{"type":"message_start","message":{"usage":{"input_tokens":1200,"output_tokens":0}}}`,
+			`{"type":"message_start","message":{"usage":{"input_tokens":1200,"output_tokens":0,"cache_read_input_tokens":9000,"cache_creation_input_tokens":40}}}`,
 			`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"reading "}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"it now"}}`,
@@ -75,8 +75,26 @@ func TestSendAssemblesTextAndToolCall(t *testing.T) {
 	}
 
 	// The Messages API refuses a request without a ceiling on the answer.
-	if got.MaxTokens != 8192 || got.System != "be brief" || !got.Stream {
+	if got.MaxTokens != 8192 || !got.Stream {
 		t.Fatalf("the request went out wrong: %+v", got)
+	}
+
+	// The system prompt goes as a block carrying a cache breakpoint, not as a
+	// string. Tools render before it, so this one mark covers every byte of a
+	// request that does not change within a turn — around nine thousand tokens
+	// here, resent on every iteration of the tool loop.
+	if len(got.System) != 1 || got.System[0].Text != "be brief" {
+		t.Fatalf("the system prompt went out wrong: %+v", got.System)
+	}
+	if got.System[0].Cache == nil || got.System[0].Cache.Type != "ephemeral" {
+		t.Fatalf("the prefix must be marked cacheable: %+v", got.System[0])
+	}
+
+	// The cache tally is reported once, when the message opens, and never
+	// again — and it has to be kept apart from Input, since reading a cached
+	// prefix is billed at a fraction and writing one at a premium.
+	if resp.Usage.CacheRead != 9000 || resp.Usage.CacheWrite != 40 || resp.Usage.Input != 1200 {
+		t.Fatalf("the cache tally must survive the stream: %+v", resp.Usage)
 	}
 
 	if streamed != "reading it now" {

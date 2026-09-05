@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // Every field a settings file can carry must survive the merge: LoadSettings
@@ -121,13 +123,21 @@ func TestModelSummaryAndCost(t *testing.T) {
 		t.Fatalf("unknown summary = %q", got)
 	}
 
-	if got := CostUSD("anthropic/claude-sonnet-5", 1_000_000, 100_000); got != "$4.50" {
+	if got := CostUSD("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000, Output: 100_000}); got != "$4.50" {
 		t.Fatalf("a priced turn = %q", got)
 	}
-	if got := CostUSD("anthropic/claude-sonnet-5", 200, 100); got != "<$0.01" {
+	// A cached prefix is not billed like fresh input: reading it back costs a
+	// tenth. Pricing it as input would overstate a cached turn by roughly the
+	// whole system prompt, which is the larger half of every request.
+	fresh := CostUSD("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000})
+	cached := CostUSD("anthropic/claude-sonnet-5", provider.Usage{CacheRead: 1_000_000})
+	if fresh != "$3.00" || cached != "$0.30" {
+		t.Fatalf("cached input must cost a tenth: fresh %s, cached %s", fresh, cached)
+	}
+	if got := CostUSD("anthropic/claude-sonnet-5", provider.Usage{Input: 200, Output: 100}); got != "<$0.01" {
 		t.Fatalf("a cheap turn = %q", got)
 	}
-	if got := CostUSD("groq/llama-3.3-70b-versatile", 1_000_000, 100_000); got != "" {
+	if got := CostUSD("groq/llama-3.3-70b-versatile", provider.Usage{Input: 1_000_000, Output: 100_000}); got != "" {
 		t.Fatalf("an unpriced model must stay quiet, got %q", got)
 	}
 

@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
 // What is known about a model: what it can hold, how much it may write, what
@@ -115,12 +117,24 @@ func SupportsTools(modelSetting string) bool { return !infoFor(modelSetting).NoT
 // CostUSD prices one turn, "" when the model's price depends on who is hosting
 // it. Rounded to something a person can read rather than to the cent, since
 // a turn often costs less than one.
-func CostUSD(modelSetting string, inputTokens, outputTokens int) string {
+// Cached input is not billed like fresh input: reading a prefix back costs a
+// tenth, and writing one costs a quarter extra the once. Pricing them as plain
+// input would overstate a cached turn by roughly the whole system prompt,
+// which is the larger half of every request here.
+const (
+	cacheReadRate  = 0.1
+	cacheWriteRate = 1.25
+)
+
+func CostUSD(modelSetting string, u provider.Usage) string {
 	info := infoFor(modelSetting)
 	if info.InputUSD == 0 && info.OutputUSD == 0 {
 		return ""
 	}
-	usd := (float64(inputTokens)*info.InputUSD + float64(outputTokens)*info.OutputUSD) / 1_000_000
+	inputUSD := float64(u.Input)*info.InputUSD +
+		float64(u.CacheRead)*info.InputUSD*cacheReadRate +
+		float64(u.CacheWrite)*info.InputUSD*cacheWriteRate
+	usd := (inputUSD + float64(u.Output)*info.OutputUSD) / 1_000_000
 	switch {
 	case usd == 0:
 		return ""

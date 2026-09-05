@@ -82,6 +82,23 @@ What the second and third implementations taught:
   not have. That client invents one, which works because the id only has to be
   unique within the conversation it is used in.
 
+The Anthropic client marks the end of the system prompt as a cache
+breakpoint. The API renders tools, then system, then messages, so one mark
+covers every byte of a request that does not change within a turn — for this
+project about nine thousand tokens, resent on each iteration of the tool loop,
+so ten tool calls used to mean paying ten times for identical text. That is why
+`System` goes as a block rather than a string: a string cannot carry the mark.
+
+One breakpoint, not the four the API allows. The next one worth having is on
+the conversation so far, and it has to move every turn; this one never moves,
+which is what makes it free to keep correct.
+
+`Usage` counts cached input apart from fresh input, because it is not billed
+the same — a read is a tenth, a write a quarter extra, and `config.CostUSD`
+prices all three. Folding them together would have made the status row quote a
+figure wrong by roughly the whole system prompt, in whichever direction caching
+happened to work.
+
 ## When a turn does not finish
 
 A turn fails in the middle more often than anything else here: a rate limit, a

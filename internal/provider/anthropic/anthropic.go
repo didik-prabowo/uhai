@@ -115,10 +115,40 @@ type wireTool struct {
 type wireRequest struct {
 	Model     string        `json:"model"`
 	MaxTokens int           `json:"max_tokens"`
-	System    string        `json:"system,omitempty"`
+	System    []wireSystem  `json:"system,omitempty"`
 	Messages  []wireMessage `json:"messages"`
 	Tools     []wireTool    `json:"tools,omitempty"`
 	Stream    bool          `json:"stream"`
+}
+
+// wireSystem is the system prompt as blocks rather than a string, which is the
+// only shape that can carry a cache breakpoint.
+type wireSystem struct {
+	Type  string     `json:"type"`
+	Text  string     `json:"text"`
+	Cache *wireCache `json:"cache_control,omitempty"`
+}
+
+type wireCache struct {
+	Type string `json:"type"`
+}
+
+// systemBlocks marks the end of the system prompt as a cache breakpoint.
+//
+// The API renders tools, then system, then messages, so one breakpoint at the
+// end of system covers both the tool schemas and the prompt — which is every
+// byte of a request that does not change within a turn. For this project that
+// is around nine thousand tokens, resent on every iteration of the tool loop:
+// ten tool calls used to mean paying for the same text ten times.
+//
+// One breakpoint, not four. The next one worth having is on the conversation
+// so far, and it has to move every turn; this one never moves, which is what
+// makes it free to keep right.
+func systemBlocks(system string) []wireSystem {
+	if system == "" {
+		return nil
+	}
+	return []wireSystem{{Type: "text", Text: system, Cache: &wireCache{Type: "ephemeral"}}}
 }
 
 // wireEvent is one server-sent event. The Messages API streams a small state
@@ -149,15 +179,17 @@ type wireEvent struct {
 }
 
 type wireUsage struct {
-	Input  int `json:"input_tokens"`
-	Output int `json:"output_tokens"`
+	Input      int `json:"input_tokens"`
+	Output     int `json:"output_tokens"`
+	CacheRead  int `json:"cache_read_input_tokens"`
+	CacheWrite int `json:"cache_creation_input_tokens"`
 }
 
 func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Response, error) {
 	body, err := json.Marshal(wireRequest{
 		Model:     c.opts.Model,
 		MaxTokens: c.opts.MaxTokens,
-		System:    req.System,
+		System:    systemBlocks(req.System),
 		Messages:  toWire(req.Messages),
 		Tools:     toWireTools(req.Tools),
 		Stream:    true,
@@ -279,6 +311,11 @@ func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, erro
 		case "message_start":
 			if e.Message != nil {
 				usage.Input = e.Message.Usage.Input
+				// Read here rather than from the final usage event: the
+				// Messages API reports the cache tally once, when the message
+				// opens, and never mentions it again.
+				usage.CacheRead = e.Message.Usage.CacheRead
+				usage.CacheWrite = e.Message.Usage.CacheWrite
 			}
 		case "content_block_start":
 			if e.ContentBlock == nil {

@@ -100,9 +100,17 @@ type Request struct {
 }
 
 // Usage is what one call cost in tokens. Zero means the provider did not say.
+//
+// Cached input is counted apart from Input because it is not billed the same:
+// reading a cached prefix is a fraction of the price and writing one is a
+// premium on top. Folding them together would make the status row quote a
+// figure that is wrong in whichever direction caching happened to work.
 type Usage struct {
 	Input  int
 	Output int
+
+	CacheRead  int // prefix served from cache, billed at a fraction
+	CacheWrite int // prefix written to cache, billed at a premium once
 }
 
 // Response is the neutral result of a single provider call.

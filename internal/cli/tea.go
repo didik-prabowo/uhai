@@ -780,7 +780,7 @@ func (m *teaModel) workingHint() string {
 	if m.usage.Input > 0 || out > 0 {
 		hint += fmt.Sprintf(" · ↑%s ↓%s tokens", fmtTokens(m.usage.Input), fmtTokens(out))
 		if m.agent.Provider != nil {
-			if cost := config.CostUSD(m.agent.Provider.Name(), m.usage.Input, out); cost != "" {
+			if cost := config.CostUSD(m.agent.Provider.Name(), provider.Usage{Input: m.usage.Input, Output: out, CacheRead: m.usage.CacheRead, CacheWrite: m.usage.CacheWrite}); cost != "" {
 				hint += " · " + cost
 			}
 		}
@@ -1024,7 +1024,7 @@ func (m *teaModel) turnSummary() string {
 	if m.usage.Input > 0 || m.usage.Output > 0 {
 		parts = append(parts, fmt.Sprintf("↑%s ↓%s tokens", fmtTokens(m.usage.Input), fmtTokens(m.usage.Output)))
 		if m.agent.Provider != nil {
-			if cost := config.CostUSD(m.agent.Provider.Name(), m.usage.Input, m.usage.Output); cost != "" {
+			if cost := config.CostUSD(m.agent.Provider.Name(), m.usage); cost != "" {
 				parts = append(parts, cost)
 			}
 		}
