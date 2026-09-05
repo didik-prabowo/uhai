@@ -14,5 +14,6 @@ package tools
 // egress, through the tool that does not stop to ask. Allow it in settings if
 // the asking is not worth it for you.
 func NeedsConfirm(name string) bool {
-	return name == "write_file" || name == "edit_file" || name == "run_bash" || name == "fetch_url"
+	t, ok := find(name)
+	return ok && t.Confirm
 }
