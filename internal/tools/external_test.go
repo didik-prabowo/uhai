@@ -7,7 +7,9 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/didik-prabowo/uhai/internal/tools"
@@ -65,3 +67,39 @@ func TestAToolCanComeFromAnotherPackage(t *testing.T) {
 		t.Error("a duplicate name must be refused")
 	}
 }
+
+// A registry that is only safe when used the way its author imagined is not
+// safe. An MCP server reconnecting mid-session would register from its own
+// goroutine while the agent reads the list from its — this is that, and it
+// fails under -race without the lock.
+func TestRegisterIsSafeWhileTheListIsRead(t *testing.T) {
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("late_%d", i)
+			if err := tools.Register(namedTool{name}); err != nil {
+				t.Error(err)
+			}
+			t.Cleanup(func() { tools.Unregister(name) })
+		}(i)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tools.Definitions()
+			tools.NeedsConfirm("read_file")
+			tools.Execute(context.Background(), "glob", json.RawMessage(`{}`))
+		}()
+	}
+	wg.Wait()
+}
+
+type namedTool struct{ n string }
+
+func (t namedTool) Name() string            { return t.n }
+func (t namedTool) Description() string     { return "late arrival" }
+func (t namedTool) Schema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
+func (t namedTool) NeedsConfirm() bool      { return false }
+
+func (t namedTool) Run(context.Context, json.RawMessage) (string, bool) { return "ok", false }

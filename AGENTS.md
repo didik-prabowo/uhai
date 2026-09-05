@@ -154,7 +154,17 @@ built from the unexported `tool` struct, which carries its handler in a field
 and implements those five methods once rather than once per tool, so a built-in
 stays a single literal. `Register` is how a tool from elsewhere joins, and it
 refuses a name already taken: two tools answering to one name is a bug the
-model experiences as the wrong thing happening, with nothing to read.
+model experiences as the wrong thing happening, with nothing to read. The list
+is behind an `RWMutex` — an MCP server reconnecting mid-session would register
+from its own goroutine while the agent reads the list from its, and a registry
+that is only safe when used the way its author imagined is not safe.
+`database/sql.Register` locks for the same reason.
+
+`Run` returns `(result string, isError bool)` and not `(string, error)` on
+purpose: the bool is the `is_error` flag on the wire, not a failed function.
+A tool that cannot do its job has still done its job by saying why — "could
+not read file: no such file" is something the model can act on, where a
+dropped result leaves it believing the file was empty.
 
 The interface costs 22 lines over the plain table it replaced. It buys one
 thing the table could not do at all — a tool whose name is not known until the
