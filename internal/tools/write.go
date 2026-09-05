@@ -14,7 +14,7 @@ import (
 // thing that runs.
 type writeTool struct{}
 
-func (writeTool) Name() string       { return "write_file" }
+func (writeTool) Name() string       { return NameWrite }
 func (writeTool) NeedsConfirm() bool { return true }
 func (writeTool) Description() string {
 	return "Write (overwrite) content to a file, creating it and its parent folders if needed."

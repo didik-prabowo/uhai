@@ -15,7 +15,7 @@ import (
 // thing that runs.
 type grepTool struct{}
 
-func (grepTool) Name() string       { return "grep" }
+func (grepTool) Name() string       { return NameGrep }
 func (grepTool) NeedsConfirm() bool { return false }
 func (grepTool) Description() string {
 	return "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission."

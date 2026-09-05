@@ -237,6 +237,21 @@ is not a cosmetic difference: a diff that cries wolf is answered with `y`
 without being read, and the diff is the only reason the question beats a blob of
 JSON.
 
+Tool names are constants in `tools/names.go`, and nothing else spells them.
+They are the vocabulary three packages share — the schema sent to the provider,
+the rules a person writes in `settings.json`, the questions the terminal asks —
+and `"run_bash"` alone appeared thirteen times outside `internal/tools`.
+Renaming a tool would have left every rule matching a name nothing answered to
+and the confirmation showing raw JSON instead of a command, none of which fails
+a build. `NameSpawnTask` is there too although the tool is not: it needs an
+Agent, so it is built in `internal/agent`, but its *name* is shared and having
+two spellings of it is what left `"deny": ["spawn_task"]` doing nothing.
+
+A rule resolves through `config.toolName`, which knows a short list of friendly
+spellings — `Bash`, `Read`, `Write` — and otherwise asks `tools.Definitions`.
+A tool therefore answers to its own name without anyone maintaining a list,
+which is the version of that map that could not have gone stale.
+
 `permissions` in the settings is three lists of rules — `allow`, `ask`, `deny`
 — in the shape Claude Code uses, `Bash(git push:*)` and `Read(*.env)`. Deny
 beats ask beats allow, and the longest specifier wins, so ordering in the file

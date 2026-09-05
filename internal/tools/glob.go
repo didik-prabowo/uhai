@@ -8,11 +8,13 @@ import (
 	"strings"
 )
 
+const GLOB = "glob"
+
 // globTool is the glob tool: what the model is told about it, and the
 // thing that runs.
 type globTool struct{}
 
-func (globTool) Name() string       { return "glob" }
+func (globTool) Name() string       { return GLOB }
 func (globTool) NeedsConfirm() bool { return false }
 func (globTool) Description() string {
 	return "List files whose name matches a pattern, such as *.go or **/*_test.go. Faster than run_bash for finding files, and it never needs permission."

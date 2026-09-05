@@ -522,13 +522,20 @@ func TestTheDirectoryIsNamedInOnePlace(t *testing.T) {
 // rule is dropped, and "deny" quietly protects nothing. The failure is silent
 // in the worst direction — you believe a tool is denied and it is not.
 func TestEveryToolCanBeNamedInARule(t *testing.T) {
-	named := map[string]bool{}
-	for _, real := range toolNames {
-		named[real] = true
-	}
 	for _, spec := range tools.Definitions() {
-		if !named[spec.Name] {
-			t.Errorf("%s cannot be named in a permission rule; add it to toolNames", spec.Name)
+		if _, ok := toolName(spec.Name); !ok {
+			t.Errorf("%s cannot be named in a permission rule", spec.Name)
 		}
+	}
+	// The agent's own tool is not in Definitions and has to be named too.
+	if _, ok := toolName(tools.NameSpawnTask); !ok {
+		t.Error("spawn_task cannot be named in a permission rule")
+	}
+	// The friendly spellings still resolve, and a typo still does not.
+	if got, _ := toolName("Bash"); got != tools.NameBash {
+		t.Errorf("Bash must resolve to %s, got %s", tools.NameBash, got)
+	}
+	if _, ok := toolName("bosh"); ok {
+		t.Error("a tool nobody has is a typo, not a rule")
 	}
 }

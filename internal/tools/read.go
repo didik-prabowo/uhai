@@ -13,7 +13,7 @@ import (
 // thing that runs.
 type readTool struct{}
 
-func (readTool) Name() string       { return "read_file" }
+func (readTool) Name() string       { return NameRead }
 func (readTool) NeedsConfirm() bool { return false }
 func (readTool) Description() string {
 	return "Read a file from disk and return its full contents as text."

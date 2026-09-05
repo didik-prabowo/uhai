@@ -43,7 +43,7 @@ var fetchClient = &http.Client{
 // thing that runs.
 type fetchTool struct{}
 
-func (fetchTool) Name() string       { return "fetch_url" }
+func (fetchTool) Name() string       { return NameFetch }
 func (fetchTool) NeedsConfirm() bool { return true }
 func (fetchTool) Description() string {
 	return "Fetch a web page or document over http(s) and return it as text. " +

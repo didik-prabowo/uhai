@@ -9,13 +9,14 @@ import (
 
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // spawnSpec is offered to the model on top of the ordinary tools, but never to
 // a task itself — a subagent that can spawn subagents is a fork bomb with a
 // billing account.
 var spawnSpec = provider.ToolSpec{
-	Name: "spawn_task",
+	Name: tools.NameSpawnTask,
 	Description: "Hand a self-contained piece of work to a fresh agent with its own context, and get back only its report. " +
 		"Use it for work that reads a lot to answer a little: searching the codebase, investigating a bug, reviewing a diff. " +
 		"The task cannot ask the user anything and shares no history with you, so its prompt must be complete on its own.",

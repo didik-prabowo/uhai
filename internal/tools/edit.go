@@ -14,7 +14,7 @@ import (
 // thing that runs.
 type editTool struct{}
 
-func (editTool) Name() string       { return "edit_file" }
+func (editTool) Name() string       { return NameEdit }
 func (editTool) NeedsConfirm() bool { return true }
 func (editTool) Description() string {
 	return "Replace one exact piece of text in a file. Use this instead of write_file for changing part of an existing file. The old text must appear exactly once."

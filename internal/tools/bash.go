@@ -28,7 +28,7 @@ func killGroup(ctx context.Context, cmd *exec.Cmd) func() {
 	go func() {
 		select {
 		case <-ctx.Done():
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		case <-done:
 		}
 	}()
@@ -39,7 +39,7 @@ func killGroup(ctx context.Context, cmd *exec.Cmd) func() {
 // thing that runs.
 type bashTool struct{}
 
-func (bashTool) Name() string       { return "run_bash" }
+func (bashTool) Name() string       { return NameBash }
 func (bashTool) NeedsConfirm() bool { return true }
 func (bashTool) Description() string {
 	return "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input."

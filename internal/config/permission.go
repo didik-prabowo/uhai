@@ -33,21 +33,42 @@ type Permissions struct {
 	Deny  []string `json:"deny,omitempty"`
 }
 
-// toolNames maps what a rule may call a tool to what the code calls it. Both
-// spellings are accepted: the familiar one from Claude Code, and uhai's own.
-var toolNames = map[string]string{
-	"bash": "run_bash", "run_bash": "run_bash",
-	"read": "read_file", "read_file": "read_file",
-	"write": "write_file", "write_file": "write_file",
-	"edit": "edit_file", "edit_file": "edit_file",
-	"glob":  "glob",
-	"grep":  "grep",
-	"fetch": "fetch_url", "fetch_url": "fetch_url",
-	// spawn_task is the agent's, not this package's, but a rule has to be able
-	// to name it: without this "deny": ["spawn_task"] parses as nothing and
-	// protects nothing, which is the worst way for a denial to fail.
-	"task": "spawn_task", "spawn_task": "spawn_task",
-	"*": "*",
+// aliases are the friendly spellings Claude Code uses, on top of each tool's
+// own name — which always works, and is not listed here. Listing both would be
+// the same string written twice, and the copy that goes stale is the one that
+// silently stops matching a rule somebody wrote months ago.
+var aliases = map[string]string{
+	"bash":  tools.NameBash,
+	"read":  tools.NameRead,
+	"write": tools.NameWrite,
+	"edit":  tools.NameEdit,
+	"fetch": tools.NameFetch,
+	"task":  tools.NameSpawnTask,
+}
+
+// toolName resolves what a rule calls a tool to what the code calls it. A tool
+// answers to its own name without anyone maintaining a list, so adding a tool
+// makes it nameable in a rule by itself — the previous version was a
+// hand-written map, and spawn_task was missing from it for months.
+func toolName(spelling string) (string, bool) {
+	s := strings.ToLower(strings.TrimSpace(spelling))
+	if s == "*" {
+		return "*", true
+	}
+	if real, ok := aliases[s]; ok {
+		return real, true
+	}
+	// The agent's tool: not in Definitions, but a rule has to be able to name
+	// it, or "deny": ["spawn_task"] parses as nothing and protects nothing.
+	if s == tools.NameSpawnTask {
+		return s, true
+	}
+	for _, spec := range tools.Definitions() {
+		if spec.Name == s {
+			return s, true
+		}
+	}
+	return "", false
 }
 
 // rule is one line of one of those lists: a tool, and what it may act on —
@@ -65,7 +86,7 @@ func parseRule(text string) (rule, bool) {
 		name, spec = text[:open], text[open+1:len(text)-1]
 	}
 
-	tool, ok := toolNames[strings.ToLower(strings.TrimSpace(name))]
+	tool, ok := toolName(name)
 	if !ok {
 		return rule{}, false // a tool nobody has is not a rule, it is a typo
 	}
@@ -82,7 +103,7 @@ func (r rule) matches(tool, subject string) bool {
 	if r.spec == "" {
 		return true
 	}
-	if tool == "run_bash" {
+	if tool == tools.NameBash {
 		return matchCommand(r.spec, subject)
 	}
 	return matchPath(r.spec, subject)
@@ -102,7 +123,7 @@ func Permission(tool, subject string) string {
 	}
 
 	// A chained command is only as safe as its least safe part.
-	if tool == "run_bash" {
+	if tool == tools.NameBash {
 		return commandPermission(s, subject)
 	}
 
@@ -124,7 +145,7 @@ func Permission(tool, subject string) string {
 func commandPermission(s Settings, command string) string {
 	parts := splitCommand(command)
 	if len(parts) == 0 {
-		return defaultPermission("run_bash")
+		return defaultPermission(tools.NameBash)
 	}
 
 	answer := PermAllow
@@ -144,14 +165,14 @@ func commandPermission(s Settings, command string) string {
 
 func onePart(s Settings, command string) string {
 	switch {
-	case bestMatch(s.Permissions.Deny, "run_bash", command) >= 0:
+	case bestMatch(s.Permissions.Deny, tools.NameBash, command) >= 0:
 		return PermDeny
-	case bestMatch(s.Permissions.Ask, "run_bash", command) >= 0:
+	case bestMatch(s.Permissions.Ask, tools.NameBash, command) >= 0:
 		return PermAsk
-	case bestMatch(s.Permissions.Allow, "run_bash", command) >= 0:
+	case bestMatch(s.Permissions.Allow, tools.NameBash, command) >= 0:
 		return PermAllow
 	}
-	return defaultPermission("run_bash")
+	return defaultPermission(tools.NameBash)
 }
 
 // bestMatch returns the length of the longest matching rule, -1 for none. The

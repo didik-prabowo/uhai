@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // diffContext is how many unchanged lines are shown around a change: enough to
@@ -44,7 +45,7 @@ func (m *teaModel) decide(name, input string) string {
 	json.Unmarshal([]byte(input), &args)
 
 	subject := args.Path
-	if name == "run_bash" {
+	if name == tools.NameBash {
 		subject = args.Command
 	}
 
@@ -135,13 +136,13 @@ func toolLine(name, input string) string {
 
 	var subject string
 	switch name {
-	case "run_bash":
+	case tools.NameBash:
 		subject = args.Command
-	case "read_file", "write_file", "edit_file":
+	case tools.NameRead, tools.NameWrite, tools.NameEdit:
 		subject = args.Path
-	case "fetch_url":
+	case tools.NameFetch:
 		subject = args.URL
-	case "glob", "grep":
+	case tools.NameGlob, tools.NameGrep:
 		subject = args.Pattern
 		if args.Include != "" {
 			subject += " in " + args.Include
@@ -168,13 +169,13 @@ func confirmTitle(name, input string) string {
 	json.Unmarshal([]byte(input), &args)
 
 	switch name {
-	case "run_bash":
+	case tools.NameBash:
 		return "Shell command"
-	case "fetch_url":
+	case tools.NameFetch:
 		return "Fetch a page"
-	case "edit_file":
+	case tools.NameEdit:
 		return "Edit " + args.Path
-	case "write_file":
+	case tools.NameWrite:
 		if _, err := os.Stat(args.Path); err == nil {
 			return "Rewrite " + args.Path
 		}
@@ -198,13 +199,13 @@ func confirmDetail(name, input string) string {
 	}
 
 	switch name {
-	case "run_bash":
+	case tools.NameBash:
 		return teaDim.Render("  $ ") + args.Command
-	case "edit_file":
+	case tools.NameEdit:
 		// Where in the file this lands. The provider never says — it sends
 		// the text to replace, not where it is — so it is counted here.
 		return diff(args.Old, args.New, lineOf(args.Path, args.Old))
-	case "write_file":
+	case tools.NameWrite:
 		before, err := os.ReadFile(args.Path)
 		if err != nil {
 			// A new file has nothing to compare against: what it will contain
