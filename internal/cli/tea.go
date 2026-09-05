@@ -412,7 +412,9 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.usage.Output += msg.Output
 		// The turn's shape above, the conversation's bill below: they are not
 		// the same sum, since every call in a turn is charged for its input.
-		recordUsage(provider.Usage(msg))
+		if m.agent.Provider != nil {
+			recordUsage(m.agent.Provider.Name(), provider.Usage(msg))
+		}
 		m.streamed = 0
 	case teaCompactMsg:
 		m.busy, m.cancel, m.status = false, nil, ""

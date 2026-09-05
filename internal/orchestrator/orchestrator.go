@@ -117,6 +117,9 @@ func RunOnce(prompt string, allowTools bool) error {
 	a.OnNotice = func(text string) { fmt.Fprintln(os.Stderr, text) }
 	a.OnToolCall = func(name, input string) { fmt.Fprintf(os.Stderr, "⎿ %s\n", name) }
 	a.Confirm = func(string, string) bool { return allowTools }
+	// Without this a -p turn is paid for and recorded nowhere, so -resume
+	// picks the conversation up believing it has cost nothing so far.
+	a.OnUsage = func(u provider.Usage) { cli.RecordUsage(a, u) }
 
 	// Without a terminal in raw mode, Ctrl+C arrives as a signal again.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

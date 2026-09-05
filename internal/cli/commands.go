@@ -251,33 +251,57 @@ var store session.Store = filestore.New("")
 // the wrong number for "what have I spent" — a turn with ten tool calls bills
 // its input ten times, and only the last one is on screen.
 //
-// In memory, so it starts again with the process. Persisting it would mean
-// storing tokens and pricing them later at whatever model is loaded then,
-// which is a confident wrong figure the moment /model is used.
-var spent provider.Usage
+// Kept per model, and saved with the conversation so -resume carries it. One
+// stored total would have to be priced later at whatever model was loaded
+// then, which is a confident wrong figure the moment /model is used; a share
+// per model is priced with that model's own rates and the shares are added.
+var spent []session.Spend
 
-func recordUsage(u provider.Usage) {
-	spent.Input += u.Input
-	spent.Output += u.Output
-	spent.CacheRead += u.CacheRead
-	spent.CacheWrite += u.CacheWrite
+func recordUsage(model string, u provider.Usage) {
+	for i := range spent {
+		if spent[i].Model == model {
+			spent[i].Usage.Input += u.Input
+			spent[i].Usage.Output += u.Output
+			spent[i].Usage.CacheRead += u.CacheRead
+			spent[i].Usage.CacheWrite += u.CacheWrite
+			return
+		}
+	}
+	spent = append(spent, session.Spend{Model: model, Usage: u})
+}
+
+// spentTotals adds the token counts up across models, which is the one figure
+// that means the same thing whichever model earned it.
+func spentTotals() (in, out, cached int) {
+	for _, s := range spent {
+		in += s.Usage.Input + s.Usage.CacheRead + s.Usage.CacheWrite
+		out += s.Usage.Output
+		cached += s.Usage.CacheRead
+	}
+	return in, out, cached
 }
 
 // spentReport is the running total, "" when nothing has been asked yet.
 func spentReport(p provider.Provider) string {
-	if spent.Input == 0 && spent.Output == 0 && spent.CacheRead == 0 {
+	in, out, cached := spentTotals()
+	if in == 0 && out == 0 {
 		return ""
 	}
-	line := fmt.Sprintf("↑%s ↓%s tokens", fmtTokens(spent.Input+spent.CacheRead+spent.CacheWrite), fmtTokens(spent.Output))
-	if spent.CacheRead > 0 {
+	line := fmt.Sprintf("↑%s ↓%s tokens", fmtTokens(in), fmtTokens(out))
+	if cached > 0 {
 		// Worth its own figure: it is the difference between this session and
 		// the same session without a cache breakpoint.
-		line += fmt.Sprintf(" · %s from cache", fmtTokens(spent.CacheRead))
+		line += fmt.Sprintf(" · %s from cache", fmtTokens(cached))
 	}
-	if p != nil {
-		if cost := config.CostUSD(p.Name(), spent); cost != "" {
-			line += " · " + cost
-		}
+	// Each share at its own model's price. The provider argument is no longer
+	// what prices anything; it is only here so a caller without one still
+	// gets the tokens.
+	var usd float64
+	for _, s := range spent {
+		usd += config.CostOf(s.Model, s.Usage)
+	}
+	if cost := config.FormatUSD(usd); cost != "" {
+		line += " · " + cost
 	}
 	return line
 }
@@ -301,6 +325,7 @@ func savedSessionID() string {
 // a fresh copy of the history and the id nobody could hold on to.
 func ContinueSession(s session.Session) {
 	current.ID, current.Started, current.Model = s.ID, s.Started, s.Model
+	spent = s.Spend
 }
 
 // SaveSession writes the conversation, so every way of asking keeps it
@@ -308,6 +333,7 @@ func ContinueSession(s session.Session) {
 // which is outside this package and was the one door that saved nothing.
 func SaveSession(a *agent.Agent) error {
 	current.Messages = a.History
+	current.Spend = spent
 	if a.Provider != nil {
 		current.Model = a.Provider.Name()
 	}
@@ -539,4 +565,14 @@ func tasksReport(a *agent.Agent, id string) string {
 		rows = append(rows, row+reset)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// RecordUsage lets the headless front end add a call to the running total.
+// Exported for the same reason SaveSession is: -p answers from orchestrator,
+// and it was the one door that recorded nothing.
+func RecordUsage(a *agent.Agent, u provider.Usage) {
+	if a.Provider == nil {
+		return
+	}
+	recordUsage(a.Provider.Name(), u)
 }

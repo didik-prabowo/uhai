@@ -38,6 +38,18 @@ type Session struct {
 	PID      int                `json:"pid"`     // the process that held it, for telling two live sessions apart
 	Model    string             `json:"model"`
 	Messages []provider.Message `json:"messages"`
+
+	// Spend is what the conversation has cost, kept per model rather than as
+	// one total. Pricing a stored total later at whatever model happens to be
+	// loaded is a confident wrong figure the moment /model is used — the
+	// tokens are the fact, the dollars are worked out per entry and added up.
+	Spend []Spend `json:"spend,omitempty"`
+}
+
+// Spend is one model's share of a conversation.
+type Spend struct {
+	Model string         `json:"model"`
+	Usage provider.Usage `json:"usage"`
 }
 
 // idBytes is how much randomness an id carries. Eight bytes is 64 bits: a

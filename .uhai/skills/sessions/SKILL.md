@@ -23,6 +23,14 @@ So when, and who holds it, are fields — `started`, `updated`, `pid` — and
 conversation is held by the process resuming it, not by the one that opened it
 in August. Sessions written before it existed show a blank rather than `pid 0`.
 
+`spend` is the other field the file carries, and it is a list rather than one
+total: what the conversation cost, split by the model that cost it. A single
+stored total would have to be priced later at whatever model was loaded then,
+which is the wrong figure the moment `/model` is used mid-conversation — so
+the tokens are stored as the fact they are, and each share is priced with its
+own model's rates and the shares added. Sessions written before it existed
+have no `spend` and report nothing, which is honest: nobody was counting.
+
 Nothing sorts on the file name any more; `All` sorts on `updated`. That cost
 nothing: it already read every file whole to build the listing, which is the
 `ponytail:` note in the same function.

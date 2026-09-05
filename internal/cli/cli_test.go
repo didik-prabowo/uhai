@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/didik-prabowo/uhai/internal/session/filestore"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1640,17 +1641,17 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 // same sum — every call in a turn is charged for its input, and only the last
 // one is ever on screen.
 func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
-	spent = provider.Usage{}
-	t.Cleanup(func() { spent = provider.Usage{} })
+	spent = nil
+	t.Cleanup(func() { spent = nil })
 
 	if got := spentReport(nil); got != "" {
 		t.Errorf("nothing asked yet is nothing to report, got %q", got)
 	}
 
 	// One turn, three calls: a tool loop bills its input again every time.
-	recordUsage(provider.Usage{Input: 9000, Output: 40})
-	recordUsage(provider.Usage{Input: 200, CacheRead: 9000, Output: 60})
-	recordUsage(provider.Usage{Input: 250, CacheRead: 9000, Output: 100})
+	recordUsage("zai/glm-4.7-flash", provider.Usage{Input: 9000, Output: 40})
+	recordUsage("zai/glm-4.7-flash", provider.Usage{Input: 200, CacheRead: 9000, Output: 60})
+	recordUsage("zai/glm-4.7-flash", provider.Usage{Input: 250, CacheRead: 9000, Output: 100})
 
 	got := spentReport(nil)
 	// 9000 + 200 + 250 + 18000 cached = 27.4k in, 200 out.
@@ -1958,5 +1959,58 @@ func TestDisconnectSaysWhenTheEnvironmentKeepsItAlive(t *testing.T) {
 	}
 	if config.APIKey("openai") != "dari-env" {
 		t.Error("the exported key is not uhai's to remove")
+	}
+}
+
+// /cost used to start again with the process, so a resumed conversation
+// believed it had cost nothing.
+func TestSpendSurvivesAResume(t *testing.T) {
+	spent = nil
+	t.Cleanup(func() { spent = nil })
+
+	recordUsage("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000, Output: 100_000})
+	recordUsage("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000, Output: 100_000})
+
+	a := agent.New(nil)
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	UseStore(filestore.New(filepath.Join(dir, "sessions")))
+	if err := SaveSession(a); err != nil {
+		t.Fatal(err)
+	}
+	saved := current
+
+	// A fresh process knows nothing until the session is handed back.
+	spent = nil
+	if got := spentReport(nil); got != "" {
+		t.Fatalf("a new process has spent nothing, got %q", got)
+	}
+	ContinueSession(saved)
+
+	got := spentReport(nil)
+	if !strings.Contains(got, "2.0M") {
+		t.Errorf("the tokens did not come back: %q", got)
+	}
+	// Two million in and two hundred thousand out of Sonnet 5, at $3/$15.
+	if !strings.Contains(got, "$9.00") {
+		t.Errorf("want $9.00 priced at Sonnet 5's rates, got %q", got)
+	}
+}
+
+// A conversation held across two models is priced a share at a time: pricing
+// the stored total at whichever model happens to be loaded now is the wrong
+// figure the moment /model is used.
+func TestSpendIsPricedPerModel(t *testing.T) {
+	spent = nil
+	t.Cleanup(func() { spent = nil })
+
+	// A million tokens on Sonnet 5 is $3; the same million on a free model is
+	// nothing, and must not be billed at Sonnet's rate just for being second.
+	recordUsage("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000})
+	recordUsage("zai/glm-4.7-flash", provider.Usage{Input: 1_000_000})
+
+	got := spentReport(nil)
+	if !strings.Contains(got, "$3.00") {
+		t.Errorf("want only the paid share billed, got %q", got)
 	}
 }

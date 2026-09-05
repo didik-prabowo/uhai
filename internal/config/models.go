@@ -218,14 +218,25 @@ const (
 )
 
 func CostUSD(modelSetting string, u provider.Usage) string {
+	return FormatUSD(CostOf(modelSetting, u))
+}
+
+// CostOf is the same sum as a number, so a conversation held across two models
+// can be priced a share at a time and added up. 0 for a model with no price,
+// which is the same thing CostUSD says with "".
+func CostOf(modelSetting string, u provider.Usage) float64 {
 	info := infoFor(modelSetting)
 	if info.InputUSD == 0 && info.OutputUSD == 0 {
-		return ""
+		return 0
 	}
 	inputUSD := float64(u.Input)*info.InputUSD +
 		float64(u.CacheRead)*info.InputUSD*cacheReadRate +
 		float64(u.CacheWrite)*info.InputUSD*cacheWriteRate
-	usd := (inputUSD + float64(u.Output)*info.OutputUSD) / 1_000_000
+	return (inputUSD + float64(u.Output)*info.OutputUSD) / 1_000_000
+}
+
+// FormatUSD writes a figure a person can read, "" for nothing worth showing.
+func FormatUSD(usd float64) string {
 	switch {
 	case usd == 0:
 		return ""

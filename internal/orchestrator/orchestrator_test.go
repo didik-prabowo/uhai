@@ -149,7 +149,7 @@ func TestRunOnceAnswersOnStdout(t *testing.T) {
 	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"halo\"}}]}\n\ndata: [DONE]\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"halo\"}}],\"usage\":{\"prompt_tokens\":1200,\"completion_tokens\":7}}\n\ndata: [DONE]\n")
 	}))
 	defer srv.Close()
 	t.Setenv("UHAI_BASE_URL", srv.URL)
@@ -175,6 +175,16 @@ func TestRunOnceAnswersOnStdout(t *testing.T) {
 	}
 	if len(saved[0].Messages) != 2 {
 		t.Errorf("both sides of the turn belong in the file, got %d", len(saved[0].Messages))
+	}
+
+	// And it was the one door that recorded nothing either: RunOnce set no
+	// OnUsage, so a -p turn was paid for and written down nowhere, and a
+	// -resume picked it up believing it had cost nothing so far.
+	if len(saved[0].Spend) != 1 {
+		t.Fatalf("a one-shot turn has to record what it cost: %+v", saved[0].Spend)
+	}
+	if got := saved[0].Spend[0]; got.Model != "openai/gpt-4o-mini" || got.Usage.Input != 1200 || got.Usage.Output != 7 {
+		t.Errorf("the tokens must be stored against the model that burned them, got %+v", got)
 	}
 }
 

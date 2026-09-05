@@ -157,8 +157,14 @@ func truncate(s string, max int) string {
 
 // fmtTokens renders a token count short enough for the status line: 934, 12.4k.
 func fmtTokens(n int) string {
-	if n < 1000 {
+	switch {
+	case n < 1000:
 		return strconv.Itoa(n)
+	// A conversation only reaches millions now that the total survives a
+	// resume; before this it started again with the process, and "2000.0k"
+	// was a number nobody ever saw.
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 	}
 	return fmt.Sprintf("%.1fk", float64(n)/1000)
 }
