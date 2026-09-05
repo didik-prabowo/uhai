@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/config"
@@ -134,8 +135,14 @@ func TestAnswerStreamsThenSettles(t *testing.T) {
 	if m.stream != "" || len(m.lines) != printed+1 {
 		t.Fatalf("finished answer: stream = %q, history = %q", m.stream, m.lines)
 	}
-	if strings.Contains(m.View(), "halo dunia") {
-		t.Fatalf("the finished answer must not stay in the live block:\n%s", m.View())
+	// The live block itself, not the whole View: View draws the pending
+	// history too, so the answer is legitimately somewhere in it. This
+	// assertion used to read View and passed only because glamour's escapes
+	// happened to break "halo dunia" into pieces that Contains could not find
+	// — true for the wrong reason, and it stopped being true the moment the
+	// renderer and lipgloss agreed on a colour profile.
+	if rows := m.streamRows(); len(rows) != 0 {
+		t.Fatalf("the finished answer must not stay in the live block: %q", rows)
 	}
 }
 
@@ -1655,6 +1662,13 @@ func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
 // coloured — and the band chroma does paint stops where the code stops, which
 // is a ragged edge rather than a block.
 func TestCodeBlocksGetABandThatReachesTheEdge(t *testing.T) {
+	// The band is only drawn where there is colour to draw it with, and a test
+	// binary is not a terminal. Forcing the profile is what makes this test
+	// about the band rather than about being run without a tty.
+	was := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
+
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
 

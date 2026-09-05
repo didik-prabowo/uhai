@@ -557,9 +557,20 @@ and a colour set on the block around them is ignored; and glamour's own
 `IndentToken`, which would have drawn a gutter bar instead, is not honoured for
 code blocks. Both were tried before the third worked.
 
-The band chroma paints stops where the code stops, so `rendererText` fills the
-rest of each line that carries one. A line with a background is how a code line
-is told apart after rendering — nothing else in an answer has one.
+A line carrying a background is how a code line is told apart after rendering —
+nothing else in an answer has one — and that is the only thing chroma's
+background is for. `rendererText` strips it and paints its own, because two
+libraries resolving the same hex through their own colour profiles produce two
+shades. Then it repairs what chroma leaves behind: every token ends in a full
+reset, so the band dies in the gaps between them and never reaches the margin
+or the padding. Each reset is followed by turning the band on again, and the
+run of lines is opened and closed with a blank banded row, which is what makes
+it a rectangle rather than three coloured stripes.
+
+`glamour.WithColorProfile(lipgloss.ColorProfile())` is what stops the two
+disagreeing in the first place. Without it glamour detects the terminal for
+itself and lands on 256 colours where lipgloss chose truecolour, which is two
+backgrounds a shade apart in one block.
 
 It only appears once the answer is finished. While the text is streaming,
 `streamRows` shows it raw, fences and all, because the closing fence has not

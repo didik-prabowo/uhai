@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 )
@@ -59,21 +60,32 @@ func newRenderer(width int) *glamour.TermRenderer {
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(codeBlockStyle()),
 		glamour.WithWordWrap(width),
+		// Glamour detects the terminal's colours for itself, and lands on a
+		// different answer from lipgloss often enough to matter: the band
+		// drawn around a code block and the one chroma paints behind the
+		// characters have to be the same shade, and 256-colour next to
+		// truecolour is two shades.
+		glamour.WithColorProfile(lipgloss.ColorProfile()),
 	)
 	return r
 }
 
-// codeBlockStyle is the dark style with a background behind fenced code, so a
-// block reads as a block rather than as text that happens to be coloured.
+// codeBlockStyle is the dark style with a background on every chroma token.
 //
-// The colour has to go on every chroma token, not on the code block: chroma is
-// what draws the characters, and a background set on the block around it is
-// ignored. Glamour's own IndentToken, which would have drawn a gutter bar
-// instead, is not honoured for code blocks either — both were tried.
+// The colour itself does not matter and never reaches the screen — rendererText
+// strips it and paints its own band, which is the only way to get one shade
+// across the whole block. What matters is that it is *there*: a background is
+// the mark that says which rendered lines were code, and after glamour has run
+// there is nothing else left to tell them apart by.
 //
-// Reflection rather than thirty-five assignments, and it has the better
-// failure mode: a token type glamour adds later is covered without anyone
-// noticing it was missing.
+// It has to go on the tokens rather than on the code block. Chroma draws the
+// characters and a background set on the block around them is ignored, and
+// glamour's IndentToken, which would have drawn a gutter bar instead, is not
+// honoured for code blocks — both were tried first.
+//
+// Reflection rather than thirty-five assignments, and with the better failure
+// mode: a token type glamour adds later is covered without anyone noticing it
+// was missing.
 func codeBlockStyle() ansi.StyleConfig {
 	style := styles.DarkStyleConfig
 	if style.CodeBlock.Chroma == nil {
