@@ -23,7 +23,12 @@ takes one glance to spot.
 
 `app.go:Run` looks at stdin and picks:
 
-- `tea.go` — a bubbletea program on the alternate screen, for a terminal.
+- `tea.go` — a bubbletea program on the alternate screen, for a terminal. It
+  was one 1,455-line file, a fifth of the whole project, and is now four:
+  `tea.go` is the model and the loop, `tea_view.go` what the screen looks like
+  and the arithmetic that fits it to the window, `tea_pickers.go` the lists and
+  forms that open over the chat, `tea_prompt.go` what happens when a line is
+  submitted.
 - `pipe.go` — a prompt per line, answers on stdout, for a pipe. Nobody is there
   to answer a confirmation, so tools that write or run commands are refused,
   and a slash command is answered here rather than sent to the model: `/help`
