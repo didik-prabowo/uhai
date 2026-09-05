@@ -490,13 +490,21 @@ and the repository is the more specific answer — your own `rilis` gives way to
 the one this project ships. There is no `~/.agents/skills`; that convention is
 per-repository.
 
-A skill can be switched off with `"skillsOff": ["gaya"]` in a `settings.json`,
-which keeps it out of the prompt without deleting anything. The list
+`/skills` opens the list, and enter switches the one under the cursor off or
+back on. The list stays open, because switching one off is rarely the only one,
+and its cost changes in place as it happens — deciding to switch a skill off
+means looking at what it costs first, and those are the same rows.
+
+It writes `"skillsOff": ["gaya"]` to the *project's* `.uhai/settings.json`,
+which is the granularity the choice has: a skill you carry everywhere is wanted
+in some repositories and not others. Switching one off everywhere is still a
+hand edit of `~/.uhai/settings.json`. The list
 accumulates the way a permission denial does — your own settings and the
 project's are appended, so a project can switch off one of yours and cannot
-switch on what you turned off for yourself. `/skills` still lists it, marked
-`off`: switched off and never found look identical from the outside, and only
-one of them is a mistake.
+switch on what you turned off for yourself. It stays in the list marked `off`:
+switched off and never found look identical from the outside, and only one of
+them is a mistake. Off accumulates, so a project cannot switch on what your own
+settings turned off — the picker says so rather than appearing to do nothing.
 
 Not built: switching one off for a session only, the way `a` works for
 permissions. The reason to switch a skill off is that you do not want to pay

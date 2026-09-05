@@ -34,7 +34,7 @@ var commands = []command{
 	{"/exit", "quit uhai"},
 	{"/model", "select a model for the provider"},
 	{"/compact", "summarize the history to free up context"},
-	{"/skills", "list the skills this project has, and where they were found"},
+	{"/skills", "switch skills on and off, and see what each costs"},
 	{"/tasks", "list tasks, or /tasks t1 to read one's report"},
 	{"/bg", "run a prompt in the background, read-only"},
 	{"/check", "run the project's tests as a task, or /check <command>"},
@@ -156,6 +156,38 @@ func shortDirs(dirs []string) string {
 		out = append(out, shortPath(dir))
 	}
 	return strings.Join(out, ", ")
+}
+
+// skillRows is one line per skill for the picker: what it costs and where it
+// came from, the same two facts skillsReport prints. Kept here so the list and
+// the report cannot describe the same skill differently.
+func skillRows() []command {
+	dirs := config.SkillDirs()
+	var out []command
+	for _, s := range config.Skills() {
+		cost := "off"
+		if !s.Off {
+			cost = "~" + fmtTokens(len(s.Line())/4) + " tok"
+		}
+		desc := cost + " · " + shortPath(sourceDir(s.Path, dirs))
+		if s.Description == "" && !s.Off {
+			desc += " · no description"
+		}
+		out = append(out, command{s.Name, desc})
+	}
+	return out
+}
+
+// skillIsOff reports the state a skill is actually in, which is not always the
+// state just written: off accumulates across the home and project files, so a
+// skill your own settings turned off stays off however the project votes.
+func skillIsOff(name string) bool {
+	for _, s := range config.Skills() {
+		if s.Name == name {
+			return s.Off
+		}
+	}
+	return false
 }
 
 // matches returns the commands whose name starts with the input. The menu

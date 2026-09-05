@@ -26,6 +26,55 @@ func SaveModel(model string) error {
 	return save(func(s *Settings) { s.Model = model })
 }
 
+// SetSkillOff switches a skill off, or back on, in the *project's*
+// settings.json rather than the home one. That is the granularity the choice
+// has: a skill you carry everywhere is wanted in some repositories and not
+// others, and writing it home would turn one project's answer into every
+// project's. Switching one off everywhere stays a hand edit of ~/.uhai.
+//
+// Off accumulates across the two files, so switching one back on here cannot
+// undo a home settings.json that turned it off — the caller reads the state
+// back rather than assuming the write decided it.
+func SetSkillOff(name string, off bool) error {
+	return saveProject(func(s *Settings) {
+		out := s.SkillsOff[:0]
+		for _, have := range s.SkillsOff {
+			if have != name {
+				out = append(out, have)
+			}
+		}
+		s.SkillsOff = out
+		if off {
+			s.SkillsOff = append(s.SkillsOff, name)
+		}
+	})
+}
+
+// saveProject edits .uhai/settings.json beside the code, creating it if the
+// project has none. It is save's twin, pointed at the project rather than the
+// home directory.
+func saveProject(edit func(*Settings)) error {
+	path := filepath.Join(".uhai", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	// Read what is there so the other fields survive.
+	var s Settings
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &s); err != nil {
+			return fmt.Errorf("%s is corrupt: %w", path, err)
+		}
+	}
+	edit(&s)
+
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
 // save edits ~/.uhai/settings.json in place, leaving the fields it does not
 // touch alone.
 func save(edit func(*Settings)) error {

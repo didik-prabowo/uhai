@@ -1553,3 +1553,68 @@ func TestUnlistedModelIsANoteNotARefusal(t *testing.T) {
 		t.Error("a name no listed id starts with is still worth a note")
 	}
 }
+
+// Switching a skill off means looking at what it costs first, so it happens in
+// the list rather than by editing a file: enter toggles, the row's cost
+// changes under the cursor, and the list stays open because switching one off
+// is rarely the only one.
+func TestSkillsPickerTogglesInPlace(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	for _, name := range []string{"gaya", "rilis"} {
+		path := filepath.Join(dir, ".uhai", "skills", name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("---\nname: "+name+"\ndescription: dipakai\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.beginSkills()
+	if m.mode != teaSkillPicker {
+		t.Fatalf("/skills must open the list, mode = %v", m.mode)
+	}
+	if n := len(m.picker.Items()); n != 2 {
+		t.Fatalf("both skills belong in the list, got %d", n)
+	}
+	if desc := m.picker.Items()[0].(teaItem).desc; !strings.Contains(desc, "tok") {
+		t.Errorf("a row must say what the skill costs, got %q", desc)
+	}
+
+	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// It stays open: switching one off is rarely the only one.
+	if m.mode != teaSkillPicker {
+		t.Fatalf("the list must stay open after a toggle, mode = %v", m.mode)
+	}
+	if desc := m.picker.Items()[0].(teaItem).desc; !strings.Contains(desc, "off") {
+		t.Errorf("the row must show the skill is now off, got %q", desc)
+	}
+	if off := config.Skills()[0].Off; !off {
+		t.Error("the toggle must reach settings.json, not just the screen")
+	}
+	// Written to the project, not to the home settings: a skill you carry
+	// everywhere is wanted in some repositories and not others.
+	saved, err := os.ReadFile(filepath.Join(dir, ".uhai", "settings.json"))
+	if err != nil || !strings.Contains(string(saved), "gaya") {
+		t.Fatalf("the project's settings must carry it: %s %v", saved, err)
+	}
+
+	// And back on again.
+	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
+	if off := config.Skills()[0].Off; off {
+		t.Error("enter again must switch it back on")
+	}
+}

@@ -121,6 +121,7 @@ const (
 	teaProviderPicker
 	teaKeyEntry
 	teaModelPicker
+	teaSkillPicker
 )
 
 // chatEntry is one thing said, kept as it was written. What it looks like
@@ -535,20 +536,71 @@ func (m *teaModel) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Focus()
 		return m, nil
 	}
-	if msg.String() == "enter" {
+	if key := msg.String(); key == "enter" || (key == " " && m.mode == teaSkillPicker) {
 		item := m.picker.SelectedItem()
 		if item == nil {
 			return m, nil
 		}
 		selected := item.(teaItem).title
-		if m.mode == teaProviderPicker {
+		switch m.mode {
+		case teaProviderPicker:
 			return m, m.selectProvider(selected)
+		case teaSkillPicker:
+			return m, m.toggleSkill(selected)
 		}
 		return m, m.changeModel(selected, false)
 	}
 	var cmd tea.Cmd
 	m.picker, cmd = m.picker.Update(msg)
 	return m, cmd
+}
+
+// beginSkills opens the list of skills so they can be switched on and off in
+// it. A picker rather than a printed report because switching one off means
+// looking at what it costs first, and those are the same rows.
+func (m *teaModel) beginSkills() tea.Cmd {
+	rows := skillRows()
+	if len(rows) == 0 {
+		m.addHistory(skillsReport()) // nothing to pick from; say where it looked
+		return nil
+	}
+	items := make([]list.Item, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, teaItem{title: row.name, desc: row.desc})
+	}
+	m.picker = m.newPicker(items, "Skills — enter to switch on or off, esc to close")
+	m.mode = teaSkillPicker
+	return nil
+}
+
+// toggleSkill switches one, writes it to the project's settings.json, and
+// rebuilds the rows in place: the list stays open because switching one off is
+// rarely the only one, and the cost line has to move as it happens.
+func (m *teaModel) toggleSkill(name string) tea.Cmd {
+	was := skillIsOff(name)
+	if err := config.SetSkillOff(name, !was); err != nil {
+		m.mode = teaPrompt
+		m.input.Focus()
+		m.addHistory(teaDim.Render("could not save: " + err.Error()))
+		return nil
+	}
+	if now := skillIsOff(name); now == was {
+		// Off accumulates across files: the project cannot switch on what the
+		// home settings turned off, and saying nothing would look like a bug.
+		m.mode = teaPrompt
+		m.input.Focus()
+		m.addHistory(teaDim.Render(name + " is switched off in ~/.uhai/settings.json — edit it there"))
+		return nil
+	}
+
+	index := m.picker.Index()
+	items := make([]list.Item, 0)
+	for _, row := range skillRows() {
+		items = append(items, teaItem{title: row.name, desc: row.desc})
+	}
+	m.picker.SetItems(items)
+	m.picker.Select(index)
+	return nil
 }
 
 func (m *teaModel) beginConnect(arg string) tea.Cmd {
@@ -1062,8 +1114,7 @@ func (m *teaModel) submit() tea.Cmd {
 			return teaCompactMsg{before: before, after: m.agent.Tokens(), err: err}
 		})
 	case strings.HasPrefix(value, "/skills"):
-		m.addHistory(skillsReport())
-		return nil
+		return m.beginSkills()
 	case strings.HasPrefix(value, "/tasks"):
 		m.addHistory(tasksReport(m.agent, strings.TrimSpace(strings.TrimPrefix(value, "/tasks"))))
 		return nil
@@ -1101,7 +1152,7 @@ func (m *teaModel) submit() tea.Cmd {
   /check    run the project's tests as a task, or /check <command>
   /stop     stop a task: /stop t1
   /compact  summarize the history to free up context
-  /skills   what this project keeps aside, and where it was found
+  /skills   the skills in play — enter switches one off or on
   /tasks    list tasks, or /tasks t1 to read one's report
   /bg       run a prompt in the background, read-only
   /mouse    hand the mouse back to the terminal
@@ -1332,7 +1383,7 @@ func (m *teaModel) View() string {
 		m.setChatHeight(m.height - len(panel))
 		return lipgloss.JoinVertical(lipgloss.Left, append([]string{m.chat.View()}, panel...)...)
 	}
-	if m.mode == teaProviderPicker || m.mode == teaModelPicker {
+	if m.mode == teaProviderPicker || m.mode == teaModelPicker || m.mode == teaSkillPicker {
 		return lipgloss.JoinVertical(lipgloss.Left, m.picker.View(), teaDim.Render("enter select · esc cancel"))
 	}
 	if m.mode == teaKeyEntry {
