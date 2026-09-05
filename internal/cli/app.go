@@ -28,6 +28,9 @@ func Run(a *agent.Agent, startupErr error) {
 	// The id is printed on the way out because that is the moment it is
 	// needed and the last moment it is free: hunting for it later means
 	// -sessions and reading timestamps.
+	if report := spentReport(a.Provider); report != "" {
+		fmt.Printf("\n%s\n", report)
+	}
 	if id := savedSessionID(); id != "" {
 		fmt.Printf("\nResume this conversation with:\n  uhai -resume %s\n", id)
 	}

@@ -438,6 +438,9 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The real count supersedes the estimate for the call that just ended.
 		m.usage.Input = msg.Input
 		m.usage.Output += msg.Output
+		// The turn's shape above, the conversation's bill below: they are not
+		// the same sum, since every call in a turn is charged for its input.
+		recordUsage(provider.Usage(msg))
 		m.streamed = 0
 	case teaCompactMsg:
 		m.busy, m.cancel, m.status = false, nil, ""
@@ -1113,6 +1116,13 @@ func (m *teaModel) submit() tea.Cmd {
 			err := m.agent.Compact(ctx)
 			return teaCompactMsg{before: before, after: m.agent.Tokens(), err: err}
 		})
+	case strings.HasPrefix(value, "/cost"):
+		if report := spentReport(m.agent.Provider); report != "" {
+			m.addHistory(teaDim.Render("  " + report))
+		} else {
+			m.addHistory(teaDim.Render("  nothing asked yet this session"))
+		}
+		return nil
 	case strings.HasPrefix(value, "/skills"):
 		return m.beginSkills()
 	case strings.HasPrefix(value, "/tasks"):
@@ -1152,6 +1162,7 @@ func (m *teaModel) submit() tea.Cmd {
   /check    run the project's tests as a task, or /check <command>
   /stop     stop a task: /stop t1
   /compact  summarize the history to free up context
+  /cost     what this conversation has cost so far
   /skills   the skills in play — enter switches one off or on
   /tasks    list tasks, or /tasks t1 to read one's report
   /bg       run a prompt in the background, read-only

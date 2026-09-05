@@ -1623,3 +1623,29 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 		t.Errorf("the row must say it is on again, got %q", desc)
 	}
 }
+
+// The status row prices a turn; this prices the conversation. They are not the
+// same sum — every call in a turn is charged for its input, and only the last
+// one is ever on screen.
+func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
+	spent = provider.Usage{}
+	t.Cleanup(func() { spent = provider.Usage{} })
+
+	if got := spentReport(nil); got != "" {
+		t.Errorf("nothing asked yet is nothing to report, got %q", got)
+	}
+
+	// One turn, three calls: a tool loop bills its input again every time.
+	recordUsage(provider.Usage{Input: 9000, Output: 40})
+	recordUsage(provider.Usage{Input: 200, CacheRead: 9000, Output: 60})
+	recordUsage(provider.Usage{Input: 250, CacheRead: 9000, Output: 100})
+
+	got := spentReport(nil)
+	// 9000 + 200 + 250 + 18000 cached = 27.4k in, 200 out.
+	if !strings.Contains(got, "27.4k") || !strings.Contains(got, "200") {
+		t.Errorf("every call has to be in the total, got %q", got)
+	}
+	if !strings.Contains(got, "18.0k from cache") {
+		t.Errorf("what came from cache is the difference this session made, got %q", got)
+	}
+}

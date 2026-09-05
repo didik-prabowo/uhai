@@ -93,6 +93,18 @@ One breakpoint, not the four the API allows. The next one worth having is on
 the conversation so far, and it has to move every turn; this one never moves,
 which is what makes it free to keep correct.
 
+`/cost` is the other half of that. The status row prices a *turn*, which is the
+wrong number for "what have I spent": a turn with ten tool calls is charged for
+its input ten times and only the last one is ever on screen. `spent` adds every
+call up, `/cost` reads it, and it is printed on the way out beside the resume
+id — the moment the question actually gets asked. Tokens served from cache get
+their own figure there, since that is the difference between this session and
+the same session without a breakpoint.
+
+It is in memory and starts again with the process. Persisting it would mean
+storing tokens and pricing them later at whatever model happens to be loaded
+then, which is a confident wrong figure the first time `/model` is used.
+
 `Usage` counts cached input apart from fresh input, because it is not billed
 the same — a read is a tenth, a write a quarter extra, and `config.CostUSD`
 prices all three. Folding them together would have made the status row quote a

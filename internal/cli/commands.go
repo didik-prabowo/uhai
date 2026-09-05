@@ -35,6 +35,7 @@ var commands = []command{
 	{"/model", "select a model for the provider"},
 	{"/compact", "summarize the history to free up context"},
 	{"/skills", "switch skills on and off, and see what each costs"},
+	{"/cost", "what this conversation has cost so far"},
 	{"/tasks", "list tasks, or /tasks t1 to read one's report"},
 	{"/bg", "run a prompt in the background, read-only"},
 	{"/check", "run the project's tests as a task, or /check <command>"},
@@ -243,6 +244,42 @@ var current = session.New()
 // UseStore; cli never chooses, and never learns which it got. The default is
 // only so a test that does not care still has somewhere to write.
 var store session.Store = filestore.New("")
+
+// spent is what this conversation has cost so far: every provider call added
+// up, not the shape of the last turn. The status row shows a turn, which is
+// the wrong number for "what have I spent" — a turn with ten tool calls bills
+// its input ten times, and only the last one is on screen.
+//
+// In memory, so it starts again with the process. Persisting it would mean
+// storing tokens and pricing them later at whatever model is loaded then,
+// which is a confident wrong figure the moment /model is used.
+var spent provider.Usage
+
+func recordUsage(u provider.Usage) {
+	spent.Input += u.Input
+	spent.Output += u.Output
+	spent.CacheRead += u.CacheRead
+	spent.CacheWrite += u.CacheWrite
+}
+
+// spentReport is the running total, "" when nothing has been asked yet.
+func spentReport(p provider.Provider) string {
+	if spent.Input == 0 && spent.Output == 0 && spent.CacheRead == 0 {
+		return ""
+	}
+	line := fmt.Sprintf("↑%s ↓%s tokens", fmtTokens(spent.Input+spent.CacheRead+spent.CacheWrite), fmtTokens(spent.Output))
+	if spent.CacheRead > 0 {
+		// Worth its own figure: it is the difference between this session and
+		// the same session without a cache breakpoint.
+		line += fmt.Sprintf(" · %s from cache", fmtTokens(spent.CacheRead))
+	}
+	if p != nil {
+		if cost := config.CostUSD(p.Name(), spent); cost != "" {
+			line += " · " + cost
+		}
+	}
+	return line
+}
 
 // UseStore points the front ends at a store. It sits beside ContinueSession
 // for the same reason: cli owns the live conversation, and orchestrator is the
