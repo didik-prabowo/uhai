@@ -37,7 +37,7 @@ act on:
 }
 ```
 
-- `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` — uhai's own names
+- `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Fetch` — uhai's own names
   (`run_bash`, `read_file`, …) are accepted too.
 - A rule with no specifier covers the whole tool: `"deny": ["Write"]` means
   nothing gets written, ever.
@@ -90,17 +90,21 @@ actually do is not in the text, so there is nothing to judge.
 | `Write` | `write_file` | creating or overwriting a file | path |
 | `Edit` | `edit_file` | replacing part of a file | path |
 | `Bash` | `run_bash` | running a shell command | command |
+| `Fetch` | `fetch_url` | fetching a page over http(s) | url |
 | `*` | | every tool | |
 
 ## Defaults
 
-What no one configured: the three tools that change something ask, the three
-that only look do not.
+What no one configured: the tools that leave this process ask, the three that
+only look inside it do not.
 
 | default | tools |
 |---|---|
 | `allow` | `Read`, `Glob`, `Grep` |
-| `ask` | `Write`, `Edit`, `Bash` |
+| `ask` | `Write`, `Edit`, `Bash`, `Fetch` |
+
+`Fetch` is in the asking half for the direction that is easy to miss: it reads
+by sending, and the URL it sends is the model's to choose.
 
 Settings are read fresh on every call, so editing them takes effect at once —
 there is no session to restart.

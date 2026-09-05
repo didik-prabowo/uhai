@@ -127,6 +127,7 @@ func toolLine(name, input string) string {
 		Command string `json:"command"`
 		Pattern string `json:"pattern"`
 		Include string `json:"include"`
+		URL     string `json:"url"`
 	}
 	if json.Unmarshal([]byte(input), &args) != nil {
 		return name + " " + truncate(input, 120)
@@ -138,6 +139,8 @@ func toolLine(name, input string) string {
 		subject = args.Command
 	case "read_file", "write_file", "edit_file":
 		subject = args.Path
+	case "fetch_url":
+		subject = args.URL
 	case "glob", "grep":
 		subject = args.Pattern
 		if args.Include != "" {
@@ -167,6 +170,8 @@ func confirmTitle(name, input string) string {
 	switch name {
 	case "run_bash":
 		return "Shell command"
+	case "fetch_url":
+		return "Fetch a page"
 	case "edit_file":
 		return "Edit " + args.Path
 	case "write_file":

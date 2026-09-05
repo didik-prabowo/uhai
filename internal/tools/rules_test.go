@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,7 @@ func TestOnlyChangingToolsAskFirst(t *testing.T) {
 		"write_file": true,
 		"edit_file":  true,
 		"run_bash":   true,
+		"fetch_url":  true,
 	}
 	for name, want := range asks {
 		if got := NeedsConfirm(name); got != want {
@@ -108,6 +110,7 @@ func TestSchemasAreValidAndRequireWhatIsUsed(t *testing.T) {
 		"write_file": {"path", "content"},
 		"edit_file":  {"path", "old", "new"},
 		"glob":       {"pattern"},
+		"fetch_url":  {"url"},
 		"grep":       {"pattern"},
 		"run_bash":   {"command"},
 	}
@@ -338,5 +341,40 @@ func TestPermissionsPageListsEveryTool(t *testing.T) {
 		if !strings.Contains(string(page), answer) {
 			t.Errorf("the three answers must be documented, %s is not", answer)
 		}
+	}
+}
+
+// fetch_url is the one tool that leaves the machine, so most of what it does
+// is refuse. The addresses below are not hypothetical: 169.254.169.254 hands
+// out cloud credentials to anything that asks, and a model told to "check what
+// this service returns" will try it as readily as anything else.
+func TestFetchRefusesWhatIsNotThePublicInternet(t *testing.T) {
+	for _, target := range []string{
+		"http://169.254.169.254/latest/meta-data/",
+		"http://127.0.0.1:8080/admin",
+		"http://localhost/",
+		"http://10.0.0.5/",
+		"http://192.168.1.1/",
+		"file:///etc/passwd",
+		"ftp://example.com/x",
+	} {
+		out, isErr := Execute(context.Background(), "fetch_url",
+			json.RawMessage(`{"url":`+strconv.Quote(target)+`}`))
+		if !isErr {
+			t.Errorf("%s must be refused, got %q", target, out)
+		}
+	}
+}
+
+// The markup is most of a page and none of it is worth a token.
+func TestFetchStripsMarkup(t *testing.T) {
+	got := textFromHTML(`<html><head><style>body{color:red}</style>` +
+		`<script>alert("x")</script></head><body><h1>Judul</h1>` +
+		`<p>Dua &amp; tiga</p></body></html>`)
+	if strings.Contains(got, "alert") || strings.Contains(got, "color:red") {
+		t.Errorf("scripts and styles go whole: %q", got)
+	}
+	if !strings.Contains(got, "Judul") || !strings.Contains(got, "Dua & tiga") {
+		t.Errorf("the words survive, entities included: %q", got)
 	}
 }

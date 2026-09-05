@@ -4,7 +4,15 @@
 package tools
 
 // NeedsConfirm marks tools whose effects escape this process (writing to
-// disk, running commands) — callers must ask the user first.
+// disk, running commands, leaving the machine) — callers must ask the user
+// first.
+//
+// fetch_url is in the list for the direction nobody thinks about first. It
+// reads, which sounds harmless, but it reads by *sending* — the URL goes to a
+// third party, and a URL can carry whatever the model puts in it. Leaving it
+// unasked would have made it the way around run_bash's confirmation: the same
+// egress, through the tool that does not stop to ask. Allow it in settings if
+// the asking is not worth it for you.
 func NeedsConfirm(name string) bool {
-	return name == "write_file" || name == "edit_file" || name == "run_bash"
+	return name == "write_file" || name == "edit_file" || name == "run_bash" || name == "fetch_url"
 }

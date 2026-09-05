@@ -1,5 +1,5 @@
 // Package tools defines the tools the model may call (read_file, write_file,
-// edit_file, glob, grep, run_bash) and runs them. It knows nothing about which provider is in use —
+// edit_file, glob, grep, run_bash, fetch_url) and runs them. It knows nothing about which provider is in use —
 // the tools behave identically for every vendor.
 package tools
 
@@ -89,6 +89,19 @@ func Definitions() []provider.ToolSpec {
 				"required": ["command"]
 			}`),
 		},
+		{
+			Name: "fetch_url",
+			Description: "Fetch a web page or document over http(s) and return it as text. " +
+				"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
+				"Markup is stripped; only addresses on the public internet can be reached.",
+			JSONSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {"type": "string", "description": "The http or https URL to fetch"}
+				},
+				"required": ["url"]
+			}`),
+		},
 	}
 }
 
@@ -108,6 +121,8 @@ func Execute(ctx context.Context, name string, input json.RawMessage) (result st
 		result, isError = grepFiles(input)
 	case "run_bash":
 		result, isError = runBash(ctx, input)
+	case "fetch_url":
+		result, isError = fetchURL(ctx, input)
 	default:
 		return fmt.Sprintf("unknown tool: %s", name), true
 	}

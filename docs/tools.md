@@ -1,9 +1,9 @@
 # Tools
 
 Tools are what let the model do something rather than only say something: read
-your files, search them, change them, run a command. uhai has six, and the
-model is given exactly that list — there is no hidden capability, and no
-network access beyond what a command you approved can reach.
+your files, search them, change them, run a command, read a page. uhai has
+seven, and the model is given exactly that list — there is no hidden
+capability, and nothing reaches the network without you saying so.
 
 Everything on this page is enforced in `internal/tools` and checked by
 `internal/tools/rules_test.go`, which fails the build if the page and the code
@@ -23,13 +23,13 @@ optionally, what it may act on:
 }
 ```
 
-The defaults are that the three tools which change something ask, and the three
-that only look do not:
+The defaults are that the tools which leave this process ask, and the three
+that only look inside it do not:
 
 | default | tools |
 |---|---|
 | `allow` | [`read_file`](#read_file), [`glob`](#glob), [`grep`](#grep) |
-| `ask` | [`write_file`](#write_file), [`edit_file`](#edit_file), [`run_bash`](#run_bash) |
+| `ask` | [`write_file`](#write_file), [`edit_file`](#edit_file), [`run_bash`](#run_bash), [`fetch_url`](#fetch_url) |
 
 A chained command line is judged part by part, so allowing `Bash(git:*)` does
 not quietly allow `git status && rm -rf /`.
@@ -147,3 +147,31 @@ they need no permission and behave the same everywhere.
 
 A result is cut at the end, so what a command printed last — which is where a
 failure explains itself — is what survives.
+
+### fetch_url
+
+Fetches a page over http or https and returns it as text — documentation, a
+changelog, an API reference the answer depends on.
+
+```json
+{ "url": "https://pkg.go.dev/net/http" }
+```
+
+It asks first, which is not what "reading" usually costs. The direction is why:
+it reads by *sending*, the URL goes to somebody else's server, and a URL can
+carry whatever the model decides to put in it. Left unasked it would have been
+the way around `run_bash`'s confirmation — the same egress, through the tool
+that does not stop. Allow it in `settings.json` if the asking is not worth it:
+
+```json
+{ "permissions": { "allow": ["Fetch"] } }
+```
+
+Only the public internet is reachable. Loopback, the private ranges and the
+link-local block are refused, before the request and again on every redirect —
+`169.254.169.254` is one address away from a cloud machine's credentials, and
+an open redirect on a public host walks there in one hop. `file://` is refused
+too: it would be a second `read_file` with none of its rules.
+
+Markup is stripped rather than parsed — scripts and styles go whole, tags go,
+entities come back as characters. Enough for prose; not for structure.

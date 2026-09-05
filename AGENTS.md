@@ -144,8 +144,8 @@ the evidence that waiting is not the answer.
 ## Permission
 
 The code is split the way the concerns are: `internal/tools` has `tool.go` (the
-list the model is given, and dispatch), `files.go`, `search.go`, `shell.go`, and
-`permission.go` — five lines saying which tools escape this process. In
+list the model is given, and dispatch), `files.go`, `search.go`, `shell.go`,
+`web.go`, and `permission.go` — five lines saying which tools escape this process. In
 `internal/cli`, `permission.go` answers "may this run, and how is it asked",
 both halves in one place, because an answer is worth nothing if what it
 approves cannot be read.
@@ -154,6 +154,21 @@ approves cannot be read.
 it to the code: a tool added without a section, or a permission table that
 disagrees with `NeedsConfirm`, fails the build. Change the behaviour and the
 page in the same commit, because the tests will make you anyway.
+
+`fetch_url` is the fourth tool that asks, and the reason is a direction rather
+than an effect. It reads, which sounds like the free half of "reading the world
+is free, changing it needs a human" — but it reads by *sending*: the URL goes to
+somebody else's server, and the URL is the model's to compose. Unasked it would
+have been the way around `run_bash`'s confirmation, the same egress through the
+door that does not stop. `Fetch` in the `allow` list turns the asking off for
+anyone who would rather have it off.
+
+Most of `web.go` is about where it refuses to go. Loopback, the private ranges
+and link-local are checked before the request *and* on every redirect, because
+checking only the first address and then following wherever it leads is not a
+check — an open redirect on a public host reaches `169.254.169.254` in one hop,
+and that address hands out a cloud machine's credentials. `file://` is refused
+because it would be a second `read_file` with none of its rules.
 
 Tools that write files or run commands ask first (`tools.NeedsConfirm`), and
 the question shows what will happen: a path and a diff for an edit, the command

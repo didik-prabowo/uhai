@@ -40,9 +40,10 @@ var toolNames = map[string]string{
 	"read": "read_file", "read_file": "read_file",
 	"write": "write_file", "write_file": "write_file",
 	"edit": "edit_file", "edit_file": "edit_file",
-	"glob": "glob",
-	"grep": "grep",
-	"*":    "*",
+	"glob":  "glob",
+	"grep":  "grep",
+	"fetch": "fetch_url", "fetch_url": "fetch_url",
+	"*": "*",
 }
 
 // rule is one line of one of those lists: a tool, and what it may act on —
