@@ -1488,7 +1488,7 @@ func TestSkillsReportSaysWhatWasFoundAndWhere(t *testing.T) {
 	// skills into a wall of prose.
 	for _, want := range []string{
 		"rilis", "review", "sunyi",
-		"tok", ".uhai/skills", ".claude/skills", "looked in",
+		"on ", "tok", ".uhai/skills", ".claude/skills", "looked in",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the report must carry %q:\n%s", want, got)
@@ -1589,8 +1589,10 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 	if n := len(m.picker.Items()); n != 2 {
 		t.Fatalf("both skills belong in the list, got %d", n)
 	}
-	if desc := m.picker.Items()[0].(teaItem).desc; !strings.Contains(desc, "tok") {
-		t.Errorf("a row must say what the skill costs, got %q", desc)
+	// On is written out, not left as the absence of off: a row whose state has
+	// to be worked out is the one thing this list exists to save you.
+	if desc := m.picker.Items()[0].(teaItem).desc; !strings.Contains(desc, "on") || !strings.Contains(desc, "tok") {
+		t.Errorf("a row must say it is on and what it costs, got %q", desc)
 	}
 
 	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1612,9 +1614,12 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 		t.Fatalf("the project's settings must carry it: %s %v", saved, err)
 	}
 
-	// And back on again.
+	// And back on again, saying so.
 	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
 	if off := config.Skills()[0].Off; off {
 		t.Error("enter again must switch it back on")
+	}
+	if desc := m.picker.Items()[0].(teaItem).desc; !strings.Contains(desc, "on") {
+		t.Errorf("the row must say it is on again, got %q", desc)
 	}
 }

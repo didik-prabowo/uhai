@@ -97,26 +97,16 @@ func skillsReport() string {
 	var rows []string
 	total, offCount := 0, 0
 	for _, s := range skills {
-		// What it costs is the line it puts in the prompt, on every request,
-		// whether or not it is ever opened. That is the number worth showing:
-		// the description is the model's business, the bill is yours.
-		cost := "off"
+		// What a skill costs is the line it puts in the prompt, on every
+		// request, whether or not it is ever opened. That is the number worth
+		// showing: the description is the model's business, the bill is yours.
 		if s.Off {
 			offCount++
 		} else {
-			n := len(s.Line()) / 4
-			total += n
-			cost = "~" + fmtTokens(n) + " tok"
+			total += len(s.Line()) / 4
 		}
-		row := fmt.Sprintf("  %s%-*s%s %s· %-8s · %s",
-			accentAt, width, s.Name, reset, dim, cost, shortPath(sourceDir(s.Path, dirs)))
-		if s.Description == "" && !s.Off {
-			// The model picks a skill by its description, so one without it is
-			// found, paid for, and never opened. Not worth saying about a
-			// skill that is switched off — it is not being paid for either.
-			row += " · no description"
-		}
-		rows = append(rows, row+reset)
+		rows = append(rows, fmt.Sprintf("  %s%-*s%s %s· %s%s",
+			accentAt, width, s.Name, reset, dim, skillDetail(s, dirs), reset))
 	}
 
 	tally := fmt.Sprintf("%d skill(s)", len(skills))
@@ -165,17 +155,31 @@ func skillRows() []command {
 	dirs := config.SkillDirs()
 	var out []command
 	for _, s := range config.Skills() {
-		cost := "off"
-		if !s.Off {
-			cost = "~" + fmtTokens(len(s.Line())/4) + " tok"
-		}
-		desc := cost + " · " + shortPath(sourceDir(s.Path, dirs))
-		if s.Description == "" && !s.Off {
-			desc += " · no description"
-		}
-		out = append(out, command{s.Name, desc})
+		out = append(out, command{s.Name, skillDetail(s, dirs)})
 	}
 	return out
+}
+
+// skillDetail is everything on a row except the name: whether it is on, what
+// it costs while it is, and where it came from.
+//
+// "on" is written out rather than left as the absence of "off" — a row that
+// says nothing about its state reads as a row whose state you have to work
+// out, and the whole reason to open this list is to see which is which.
+func skillDetail(s config.Skill, dirs []string) string {
+	where := shortPath(sourceDir(s.Path, dirs))
+	if s.Off {
+		return "off · " + where
+	}
+	// Padded to the width of "off", so the columns after it line up in the
+	// report; in the list it is one space nobody sees.
+	detail := fmt.Sprintf("%-3s · ~%s tok · %s", "on", fmtTokens(len(s.Line())/4), where)
+	if s.Description == "" {
+		// The model picks a skill by its description, so one without it is
+		// found, paid for, and never opened.
+		detail += " · no description"
+	}
+	return detail
 }
 
 // skillIsOff reports the state a skill is actually in, which is not always the
