@@ -97,103 +97,20 @@ func Register(t Tool) error {
 	return nil
 }
 
+// all is every tool uhai ships. Each one is defined beside the function that
+// runs it — read_file in files.go, run_bash in shell.go — so changing a tool's
+// description and changing its behaviour are the same file. This is the list
+// rather than seven init() calls: the order here is the order the model is
+// given, and that order is part of the cached prefix, so it should be written
+// down rather than left to whatever order the files happen to initialise in.
 var all = []Tool{
-	tool{
-		name:        "read_file",
-		run:         noCtx(readFile),
-		description: "Read a file from disk and return its full contents as text.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"path": {"type": "string", "description": "Relative or absolute path to the file"}
-				},
-				"required": ["path"]
-			}`),
-	},
-	tool{
-		name:        "write_file",
-		confirm:     true,
-		run:         noCtx(writeFile),
-		description: "Write (overwrite) content to a file, creating it and its parent folders if needed.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"path": {"type": "string", "description": "Path of the file to write"},
-					"content": {"type": "string", "description": "Full content to write into the file"}
-				},
-				"required": ["path", "content"]
-			}`),
-	},
-	tool{
-		name:        "edit_file",
-		confirm:     true,
-		run:         noCtx(editFile),
-		description: "Replace one exact piece of text in a file. Use this instead of write_file for changing part of an existing file. The old text must appear exactly once.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"path": {"type": "string", "description": "Path of the file to edit"},
-					"old": {"type": "string", "description": "Exact text to replace, including indentation. Add surrounding lines until it is unique in the file"},
-					"new": {"type": "string", "description": "Text to put in its place"}
-				},
-				"required": ["path", "old", "new"]
-			}`),
-	},
-	tool{
-		name:        "glob",
-		run:         noCtx(globFiles),
-		description: "List files whose name matches a pattern, such as *.go or **/*_test.go. Faster than run_bash for finding files, and it never needs permission.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"pattern": {"type": "string", "description": "Name pattern, e.g. \"*.go\" or \"**/*_test.go\""},
-					"path": {"type": "string", "description": "Folder to search in, default the working directory"}
-				},
-				"required": ["pattern"]
-			}`),
-	},
-	tool{
-		name:        "grep",
-		run:         noCtx(grepFiles),
-		description: "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"pattern": {"type": "string", "description": "Go regular expression to search for"},
-					"path": {"type": "string", "description": "Folder to search in, default the working directory"},
-					"include": {"type": "string", "description": "Only search files whose name matches this pattern, e.g. \"*.go\""}
-				},
-				"required": ["pattern"]
-			}`),
-	},
-	tool{
-		name:        "run_bash",
-		confirm:     true,
-		run:         runBash,
-		description: "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"command": {"type": "string", "description": "Shell command to run"}
-				},
-				"required": ["command"]
-			}`),
-	},
-	tool{
-		name:    "fetch_url",
-		confirm: true,
-		run:     fetchURL,
-		description: "Fetch a web page or document over http(s) and return it as text. " +
-			"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
-			"Markup is stripped; only addresses on the public internet can be reached.",
-		schema: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"url": {"type": "string", "description": "The http or https URL to fetch"}
-				},
-				"required": ["url"]
-			}`),
-	},
+	readFileTool,
+	writeFileTool,
+	editFileTool,
+	globTool,
+	grepTool,
+	runBashTool,
+	fetchURLTool,
 }
 
 // find is the one lookup. A name nobody defined finds nothing, which is what

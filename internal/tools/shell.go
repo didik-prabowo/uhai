@@ -107,3 +107,18 @@ func Shell(ctx context.Context, command string, onLine func(string)) (string, er
 	}
 	return out.String(), cmd.Wait()
 }
+
+// runBashTool is how the model is told about run_bash.
+var runBashTool = tool{
+	name:        "run_bash",
+	confirm:     true,
+	run:         runBash,
+	description: "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"command": {"type": "string", "description": "Shell command to run"}
+			},
+			"required": ["command"]
+		}`),
+}

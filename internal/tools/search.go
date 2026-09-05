@@ -138,3 +138,34 @@ func truncate(line string) string {
 	}
 	return line
 }
+
+// globTool is how the model is told about glob.
+var globTool = tool{
+	name:        "glob",
+	run:         noCtx(globFiles),
+	description: "List files whose name matches a pattern, such as *.go or **/*_test.go. Faster than run_bash for finding files, and it never needs permission.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"pattern": {"type": "string", "description": "Name pattern, e.g. \"*.go\" or \"**/*_test.go\""},
+				"path": {"type": "string", "description": "Folder to search in, default the working directory"}
+			},
+			"required": ["pattern"]
+		}`),
+}
+
+// grepTool is how the model is told about grep.
+var grepTool = tool{
+	name:        "grep",
+	run:         noCtx(grepFiles),
+	description: "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"pattern": {"type": "string", "description": "Go regular expression to search for"},
+				"path": {"type": "string", "description": "Folder to search in, default the working directory"},
+				"include": {"type": "string", "description": "Only search files whose name matches this pattern, e.g. \"*.go\""}
+			},
+			"required": ["pattern"]
+		}`),
+}

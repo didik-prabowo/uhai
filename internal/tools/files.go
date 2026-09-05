@@ -77,3 +77,50 @@ func editFile(input json.RawMessage) (string, bool) {
 	}
 	return fmt.Sprintf("OK, edited %s", args.Path), false
 }
+
+// readFileTool is how the model is told about read_file.
+var readFileTool = tool{
+	name:        "read_file",
+	run:         noCtx(readFile),
+	description: "Read a file from disk and return its full contents as text.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "Relative or absolute path to the file"}
+			},
+			"required": ["path"]
+		}`),
+}
+
+// writeFileTool is how the model is told about write_file.
+var writeFileTool = tool{
+	name:        "write_file",
+	confirm:     true,
+	run:         noCtx(writeFile),
+	description: "Write (overwrite) content to a file, creating it and its parent folders if needed.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "Path of the file to write"},
+				"content": {"type": "string", "description": "Full content to write into the file"}
+			},
+			"required": ["path", "content"]
+		}`),
+}
+
+// editFileTool is how the model is told about edit_file.
+var editFileTool = tool{
+	name:        "edit_file",
+	confirm:     true,
+	run:         noCtx(editFile),
+	description: "Replace one exact piece of text in a file. Use this instead of write_file for changing part of an existing file. The old text must appear exactly once.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "Path of the file to edit"},
+				"old": {"type": "string", "description": "Exact text to replace, including indentation. Add surrounding lines until it is unique in the file"},
+				"new": {"type": "string", "description": "Text to put in its place"}
+			},
+			"required": ["path", "old", "new"]
+		}`),
+}

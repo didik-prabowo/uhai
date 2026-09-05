@@ -167,3 +167,20 @@ func textFromHTML(page string) string {
 	page = trailing.ReplaceAllString(page, "\n")
 	return strings.TrimSpace(blanks.ReplaceAllString(page, "\n\n"))
 }
+
+// fetchURLTool is how the model is told about fetch_url.
+var fetchURLTool = tool{
+	name:    "fetch_url",
+	confirm: true,
+	run:     fetchURL,
+	description: "Fetch a web page or document over http(s) and return it as text. " +
+		"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
+		"Markup is stripped; only addresses on the public internet can be reached.",
+	schema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"url": {"type": "string", "description": "The http or https URL to fetch"}
+			},
+			"required": ["url"]
+		}`),
+}

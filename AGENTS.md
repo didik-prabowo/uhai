@@ -152,7 +152,16 @@ the evidence that waiting is not the answer.
 `Run` — so a tool need not live in `internal/tools`. Everything shipped is
 built from the unexported `tool` struct, which carries its handler in a field
 and implements those five methods once rather than once per tool, so a built-in
-stays a single literal. `Register` is how a tool from elsewhere joins, and it
+stays a single literal — and that literal lives beside the function it runs,
+`readFileTool` next to `readFile` in `files.go`, `runBashTool` next to
+`runBash` in `shell.go`. Changing what a tool does and changing what the model
+is told about it are the same file.
+
+`all` still names them in order, rather than seven `init()` calls registering
+themselves. Self-registration would leave the order to whatever order the files
+happen to initialise in, and that order is the order the tool schemas reach the
+model — which is inside the cached prefix. It would also turn a duplicate name
+from a returned error into a panic at startup. `Register` is how a tool from elsewhere joins, and it
 refuses a name already taken: two tools answering to one name is a bug the
 model experiences as the wrong thing happening, with nothing to read. The list
 is behind an `RWMutex` — an MCP server reconnecting mid-session would register
