@@ -157,6 +157,16 @@ stays a single literal — and that literal lives beside the function it runs,
 `runBash` in `shell.go`. Changing what a tool does and changing what the model
 is told about it are the same file.
 
+Sub-packages — `tools/files/read.go` and so on — were considered and are the
+shape to reach for later, not now. `tools/files` would need `tools.Tool` and
+`tools` would need `tools/files` to fill `all`, which is an import cycle; Go's
+structural typing dodges it, but only by putting the `tool` struct out of
+reach, so every tool would write the five methods itself and the ceremony this
+design avoids comes back. `walk` and `Shell` are shared across what would be
+two of those packages as well. The trigger is a group with its own
+dependencies or its own *source* — `internal/tools/mcp` will be a real
+sub-package, because a tool from a server is genuinely not one of these.
+
 `all` still names them in order, rather than seven `init()` calls registering
 themselves. Self-registration would leave the order to whatever order the files
 happen to initialise in, and that order is the order the tool schemas reach the
@@ -183,8 +193,10 @@ package, registers it, and reaches it through `Definitions`, `NeedsConfirm` and
 `Execute`. A built-in would pass that test even if `Tool` were a struct.
 
 The code is split the way the concerns are: `internal/tools` has `tool.go` (the
-list the model is given, and dispatch), `files.go`, `search.go`, `shell.go`,
-`web.go`, and `permission.go` — five lines saying which tools escape this process. In
+contract, the registry and dispatch), one file per tool — `read.go`,
+`write.go`, `edit.go`, `glob.go`, `grep.go`, `bash.go`, `fetch.go`, each
+holding a tool's schema, description, permission and implementation together —
+`walk.go` for what glob and grep share, and `permission.go` — five lines saying which tools escape this process. In
 `internal/cli`, `permission.go` answers "may this run, and how is it asked",
 both halves in one place, because an answer is worth nothing if what it
 approves cannot be read.
