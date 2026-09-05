@@ -20,10 +20,12 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 )
 
-// codeGutter is the width of the line-number column, which stops growing at
-// four digits. A block long enough to need five is not one anybody reads in a
-// chat.
-const codeGutter = 4
+// codeGutter is how wide the line-number column has to be for a block of n
+// lines. It was a fixed four, which spent three columns on nothing for the
+// nine-line blocks that are most of what a chat contains.
+func codeGutter(lines int) int {
+	return len(strconv.Itoa(lines))
+}
 
 // codeTab is what a tab is worth. Four rather than eight: the block is as wide
 // as its widest line, and eight columns of indent makes a narrow function look
@@ -114,7 +116,8 @@ func codeBlock(source, lang string, max int) string {
 	// One column short of the edge, deliberately: a line as wide as the
 	// terminal wraps on its own, which scrolls the screen out from under the
 	// renderer.
-	width := max - codeIndent - codeGutter - 3
+	gutter := codeGutter(len(lines))
+	width := max - codeIndent - gutter - 4
 	if width < 8 {
 		width = 8
 	}
@@ -125,12 +128,13 @@ func codeBlock(source, lang string, max int) string {
 		return strings.Join(painted, "\n") // no colour: the text, and nothing drawn
 	}
 
+	// No blank banded row at the top and bottom: rendererText already puts a
+	// clear line each side, and two rows of nothing above three of code is
+	// more air than the block is worth.
 	indent := strings.Repeat(" ", codeIndent)
-	blank := indent + band.Render(strings.Repeat(" ", codeGutter+width+2))
 
-	rows := []string{blank}
+	var rows []string
 	for i, line := range painted {
-		gutter := number.Render(fmt.Sprintf("%*s ", codeGutter-1, strconv.Itoa(i+1)))
 		// Cut by columns, not by characters: a coloured line is mostly escape
 		// codes, and one longer than the block would wrap and take the shape
 		// with it.
@@ -138,9 +142,11 @@ func codeBlock(source, lang string, max int) string {
 		if pad := width - visibleLen(lines[i]); pad > 0 {
 			body += band.Render(strings.Repeat(" ", pad))
 		}
-		rows = append(rows, indent+gutter+band.Render(" ")+body+band.Render(" "))
+		rows = append(rows, indent+
+			number.Render(fmt.Sprintf(" %*d ", gutter, i+1))+
+			body+band.Render(" "))
 	}
-	return strings.Join(append(rows, blank), "\n")
+	return strings.Join(rows, "\n")
 }
 
 // highlight runs chroma over the source and returns it one line at a time. An

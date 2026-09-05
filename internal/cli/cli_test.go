@@ -1677,9 +1677,11 @@ func TestCodeBlockIsABoxLinedUpWithTheProse(t *testing.T) {
 			banded = append(banded, line)
 		}
 	}
-	// Three lines of code, and a blank banded row at each end to close the box.
-	if len(banded) != 5 {
-		t.Fatalf("want three code rows between two blank ones, got %d:\n%s", len(banded), out)
+	// Three lines of code and nothing else banded: the blank rows that used to
+	// close the box are gone, since rendererText already leaves a clear line
+	// on each side and two rows of nothing above three of code is too much air.
+	if len(banded) != 3 {
+		t.Fatalf("want three code rows, got %d:\n%s", len(banded), out)
 	}
 
 	width := visibleLen(banded[0])
@@ -1700,8 +1702,8 @@ func TestCodeBlockIsABoxLinedUpWithTheProse(t *testing.T) {
 		}
 	}
 	for i, want := range []string{"1", "2", "3"} {
-		if !strings.Contains(banded[i+1], want) {
-			t.Errorf("row %d is not numbered:\n%q", i+1, banded[i+1])
+		if !strings.Contains(plain(banded[i]), want) {
+			t.Errorf("row %d is not numbered:\n%q", i, banded[i])
 		}
 	}
 	// A tab is one character and several columns. Left in, the band is drawn
