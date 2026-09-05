@@ -49,34 +49,44 @@ func Post(ctx context.Context, hc *http.Client, build func() (*http.Request, err
 // worthRetrying covers being rate limited and the server having a bad moment.
 // Anything else — a bad key, a wrong model name — will fail the same way twice.
 //
-// 429 is the one status that has to be read rather than counted, because two
-// different failures wear it: going too fast, which waiting fixes, and having
-// no money, which waiting does not.
+// 429 is the one status that has to be read rather than counted, because
+// several different failures wear it: going too fast, which waiting fixes, and
+// an empty wallet or a daily quota, which it does not.
 func worthRetrying(resp *http.Response) bool {
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return !outOfMoney(resp)
+		return !waitingWontHelp(resp)
 	}
 	return resp.StatusCode >= 500
 }
 
-// outOfMoney reports whether a 429 is about the bill instead of the pace.
-// Z.ai answers an empty wallet with 429 and "Insufficient balance or no
-// resource package. Please recharge."; OpenAI says either insufficient_quota
-// or "You have no credits remaining", which is the one an exhausted account
-// actually sends and which the first four markers here all missed. Neither improves in ten seconds, so uhai used to
-// spend fifteen of them failing three times identically.
+// waitingWontHelp reports whether a 429 will still be a 429 in ten seconds.
+// Two kinds qualify, and only one of them is about money.
 //
-// Matched on the words that mean money rather than on a vendor's error code,
-// which every vendor numbers differently. Bare "quota" is deliberately not
-// among them: it is how several providers word an ordinary rate limit.
-func outOfMoney(resp *http.Response) bool {
+// An empty wallet is the plain case: Z.ai says "Insufficient balance ...
+// Please recharge", OpenAI answers insufficient_quota with "You have no
+// credits remaining". Matched on the words rather than a vendor's error code,
+// which every vendor numbers differently.
+//
+// A quota counted per day is the other. Gemini's free tier allows twenty
+// requests a day and says so with "You exceeded your current quota, please
+// check your plan and billing details" — word for word what it sends when a
+// per-minute quota trips, which waiting does fix. The sentence cannot tell
+// them apart; the quotaId in error.details can, so that is what is read.
+// "billing details" used to be a marker here and had to go: it caught the
+// recoverable one too, and losing a turn to a rate limit that would have
+// cleared is worse than waiting out one that would not.
+func waitingWontHelp(resp *http.Response) bool {
 	body := peek(resp)
+
+	// GenerateRequestsPerDayPerProjectPerModel-FreeTier, lowercased.
+	if strings.Contains(body, "perday") {
+		return true
+	}
 	for _, marker := range []string{
 		"insufficient balance",
 		"insufficient_quota",
 		"no credits",
 		"recharge",
-		"billing details",
 	} {
 		if strings.Contains(body, marker) {
 			return true

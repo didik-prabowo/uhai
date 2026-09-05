@@ -208,3 +208,22 @@ func TestOpenAIRunningOutOfCreditsIsNotRetried(t *testing.T) {
 		t.Error("the message alone has to be enough")
 	}
 }
+
+// Gemini words a daily quota and a per-minute one identically, so the sentence
+// is useless and the quotaId decides. Both bodies below are what the API
+// actually sent; only the violation differs.
+func TestGeminiDailyQuotaWaitsButAMinuteQuotaDoesNot(t *testing.T) {
+	const said = `"message":"You exceeded your current quota, please check your plan and billing details."`
+
+	daily := `{"error":{"code":429,"status":"RESOURCE_EXHAUSTED",` + said +
+		`,"details":[{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}`
+	if worthRetrying(reply(429, daily)) {
+		t.Error("a quota counted per day will not reset in ten seconds")
+	}
+
+	minute := `{"error":{"code":429,"status":"RESOURCE_EXHAUSTED",` + said +
+		`,"details":[{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}]}}`
+	if !worthRetrying(reply(429, minute)) {
+		t.Error("a quota counted per minute is exactly what backoff is for")
+	}
+}
