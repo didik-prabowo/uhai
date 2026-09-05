@@ -1728,3 +1728,43 @@ func TestCodeBlockCutsALineTooWideForTheScreen(t *testing.T) {
 		}
 	}
 }
+
+// A block needs air. Without a blank line at each edge it sits against the
+// sentence that introduced it, and two blocks with one line of prose between
+// them read as a single block with a caption inside it.
+func TestCodeBlockIsSeparatedFromTheProse(t *testing.T) {
+	was := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+
+	rows := strings.Split(m.rendererText(
+		"Berikut:\n\n```go\nfunc main() {}\n```\n\nJalankan:\n\n```bash\ngo run hello.go\n```\n\nSelesai.\n"), "\n")
+
+	banded := func(i int) bool {
+		return i >= 0 && i < len(rows) && strings.Contains(rows[i], "\x1b[48;")
+	}
+	for i := range rows {
+		if !banded(i) {
+			continue
+		}
+		if !banded(i-1) && i > 0 && rows[i-1] != "" {
+			t.Errorf("row %d opens a block against prose: %q", i, rows[i-1])
+		}
+		if !banded(i+1) && i < len(rows)-1 && rows[i+1] != "" {
+			t.Errorf("row %d closes a block against prose: %q", i, rows[i+1])
+		}
+	}
+	// Two blocks, so two runs — not one long one with a sentence in the middle.
+	runs := 0
+	for i := range rows {
+		if banded(i) && !banded(i-1) {
+			runs++
+		}
+	}
+	if runs != 2 {
+		t.Errorf("want two separate blocks, got %d", runs)
+	}
+}

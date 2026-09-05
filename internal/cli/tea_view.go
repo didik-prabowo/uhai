@@ -133,12 +133,23 @@ func (m *teaModel) rendererText(text string) string {
 	var out []string
 	for _, part := range splitFences(text) {
 		if part.code {
-			out = append(out, codeBlock(part.text, part.lang, m.cols()))
+			// A blank line each side. Without them a block sits against the
+			// sentence that introduced it, and two blocks with one line of
+			// prose between them read as one block with a caption in it.
+			out = append(out, "", codeBlock(part.text, part.lang, m.cols()), "")
 			continue
 		}
 		if prose := m.prose(part.text); prose != "" {
 			out = append(out, prose)
 		}
+	}
+	// The blank a block asks for at its edge is not wanted at the edge of the
+	// answer, where the chat already puts one.
+	for len(out) > 0 && out[0] == "" {
+		out = out[1:]
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
 	}
 	return strings.Join(out, "\n")
 }

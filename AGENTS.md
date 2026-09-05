@@ -556,6 +556,11 @@ numbered down the side, one grey throughout. `codeBG` is deliberately not
 within a screen of each other and the eye should not have to work out which is
 which.
 
+A blank line sits at each edge. Without them the block leans against the
+sentence that introduced it, and two blocks with one line of prose between them
+read as a single block with a caption inside — which is exactly how a
+`go run` line after a program looked.
+
 It was fitted to its longest line for one revision, which made every block a
 different width and the answer read as ragged. Lining the left edge up with the
 prose and running almost to the right one is what makes a page of answer look
