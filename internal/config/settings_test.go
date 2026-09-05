@@ -381,3 +381,49 @@ func TestBaseURLPerProvider(t *testing.T) {
 		t.Fatalf("zai should use the override, got %q", got)
 	}
 }
+
+// Skills that belong to the person rather than the repository: kept in
+// ~/.uhai/skills or ~/.claude/skills, and carried into every project. The
+// project still wins a name, because it is the more specific answer.
+func TestPersonalSkillsTravelButProjectWins(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	project := t.TempDir()
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(project); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	frontmatter := func(name, desc string) string {
+		return "---\nname: " + name + "\ndescription: " + desc + "\n---\n"
+	}
+
+	// One personal skill nothing else claims, and one the project overrides.
+	write(filepath.Join(home, ".uhai", "skills", "catatan", "SKILL.md"), frontmatter("catatan", "punya saya"))
+	write(filepath.Join(home, ".claude", "skills", "rilis", "SKILL.md"), frontmatter("rilis", "cara saya merilis"))
+	write(filepath.Join(project, ".uhai", "skills", "rilis", "SKILL.md"), frontmatter("rilis", "cara proyek ini merilis"))
+
+	found := map[string]string{}
+	for _, s := range Skills() {
+		found[s.Name] = s.Description
+	}
+	if found["catatan"] != "punya saya" {
+		t.Errorf("a personal skill must travel into any project: %+v", found)
+	}
+	if found["rilis"] != "cara proyek ini merilis" {
+		t.Errorf("the project's own skill must win the name: %+v", found)
+	}
+}

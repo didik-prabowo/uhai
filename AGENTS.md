@@ -482,7 +482,13 @@ model reads when the work calls for it, which is what keeps a project's fifty
 pages of procedure from costing anything on a turn that does not need them.
 
 Both layouts are Claude Code's, deliberately: a repository already written for
-one agent should need nothing added for this one.
+one agent should need nothing added for this one. That holds for personal
+skills too: `~/.uhai/skills` and `~/.claude/skills` are searched as well, so
+the ones you carry between projects arrive without being copied in. They are
+searched *after* the project's, because `Skills` keeps the first name it finds
+and the repository is the more specific answer — your own `rilis` gives way to
+the one this project ships. There is no `~/.agents/skills`; that convention is
+per-repository.
 
 `/skills` prints what was found and where it looked. A skill in the wrong
 folder, or whose frontmatter did not parse, fails in the one way nothing
