@@ -56,7 +56,11 @@ The code is split the way the concerns are: `internal/tools` has `tool.go` (the
 contract, the registry and dispatch), one file per tool — `read.go`,
 `write.go`, `edit.go`, `glob.go`, `grep.go`, `bash.go`, `fetch.go`, each
 holding a tool's schema, description, permission and implementation together —
-`walk.go` for what glob and grep share — including the pattern matcher, which
+`walk.go` for what glob and grep share. It takes a context and checks it once
+per entry: it is the one tool loop that can run for a long time without
+touching the network or a subprocess, and cancellation used to stop at its
+edge — a grep that finds nothing in a large tree read every file to the end
+whatever the user pressed. It also holds the pattern matcher, which
 builds a regexp rather than calling `filepath.Match`, because `filepath.Match`
 reads `**` as two stars that neither cross a separator and so matched exactly
 one folder deep before going quiet — and `permission.go` — five lines saying which tools escape this process. In

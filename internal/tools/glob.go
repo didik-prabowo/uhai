@@ -28,7 +28,7 @@ func (globTool) Schema() json.RawMessage {
 		}`)
 }
 
-func (globTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
+func (globTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -42,13 +42,16 @@ func (globTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 
 	var found []string
 	match := matcher(args.Pattern)
-	err := walk(args.Path, func(path string) bool {
+	err := walk(ctx, args.Path, func(path string) bool {
 		if match(path) {
 			found = append(found, path)
 		}
 		return len(found) < maxMatches
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			return "the user interrupted this search", true
+		}
 		return fmt.Sprintf("could not search: %v", err), true
 	}
 	if len(found) == 0 {

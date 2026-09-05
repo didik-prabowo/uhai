@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,5 +168,62 @@ func TestMatcherSurvivesNonsense(t *testing.T) {
 	}
 	if matcher("*.go")("") {
 		t.Error("nothing is not a match")
+	}
+}
+
+// Escape reached the HTTP call and reached bash, and stopped at the edge of
+// walk: glob and grep took a context and threw it away, so a grep that finds
+// nothing in a large tree read every file to the end whatever was pressed.
+func TestSearchStopsWhenInterrupted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for _, c := range []struct{ name, input string }{
+		{NameGlob, `{"pattern":"**/*.go"}`},
+		{NameGrep, `{"pattern":"func "}`},
+	} {
+		out, isErr := Execute(ctx, c.name, json.RawMessage(c.input))
+		if !isErr || !strings.Contains(out, "interrupted") {
+			t.Errorf("%s ran on regardless: isErr=%v out=%q", c.name, isErr, out)
+		}
+	}
+}
+
+// And an uncancelled search still works, so the check is a check and not a
+// wall.
+func TestSearchStillWorksUninterrupted(t *testing.T) {
+	out, isErr := Execute(context.Background(), NameGlob, json.RawMessage(`{"pattern":"*.go"}`))
+	if isErr || !strings.Contains(out, ".go") {
+		t.Errorf("a plain search must still find things: isErr=%v out=%q", isErr, out)
+	}
+}
+
+// Refusing to start is the easy half. This one cancels partway through a tree
+// and checks the walk actually abandons it: without the check inside the
+// callback it would visit all fifty files and only notice at the end.
+func TestWalkAbandonsATreePartway(t *testing.T) {
+	dir := t.TempDir()
+	for i := range 50 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d.go", i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	seen := 0
+	err := walk(ctx, dir, func(string) bool {
+		seen++
+		if seen == 5 {
+			cancel()
+		}
+		return true
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("an abandoned walk has to say why, got %v", err)
+	}
+	// One more entry may be visited between the cancel and the next check.
+	if seen > 6 {
+		t.Errorf("the walk read %d of 50 files after being cancelled at 5", seen)
 	}
 }

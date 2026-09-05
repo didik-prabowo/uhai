@@ -3,6 +3,7 @@
 package tools
 
 import (
+	"context"
 	"io/fs"
 	"path/filepath"
 	"regexp"
@@ -16,11 +17,23 @@ const maxMatches = 200
 
 // walk visits every file under root, skipping the noise directories. The
 // callback stops the walk by returning false.
-func walk(root string, visit func(path string) bool) error {
+//
+// It takes a context because it is the one loop in a tool that can run for a
+// long time without touching the network or a subprocess: glob and grep read
+// the whole tree, and grep reads the contents too. Escape reached the HTTP
+// call and reached bash, and stopped at the edge of this function — a grep
+// that finds nothing in a large repository read every file to the end no
+// matter what the user pressed.
+func walk(ctx context.Context, root string, visit func(path string) bool) error {
 	if root == "" {
 		root = "."
 	}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		// Checked per entry rather than per directory: one huge folder is
+		// exactly the case where waiting for the next directory is waiting.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
 			return nil // an unreadable corner is not a reason to fail the search
 		}

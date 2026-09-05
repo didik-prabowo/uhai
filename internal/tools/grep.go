@@ -32,7 +32,7 @@ func (grepTool) Schema() json.RawMessage {
 		}`)
 }
 
-func (grepTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
+func (grepTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -51,7 +51,7 @@ func (grepTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	if args.Include != "" {
 		include = matcher(args.Include)
 	}
-	err = walk(args.Path, func(path string) bool {
+	err = walk(ctx, args.Path, func(path string) bool {
 		if !include(path) {
 			return true
 		}
@@ -71,6 +71,9 @@ func (grepTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 		return true
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			return "the user interrupted this search", true
+		}
 		return fmt.Sprintf("could not search: %v", err), true
 	}
 	if len(hits) == 0 {
