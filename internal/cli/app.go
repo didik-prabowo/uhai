@@ -7,11 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"reflect"
-
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/glamour/ansi"
-	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
@@ -58,7 +54,7 @@ func newRenderer(width int) *glamour.TermRenderer {
 		width = 20
 	}
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithStyles(codeBlockStyle()),
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(width),
 		// Glamour detects the terminal's colours for itself, and lands on a
 		// different answer from lipgloss often enough to matter: the band
@@ -68,36 +64,4 @@ func newRenderer(width int) *glamour.TermRenderer {
 		glamour.WithColorProfile(lipgloss.ColorProfile()),
 	)
 	return r
-}
-
-// codeBlockStyle is the dark style with a background on every chroma token.
-//
-// The colour itself does not matter and never reaches the screen — rendererText
-// strips it and paints its own band, which is the only way to get one shade
-// across the whole block. What matters is that it is *there*: a background is
-// the mark that says which rendered lines were code, and after glamour has run
-// there is nothing else left to tell them apart by.
-//
-// It has to go on the tokens rather than on the code block. Chroma draws the
-// characters and a background set on the block around them is ignored, and
-// glamour's IndentToken, which would have drawn a gutter bar instead, is not
-// honoured for code blocks — both were tried first.
-//
-// Reflection rather than thirty-five assignments, and with the better failure
-// mode: a token type glamour adds later is covered without anyone noticing it
-// was missing.
-func codeBlockStyle() ansi.StyleConfig {
-	style := styles.DarkStyleConfig
-	if style.CodeBlock.Chroma == nil {
-		return style
-	}
-	background := codeBackground()
-
-	chroma := reflect.ValueOf(style.CodeBlock.Chroma).Elem()
-	for i := 0; i < chroma.NumField(); i++ {
-		if field := chroma.Field(i); field.Type() == reflect.TypeOf(ansi.StylePrimitive{}) {
-			field.FieldByName("BackgroundColor").Set(reflect.ValueOf(&background))
-		}
-	}
-	return style
 }

@@ -1657,43 +1657,67 @@ func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
 	}
 }
 
-// A code block should read as a block. Glamour's dark style gives it syntax
-// colours and no background at all, so it used to be text that happened to be
-// coloured — and the band chroma does paint stops where the code stops, which
-// is a ragged edge rather than a block.
-func TestCodeBlocksGetABandThatReachesTheEdge(t *testing.T) {
-	// The band is only drawn where there is colour to draw it with, and a test
-	// binary is not a terminal. Forcing the profile is what makes this test
-	// about the band rather than about being run without a tty.
+// A code block is a box: as wide as its own longest line rather than as wide
+// as the screen, numbered down the side, and in a colour that is not the
+// question's. Glamour draws it as flowing text, so uhai draws it instead.
+func TestCodeBlockIsABoxFittedToItsContent(t *testing.T) {
 	was := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
 
 	m := newTeaModel(agent.New(nil), nil)
-	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 24})
 
-	out := m.rendererText("Coba ini:\n\n```go\nfunc main() {}\n```\n\nSelesai.\n")
+	out := m.rendererText("Contoh:\n\n```go\nfunc main() {\n\tfmt.Println(\"halo\")\n}\n```\n\nSelesai.\n")
 
-	var code, prose []string
+	var banded []string
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, "\x1b[48;") {
-			code = append(code, line)
-		} else if strings.TrimSpace(line) != "" {
-			prose = append(prose, line)
+			banded = append(banded, line)
 		}
 	}
-	if len(code) == 0 {
-		t.Fatalf("the code block must have a background of its own:\n%q", out)
+	// Three lines of code, and a blank banded row at each end to close the box.
+	if len(banded) != 5 {
+		t.Fatalf("want three code rows between two blank ones, got %d:\n%s", len(banded), out)
 	}
-	if len(prose) == 0 {
-		t.Fatalf("prose must not get one:\n%q", out)
+
+	width := visibleLen(banded[0])
+	for _, line := range banded {
+		if got := visibleLen(line); got != width {
+			t.Errorf("every row of the box is the same width: %d against %d", got, width)
+		}
 	}
-	// Every code line reaches the same width, which is what makes the block a
-	// block — and stops one column short, which is what stops the terminal
-	// wrapping it and scrolling the screen under the renderer.
-	for _, line := range code {
-		if got := visibleLen(line); got != m.cols() {
-			t.Errorf("a code line is %d wide, want %d:\n%q", got, m.cols(), line)
+	// Fitted, not full: the longest line here is nowhere near seventy columns.
+	if width >= m.cols() {
+		t.Errorf("the box is %d wide on a %d-column screen; it should fit its content", width, m.cols())
+	}
+	for i, want := range []string{"1", "2", "3"} {
+		if !strings.Contains(banded[i+1], want) {
+			t.Errorf("row %d is not numbered:\n%q", i+1, banded[i+1])
+		}
+	}
+	// A tab is one character and several columns. Left in, the band is drawn
+	// one width and the terminal paints another.
+	if strings.Contains(out, "\t") {
+		t.Error("tabs must be expanded before the block is measured")
+	}
+}
+
+// A line too long for the screen is cut, not wrapped: a wrapped line takes the
+// shape of the box with it.
+func TestCodeBlockCutsALineTooWideForTheScreen(t *testing.T) {
+	was := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+
+	long := strings.Repeat("x", 200)
+	out := m.rendererText("```\n" + long + "\n```\n")
+	for _, line := range strings.Split(out, "\n") {
+		if got := visibleLen(line); got > m.cols() {
+			t.Fatalf("a row is %d wide on a %d-column screen:\n%q", got, m.cols(), line)
 		}
 	}
 }

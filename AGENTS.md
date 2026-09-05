@@ -548,31 +548,28 @@ Four rules the layout keeps, each of which took a bug to learn:
 - **Anything the chat draws to a fixed width is cut by columns, not by
   characters.** A coloured line is mostly escape codes.
 
-A fenced code block in an answer gets a band behind it, `code` from the
-palette, filled out to the same width on every line. Glamour's dark style gives
-code syntax colours and no background at all, so a block used to be text that
-happened to be coloured. Two things had to be learned to change that: the
-background has to go on every *chroma* token, since chroma draws the characters
-and a colour set on the block around them is ignored; and glamour's own
-`IndentToken`, which would have drawn a gutter bar instead, is not honoured for
-code blocks. Both were tried before the third worked.
+A fenced code block is drawn in `code.go`, not by glamour. The fences are cut
+out of the answer before glamour sees it, and what comes back is a box: as wide
+as its own longest line, numbered down the side, one colour throughout, in
+`codeBG` — deliberately not `band`, which is the question's, since the two sit
+within a screen of each other and the eye should not have to work out which is
+which.
 
-A line carrying a background is how a code line is told apart after rendering —
-nothing else in an answer has one — and that is the only thing chroma's
-background is for. `rendererText` strips it and paints its own, because two
-libraries resolving the same hex through their own colour profiles produce two
-shades. Then it repairs what chroma leaves behind: every token ends in a full
-reset, so the band dies in the gaps between them and never reaches the margin
-or the padding. Each reset is followed by turning the band on again, and the
-run of lines is opened and closed with a blank banded row, which is what makes
-it a rectangle rather than three coloured stripes.
+Patching glamour's output was tried three times and each round taught the same
+thing. A background set on the code block is ignored, because chroma paints the
+characters. `IndentToken`, which would have drawn a gutter, is not honoured for
+code blocks. And even with the colour forced onto every chroma token, the band
+starts after glamour's margin, stops where the code stops, and dies in every
+gap, because each token ends in a full reset. A block is a shape; a shape has
+to be drawn, not repaired.
 
-`glamour.WithColorProfile(lipgloss.ColorProfile())` is what stops the two
-disagreeing in the first place. Without it glamour detects the terminal for
-itself and lands on 256 colours where lipgloss chose truecolour, which is two
-backgrounds a shade apart in one block.
+So chroma is called directly for the colours and lipgloss for the box. Two
+things that only show up once you measure: a tab is one character and several
+columns, so tabs are expanded before anything is measured or the band is drawn
+one width and painted another; and a line wider than the screen is cut by
+columns rather than wrapped, since a wrapped line takes the shape with it.
 
-It only appears once the answer is finished. While the text is streaming,
+The box only appears once the answer is finished. While the text is streaming,
 `streamRows` shows it raw, fences and all, because the closing fence has not
 arrived and there is nothing yet that is a block.
 

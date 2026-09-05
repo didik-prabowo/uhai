@@ -5,7 +5,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -127,69 +126,31 @@ func (m *teaModel) collapseThinking() {
 	m.addHistory(teaDim.Render(fmt.Sprintf("✻ thought for %s", took)))
 }
 
+// rendererText renders an answer: the prose through glamour, and each fenced
+// code block drawn here, because a block is a shape and glamour draws it as
+// flowing text.
 func (m *teaModel) rendererText(text string) string {
+	var out []string
+	for _, part := range splitFences(text) {
+		if part.code {
+			out = append(out, codeBlock(part.text, part.lang, m.cols()))
+			continue
+		}
+		if prose := m.prose(part.text); prose != "" {
+			out = append(out, prose)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func (m *teaModel) prose(text string) string {
 	rendered, err := m.renderer.Render(text)
 	if err != nil {
 		return text
 	}
-	// A code line is one glamour gave a background to: chroma colours the
-	// characters, and nothing else in an answer carries a background at all.
-	//
-	// Making that into a block takes two repairs. Chroma ends every token with
-	// a full reset, so the band dies in the gaps between them and never
-	// reaches the margin or the padding — each reset is followed by the band
-	// being turned on again. And the run of lines is opened and closed with a
-	// blank banded line, which is what makes it a rectangle rather than three
-	// coloured stripes.
-	//
-	// m.cols() and not the terminal width: a line as wide as the terminal
-	// wraps on its own, which scrolls the screen out from under the renderer.
-	band := lipgloss.NewStyle().Background(code)
-
-	// The escape that turns the band on, taken from lipgloss so the colour and
-	// the terminal's profile are decided in one place. A terminal with no
-	// colour renders the space as itself, and there is no band to draw — the
-	// check matters, because trimming a suffix that is not there leaves the
-	// space, and a space substituted for every reset would pull the code apart.
-	on := ""
-	if painted := band.Render(" "); strings.HasSuffix(painted, " \x1b[0m") {
-		on = strings.TrimSuffix(painted, " \x1b[0m")
-	}
-	fill := func(n int) string {
-		if n <= 0 {
-			return ""
-		}
-		return band.Render(strings.Repeat(" ", n))
-	}
-
 	var rows []string
-	inBlock := false
 	for _, line := range strings.Split(rendered, "\n") {
-		line = strings.TrimRight(line, " \t")
-
-		if on == "" || !strings.Contains(line, "\x1b[48;") {
-			if inBlock {
-				rows = append(rows, fill(m.cols()))
-				inBlock = false
-			}
-			rows = append(rows, line)
-			continue
-		}
-		if !inBlock {
-			rows = append(rows, fill(m.cols()))
-			inBlock = true
-		}
-		// Chroma's own background comes out a shade off ours — it resolves
-		// colours through its own profile — so it is stripped and the band is
-		// the only one left. It was only ever needed as the mark that says
-		// which lines are code.
-		width := visibleLen(line)
-		line = chromaBackground.ReplaceAllString(line, "")
-		line = on + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+on)
-		rows = append(rows, line+fill(m.cols()-width))
-	}
-	if inBlock {
-		rows = append(rows, fill(m.cols()))
+		rows = append(rows, strings.TrimRight(line, " \t"))
 	}
 	return strings.Trim(strings.Join(rows, "\n"), "\n")
 }
@@ -441,7 +402,3 @@ func (m *teaModel) View() string {
 	rows = append(rows, statusRow, m.formSurface(m.input.View()))
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
-
-// chromaBackground matches a background escape, whatever depth of colour the
-// terminal turned out to support.
-var chromaBackground = regexp.MustCompile(`\x1b\[48;[0-9;]*m`)
