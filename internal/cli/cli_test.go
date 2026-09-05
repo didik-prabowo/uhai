@@ -1649,3 +1649,37 @@ func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
 		t.Errorf("what came from cache is the difference this session made, got %q", got)
 	}
 }
+
+// A code block should read as a block. Glamour's dark style gives it syntax
+// colours and no background at all, so it used to be text that happened to be
+// coloured — and the band chroma does paint stops where the code stops, which
+// is a ragged edge rather than a block.
+func TestCodeBlocksGetABandThatReachesTheEdge(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+
+	out := m.rendererText("Coba ini:\n\n```go\nfunc main() {}\n```\n\nSelesai.\n")
+
+	var code, prose []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "\x1b[48;") {
+			code = append(code, line)
+		} else if strings.TrimSpace(line) != "" {
+			prose = append(prose, line)
+		}
+	}
+	if len(code) == 0 {
+		t.Fatalf("the code block must have a background of its own:\n%q", out)
+	}
+	if len(prose) == 0 {
+		t.Fatalf("prose must not get one:\n%q", out)
+	}
+	// Every code line reaches the same width, which is what makes the block a
+	// block — and stops one column short, which is what stops the terminal
+	// wrapping it and scrolling the screen under the renderer.
+	for _, line := range code {
+		if got := visibleLen(line); got != m.cols() {
+			t.Errorf("a code line is %d wide, want %d:\n%q", got, m.cols(), line)
+		}
+	}
+}

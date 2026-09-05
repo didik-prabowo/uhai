@@ -131,12 +131,25 @@ func (m *teaModel) rendererText(text string) string {
 	if err != nil {
 		return text
 	}
-	// Glamour pads every line out to the wrap width with styled spaces, which
-	// leaves a stiff block of trailing blanks in the scrollback and drags them
-	// along when the text is selected. The answer only needs its own width.
+	// A code line is one glamour gave a background to, and its band stops
+	// where the code stops — chroma colours the characters, and the padding
+	// after them belongs to the document. Reaching the same width is what
+	// makes it read as a block rather than as text that happens to be
+	// coloured, so the rest of the line is filled in the same colour.
+	//
+	// m.cols() and not the terminal width: a line as wide as the terminal
+	// wraps on its own, which scrolls the screen out from under the renderer.
+	band := lipgloss.NewStyle().Background(code)
+
 	var rows []string
 	for _, line := range strings.Split(rendered, "\n") {
-		rows = append(rows, strings.TrimRight(line, " \t"))
+		line = strings.TrimRight(line, " \t")
+		if strings.Contains(line, "\x1b[48;") {
+			if fill := m.cols() - visibleLen(line); fill > 0 {
+				line += band.Render(strings.Repeat(" ", fill))
+			}
+		}
+		rows = append(rows, line)
 	}
 	return strings.Trim(strings.Join(rows, "\n"), "\n")
 }

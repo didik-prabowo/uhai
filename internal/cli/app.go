@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"os"
 
+	"reflect"
+
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 )
@@ -53,8 +57,35 @@ func newRenderer(width int) *glamour.TermRenderer {
 		width = 20
 	}
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStyles(codeBlockStyle()),
 		glamour.WithWordWrap(width),
 	)
 	return r
+}
+
+// codeBlockStyle is the dark style with a background behind fenced code, so a
+// block reads as a block rather than as text that happens to be coloured.
+//
+// The colour has to go on every chroma token, not on the code block: chroma is
+// what draws the characters, and a background set on the block around it is
+// ignored. Glamour's own IndentToken, which would have drawn a gutter bar
+// instead, is not honoured for code blocks either — both were tried.
+//
+// Reflection rather than thirty-five assignments, and it has the better
+// failure mode: a token type glamour adds later is covered without anyone
+// noticing it was missing.
+func codeBlockStyle() ansi.StyleConfig {
+	style := styles.DarkStyleConfig
+	if style.CodeBlock.Chroma == nil {
+		return style
+	}
+	background := codeBackground()
+
+	chroma := reflect.ValueOf(style.CodeBlock.Chroma).Elem()
+	for i := 0; i < chroma.NumField(); i++ {
+		if field := chroma.Field(i); field.Type() == reflect.TypeOf(ansi.StylePrimitive{}) {
+			field.FieldByName("BackgroundColor").Set(reflect.ValueOf(&background))
+		}
+	}
+	return style
 }

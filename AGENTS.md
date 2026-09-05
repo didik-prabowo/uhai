@@ -548,6 +548,23 @@ Four rules the layout keeps, each of which took a bug to learn:
 - **Anything the chat draws to a fixed width is cut by columns, not by
   characters.** A coloured line is mostly escape codes.
 
+A fenced code block in an answer gets a band behind it, `code` from the
+palette, filled out to the same width on every line. Glamour's dark style gives
+code syntax colours and no background at all, so a block used to be text that
+happened to be coloured. Two things had to be learned to change that: the
+background has to go on every *chroma* token, since chroma draws the characters
+and a colour set on the block around them is ignored; and glamour's own
+`IndentToken`, which would have drawn a gutter bar instead, is not honoured for
+code blocks. Both were tried before the third worked.
+
+The band chroma paints stops where the code stops, so `rendererText` fills the
+rest of each line that carries one. A line with a background is how a code line
+is told apart after rendering — nothing else in an answer has one.
+
+It only appears once the answer is finished. While the text is streaming,
+`streamRows` shows it raw, fences and all, because the closing fence has not
+arrived and there is nothing yet that is a block.
+
 A model that thinks shows its working out live, dimmed, above the answer, and
 the moment the answer starts it collapses to `✻ thought for 12s`. Both halves
 are the point: keeping all of it buries the reply, since a thinking model

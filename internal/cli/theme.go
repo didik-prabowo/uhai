@@ -18,6 +18,11 @@ var (
 	band   = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#1E293B"} // a quiet background
 	onAcc  = lipgloss.AdaptiveColor{Light: "#F8FAFC", Dark: "#0F172A"} // text on the accent
 
+	// code is the band behind a fenced code block in an answer. Darker than
+	// band, which sits behind a question: a code block is quoted matter, and
+	// it should recede rather than call out.
+	code = lipgloss.AdaptiveColor{Light: "#E2E8F0", Dark: "#111C2E"}
+
 	added   = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#86EFAC"}
 	removed = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#FCA5A5"}
 )
@@ -61,3 +66,13 @@ var (
 	// glance, the shape says where you are.
 	confirmChosen = lipgloss.NewStyle().Bold(true).Foreground(onAcc).Background(accent)
 )
+
+// codeBackground is `code` as a hex string, because glamour takes colours as
+// strings rather than as lipgloss values and cannot resolve an adaptive pair
+// itself. Resolved once, against the terminal's own background.
+func codeBackground() string {
+	if lipgloss.HasDarkBackground() {
+		return code.Dark
+	}
+	return code.Light
+}
