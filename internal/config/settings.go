@@ -153,6 +153,12 @@ type Settings struct {
 	// keeps them somewhere other than .uhai, .claude or .agents.
 	SkillDirs []string `json:"skills,omitempty"`
 
+	// SkillsOff names skills to leave out of the prompt. A skill costs its
+	// line on every request whether it is ever opened or not, so the ones you
+	// carry everywhere and need in one project out of ten are worth switching
+	// off — in the project's settings, or in your own for everywhere.
+	SkillsOff []string `json:"skillsOff,omitempty"`
+
 	// Check is how this project verifies itself, for /check, when guessing
 	// from the files present would get it wrong. Belongs in the project's own
 	// .uhai/settings.json rather than in the home one.
@@ -210,6 +216,9 @@ func LoadSettings() (Settings, error) {
 		s.Permissions.Ask = append(s.Permissions.Ask, file.Permissions.Ask...)
 		s.Permissions.Deny = append(s.Permissions.Deny, file.Permissions.Deny...)
 		s.SkillDirs = append(s.SkillDirs, file.SkillDirs...)
+		// Off accumulates the same way a denial does: a project can switch off
+		// one of yours, and cannot switch on what you turned off for yourself.
+		s.SkillsOff = append(s.SkillsOff, file.SkillsOff...)
 	}
 
 	if v := strings.TrimSpace(os.Getenv("UHAI_MODEL")); v != "" {

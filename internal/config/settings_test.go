@@ -427,3 +427,55 @@ func TestPersonalSkillsTravelButProjectWins(t *testing.T) {
 		t.Errorf("the project's own skill must win the name: %+v", found)
 	}
 }
+
+// A skill costs its line on every request whether it is opened or not, so the
+// ones you carry everywhere and want in one project out of ten can be switched
+// off. Off is not the same as missing: it stays in the list, and only leaves
+// the prompt.
+func TestSkillsCanBeSwitchedOff(t *testing.T) {
+	dir := isolate(t)
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, ".uhai", "skills", "rilis", "SKILL.md"),
+		"---\nname: rilis\ndescription: dipakai\n---\n")
+	write(filepath.Join(dir, ".uhai", "skills", "gaya", "SKILL.md"),
+		"---\nname: gaya\ndescription: tidak dipakai di proyek ini\n---\n")
+	write(filepath.Join(dir, ".uhai", "settings.json"), `{"skillsOff":["gaya"]}`)
+
+	var off, on int
+	for _, s := range Skills() {
+		if s.Off {
+			off++
+		} else {
+			on++
+		}
+	}
+	if off != 1 || on != 1 {
+		t.Fatalf("one on and one off, got %d on and %d off", on, off)
+	}
+
+	// The half that matters: it stops being paid for.
+	notes := SkillNotes()
+	if !strings.Contains(notes, "rilis") {
+		t.Errorf("a skill left on must still reach the prompt:\n%s", notes)
+	}
+	if strings.Contains(notes, "gaya") {
+		t.Errorf("a skill switched off must not reach the prompt at all:\n%s", notes)
+	}
+}

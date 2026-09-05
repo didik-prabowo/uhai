@@ -490,6 +490,19 @@ and the repository is the more specific answer — your own `rilis` gives way to
 the one this project ships. There is no `~/.agents/skills`; that convention is
 per-repository.
 
+A skill can be switched off with `"skillsOff": ["gaya"]` in a `settings.json`,
+which keeps it out of the prompt without deleting anything. The list
+accumulates the way a permission denial does — your own settings and the
+project's are appended, so a project can switch off one of yours and cannot
+switch on what you turned off for yourself. `/skills` still lists it, marked
+`off`: switched off and never found look identical from the outside, and only
+one of them is a mistake.
+
+Not built: switching one off for a session only, the way `a` works for
+permissions. The reason to switch a skill off is that you do not want to pay
+for it in this project, which is a durable fact and belongs in a file. *Build
+it when somebody is toggling one twice in an afternoon.*
+
 `/skills` prints what was found and where it looked. A skill in the wrong
 folder, or whose frontmatter did not parse, fails in the one way nothing
 reports — the model simply does not follow it, and no error names a cause. It

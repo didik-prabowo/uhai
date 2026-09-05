@@ -95,25 +95,37 @@ func skillsReport() string {
 	}
 
 	var rows []string
-	total := 0
+	total, offCount := 0, 0
 	for _, s := range skills {
 		// What it costs is the line it puts in the prompt, on every request,
 		// whether or not it is ever opened. That is the number worth showing:
 		// the description is the model's business, the bill is yours.
-		cost := len(s.Line()) / 4
-		total += cost
-		row := fmt.Sprintf("  %s%-*s%s %s· ~%s tok · %s",
-			accentAt, width, s.Name, reset, dim, fmtTokens(cost), shortPath(sourceDir(s.Path, dirs)))
-		if s.Description == "" {
+		cost := "off"
+		if s.Off {
+			offCount++
+		} else {
+			n := len(s.Line()) / 4
+			total += n
+			cost = "~" + fmtTokens(n) + " tok"
+		}
+		row := fmt.Sprintf("  %s%-*s%s %s· %-8s · %s",
+			accentAt, width, s.Name, reset, dim, cost, shortPath(sourceDir(s.Path, dirs)))
+		if s.Description == "" && !s.Off {
 			// The model picks a skill by its description, so one without it is
-			// found, paid for, and never opened.
+			// found, paid for, and never opened. Not worth saying about a
+			// skill that is switched off — it is not being paid for either.
 			row += " · no description"
 		}
 		rows = append(rows, row+reset)
 	}
+
+	tally := fmt.Sprintf("%d skill(s)", len(skills))
+	if offCount > 0 {
+		tally += fmt.Sprintf(", %d off", offCount)
+	}
 	return strings.Join(rows, "\n") + fmt.Sprintf(
-		"\n  %s%d skill(s) · ~%s tok in every prompt\n  looked in %s%s",
-		dim, len(skills), fmtTokens(total), shortDirs(dirs), reset)
+		"\n  %s%s · ~%s tok in every prompt\n  looked in %s%s",
+		dim, tally, fmtTokens(total), shortDirs(dirs), reset)
 }
 
 // sourceDir is which of the searched directories a skill came from, which is

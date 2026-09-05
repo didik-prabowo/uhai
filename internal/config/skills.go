@@ -56,6 +56,12 @@ type Skill struct {
 	Name        string
 	Description string
 	Path        string
+
+	// Off is a skill that was found and deliberately left out of the prompt.
+	// It stays in the list rather than disappearing: switched off and never
+	// found look identical from the outside, and only one of them is a
+	// mistake.
+	Off bool
 }
 
 // Skills lists what this project has, sorted by name so the prompt does not
@@ -63,6 +69,12 @@ type Skill struct {
 // and the path are enough to decide whether to open it.
 func Skills() []Skill {
 	seen := map[string]bool{}
+	off := map[string]bool{}
+	if s, err := LoadSettings(); err == nil {
+		for _, name := range s.SkillsOff {
+			off[name] = true
+		}
+	}
 	var out []Skill
 
 	for _, dir := range SkillDirs() {
@@ -80,6 +92,7 @@ func Skills() []Skill {
 				continue // ours wins: the first directory searched keeps the name
 			}
 			seen[skill.Name] = true
+			skill.Off = off[skill.Name]
 			out = append(out, skill)
 		}
 	}
@@ -153,6 +166,9 @@ func SkillNotes() string {
 
 	var b strings.Builder
 	for _, skill := range skills {
+		if skill.Off {
+			continue // found, and deliberately not paid for
+		}
 		b.WriteString(skill.Line() + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
