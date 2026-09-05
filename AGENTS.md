@@ -149,13 +149,13 @@ the evidence that waiting is not the answer.
 ## Permission
 
 `tools.Tool` is an interface — `Name`, `Description`, `Schema`, `NeedsConfirm`,
-`Run` — so a tool need not live in `internal/tools`. Everything shipped is
-built from the unexported `tool` struct, which carries its handler in a field
-and implements those five methods once rather than once per tool, so a built-in
-stays a single literal — and that literal lives beside the function it runs,
-`readFileTool` next to `readFile` in `files.go`, `runBashTool` next to
-`runBash` in `shell.go`. Changing what a tool does and changing what the model
-is told about it are the same file.
+`Run` — so a tool need not live in `internal/tools`. Every tool is a type implementing it, one per file: `readTool` in `read.go`,
+`bashTool` in `bash.go`. There is no privileged way to write a built-in — the
+adapter struct that used to let them be one-line literals is gone, and a tool
+in this repository is written exactly the way a tool from an MCP server would
+be. Four of the five methods return a constant, which looks like ceremony until
+you notice it is the same ceremony an outside implementer pays; a shortcut only
+the built-ins could take is a second design nobody else can follow.
 
 Sub-packages — `tools/files/read.go` and so on — were considered and are the
 shape to reach for later, not now. `tools/files` would need `tools.Tool` and
@@ -185,7 +185,10 @@ A tool that cannot do its job has still done its job by saying why — "could
 not read file: no such file" is something the model can act on, where a
 dropped result leaves it believing the file was empty.
 
-The interface costs 22 lines over the plain table it replaced. It buys one
+The interface cost 22 lines over the plain table it replaced, and giving every
+tool its own type cost four more — cheap, because one file per tool had already
+removed the duplication that made the same change expensive when they shared
+one. It buys one
 thing the table could not do at all — a tool whose name is not known until the
 program runs, which is what an MCP server or a plugin would be. `external_test`
 is the proof, and the only test that could be: it defines a tool outside the

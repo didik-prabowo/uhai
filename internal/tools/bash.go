@@ -35,7 +35,26 @@ func killGroup(ctx context.Context, cmd *exec.Cmd) func() {
 	return func() { close(done) }
 }
 
-func bash(ctx context.Context, input json.RawMessage) (string, bool) {
+// bashTool is the run_bash tool: what the model is told about it, and the
+// thing that runs.
+type bashTool struct{}
+
+func (bashTool) Name() string       { return "run_bash" }
+func (bashTool) NeedsConfirm() bool { return true }
+func (bashTool) Description() string {
+	return "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input."
+}
+func (bashTool) Schema() json.RawMessage {
+	return json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"command": {"type": "string", "description": "Shell command to run"}
+			},
+			"required": ["command"]
+		}`)
+}
+
+func (bashTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Command string `json:"command"`
 	}
@@ -106,19 +125,4 @@ func Shell(ctx context.Context, command string, onLine func(string)) (string, er
 		onLine(line)
 	}
 	return out.String(), cmd.Wait()
-}
-
-// bashTool is how the model is told about run_bash.
-var bashTool = tool{
-	name:        "run_bash",
-	confirm:     true,
-	run:         bash,
-	description: "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input.",
-	schema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"command": {"type": "string", "description": "Shell command to run"}
-			},
-			"required": ["command"]
-		}`),
 }

@@ -3,6 +3,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +11,28 @@ import (
 	"strings"
 )
 
-func grep(input json.RawMessage) (string, bool) {
+// grepTool is the grep tool: what the model is told about it, and the
+// thing that runs.
+type grepTool struct{}
+
+func (grepTool) Name() string       { return "grep" }
+func (grepTool) NeedsConfirm() bool { return false }
+func (grepTool) Description() string {
+	return "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission."
+}
+func (grepTool) Schema() json.RawMessage {
+	return json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"pattern": {"type": "string", "description": "Go regular expression to search for"},
+				"path": {"type": "string", "description": "Folder to search in, default the working directory"},
+				"include": {"type": "string", "description": "Only search files whose name matches this pattern, e.g. \"*.go\""}
+			},
+			"required": ["pattern"]
+		}`)
+}
+
+func (grepTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -51,20 +73,4 @@ func grep(input json.RawMessage) (string, bool) {
 		return "no matches for " + args.Pattern, false
 	}
 	return strings.Join(hits, "\n"), false
-}
-
-// grepTool is how the model is told about grep.
-var grepTool = tool{
-	name:        "grep",
-	run:         noCtx(grep),
-	description: "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission.",
-	schema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"pattern": {"type": "string", "description": "Go regular expression to search for"},
-				"path": {"type": "string", "description": "Folder to search in, default the working directory"},
-				"include": {"type": "string", "description": "Only search files whose name matches this pattern, e.g. \"*.go\""}
-			},
-			"required": ["pattern"]
-		}`),
 }

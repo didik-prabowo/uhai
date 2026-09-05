@@ -42,38 +42,6 @@ type Tool interface {
 	Run(ctx context.Context, input json.RawMessage) (result string, isError bool)
 }
 
-// tool is the plain implementation, and the only one uhai ships: data plus a
-// function. The five methods below exist once, not once per tool, which is
-// what keeps a built-in tool a single struct literal.
-//
-// The name is written once, in the literal. It used to appear in Definitions,
-// again in a switch, and again in NeedsConfirm — three strings that only
-// happened to match, which is where three of yesterday's bugs came from.
-type tool struct {
-	name        string
-	description string
-	schema      json.RawMessage
-	confirm     bool
-	run         func(context.Context, json.RawMessage) (string, bool)
-}
-
-var _ Tool = tool{}
-
-func (t tool) Name() string            { return t.name }
-func (t tool) Description() string     { return t.description }
-func (t tool) Schema() json.RawMessage { return t.schema }
-func (t tool) NeedsConfirm() bool      { return t.confirm }
-
-func (t tool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
-	return t.run(ctx, input)
-}
-
-// noCtx adapts the tools that cannot be interrupted halfway: reading a file is
-// over before a cancel could arrive, so those handlers never took a context.
-func noCtx(f func(json.RawMessage) (string, bool)) func(context.Context, json.RawMessage) (string, bool) {
-	return func(_ context.Context, input json.RawMessage) (string, bool) { return f(input) }
-}
-
 // mu guards all. Registration is expected at startup, but the whole point of
 // the interface is tools that arrive from somewhere else — an MCP server that
 // reconnects mid-session would register from its own goroutine while the agent
@@ -104,13 +72,13 @@ func Register(t Tool) error {
 // given, and that order is part of the cached prefix, so it should be written
 // down rather than left to whatever order the files happen to initialise in.
 var all = []Tool{
-	readTool,
-	writeTool,
-	editTool,
-	globTool,
-	grepTool,
-	bashTool,
-	fetchTool,
+	readTool{},
+	writeTool{},
+	editTool{},
+	globTool{},
+	grepTool{},
+	bashTool{},
+	fetchTool{},
 }
 
 // find is the one lookup. A name nobody defined finds nothing, which is what

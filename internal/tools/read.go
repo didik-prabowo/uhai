@@ -3,12 +3,32 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 )
 
-func read(input json.RawMessage) (string, bool) {
+// readTool is the read_file tool: what the model is told about it, and the
+// thing that runs.
+type readTool struct{}
+
+func (readTool) Name() string       { return "read_file" }
+func (readTool) NeedsConfirm() bool { return false }
+func (readTool) Description() string {
+	return "Read a file from disk and return its full contents as text."
+}
+func (readTool) Schema() json.RawMessage {
+	return json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "Relative or absolute path to the file"}
+			},
+			"required": ["path"]
+		}`)
+}
+
+func (readTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -20,18 +40,4 @@ func read(input json.RawMessage) (string, bool) {
 		return fmt.Sprintf("could not read file: %v", err), true
 	}
 	return string(data), false
-}
-
-// readTool is how the model is told about read_file.
-var readTool = tool{
-	name:        "read_file",
-	run:         noCtx(read),
-	description: "Read a file from disk and return its full contents as text.",
-	schema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"path": {"type": "string", "description": "Relative or absolute path to the file"}
-			},
-			"required": ["path"]
-		}`),
 }

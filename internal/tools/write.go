@@ -3,13 +3,34 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 )
 
-func write(input json.RawMessage) (string, bool) {
+// writeTool is the write_file tool: what the model is told about it, and the
+// thing that runs.
+type writeTool struct{}
+
+func (writeTool) Name() string       { return "write_file" }
+func (writeTool) NeedsConfirm() bool { return true }
+func (writeTool) Description() string {
+	return "Write (overwrite) content to a file, creating it and its parent folders if needed."
+}
+func (writeTool) Schema() json.RawMessage {
+	return json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "Path of the file to write"},
+				"content": {"type": "string", "description": "Full content to write into the file"}
+			},
+			"required": ["path", "content"]
+		}`)
+}
+
+func (writeTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -26,20 +47,4 @@ func write(input json.RawMessage) (string, bool) {
 		return fmt.Sprintf("could not write file: %v", err), true
 	}
 	return fmt.Sprintf("OK, wrote %d bytes to %s", len(args.Content), args.Path), false
-}
-
-// writeTool is how the model is told about write_file.
-var writeTool = tool{
-	name:        "write_file",
-	confirm:     true,
-	run:         noCtx(write),
-	description: "Write (overwrite) content to a file, creating it and its parent folders if needed.",
-	schema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"path": {"type": "string", "description": "Path of the file to write"},
-				"content": {"type": "string", "description": "Full content to write into the file"}
-			},
-			"required": ["path", "content"]
-		}`),
 }

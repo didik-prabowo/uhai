@@ -39,7 +39,28 @@ var fetchClient = &http.Client{
 	},
 }
 
-func fetch(ctx context.Context, input json.RawMessage) (string, bool) {
+// fetchTool is the fetch_url tool: what the model is told about it, and the
+// thing that runs.
+type fetchTool struct{}
+
+func (fetchTool) Name() string       { return "fetch_url" }
+func (fetchTool) NeedsConfirm() bool { return true }
+func (fetchTool) Description() string {
+	return "Fetch a web page or document over http(s) and return it as text. " +
+		"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
+		"Markup is stripped; only addresses on the public internet can be reached."
+}
+func (fetchTool) Schema() json.RawMessage {
+	return json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"url": {"type": "string", "description": "The http or https URL to fetch"}
+			},
+			"required": ["url"]
+		}`)
+}
+
+func (fetchTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		URL string `json:"url"`
 	}
@@ -166,21 +187,4 @@ func textFromHTML(page string) string {
 	page = html.UnescapeString(page)
 	page = trailing.ReplaceAllString(page, "\n")
 	return strings.TrimSpace(blanks.ReplaceAllString(page, "\n\n"))
-}
-
-// fetchTool is how the model is told about fetch_url.
-var fetchTool = tool{
-	name:    "fetch_url",
-	confirm: true,
-	run:     fetch,
-	description: "Fetch a web page or document over http(s) and return it as text. " +
-		"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
-		"Markup is stripped; only addresses on the public internet can be reached.",
-	schema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"url": {"type": "string", "description": "The http or https URL to fetch"}
-			},
-			"required": ["url"]
-		}`),
 }
