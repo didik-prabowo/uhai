@@ -82,6 +82,11 @@ type wirePart struct {
 	Text         string        `json:"text,omitempty"`
 	FunctionCall *wireCall     `json:"functionCall,omitempty"`
 	FunctionResp *wireResponse `json:"functionResponse,omitempty"`
+
+	// ThoughtSignature comes back on the part that made a tool call and has to
+	// go out again on the same part next turn. Gemini 3 answers 400 without
+	// it; 2.5 never sent one, so an empty string is left off the wire.
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 
 type wireCall struct {
@@ -195,7 +200,8 @@ func toWire(msgs []provider.Message) []wireContent {
 					args = json.RawMessage("{}")
 				}
 				content.Parts = append(content.Parts, wirePart{
-					FunctionCall: &wireCall{Name: b.ToolName, Args: args},
+					FunctionCall:     &wireCall{Name: b.ToolName, Args: args},
+					ThoughtSignature: b.Signature,
 				})
 
 			case provider.BlockToolResult:
@@ -293,6 +299,7 @@ func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, erro
 					ToolUseID: fmt.Sprintf("%s-%d", part.FunctionCall.Name, calls),
 					ToolName:  part.FunctionCall.Name,
 					ToolInput: orEmptyObject(part.FunctionCall.Args),
+					Signature: part.ThoughtSignature,
 				})
 
 			case part.Text != "":

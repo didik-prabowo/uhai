@@ -51,6 +51,13 @@ type ContentBlock struct {
 	ToolName  string          `json:"ToolName"`
 	ToolInput json.RawMessage `json:"ToolInput"`
 
+	// Signature is an opaque token the vendor attached to a tool call and
+	// wants handed back with it. Gemini 3 refuses the next request without it
+	// — "Function call is missing a thought_signature" — so it is carried
+	// through the history and stored with the session, not dropped on arrival.
+	// Empty for the vendors that do not use one.
+	Signature string `json:"Signature,omitempty"`
+
 	// Set when Type == BlockToolResult
 	ToolResultForID string `json:"ToolResultForID"`
 	ToolResultText  string `json:"ToolResultText"`

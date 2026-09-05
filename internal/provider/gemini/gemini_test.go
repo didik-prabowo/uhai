@@ -198,3 +198,68 @@ func TestModelsOffersOnlyWhatCanChat(t *testing.T) {
 		t.Fatalf("the embedding model must go and the deprecated one stay, got %v", models)
 	}
 }
+
+// Gemini 3 stamps every tool call with a thought signature and answers 400 on
+// the next turn if it does not come back: "Function call is missing a
+// thought_signature in functionCall parts". Nothing else in uhai needs the
+// token, so it is only ever read here and written back here — which is exactly
+// how it came to be dropped.
+func TestThoughtSignatureSurvivesTheRoundTrip(t *testing.T) {
+	const sig = "EqoDCqcDARFNMg9qUlyUTubAJ231usCDYtyG6Uew"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, events(
+			`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"glob","args":{"pattern":"*.go"}},"thoughtSignature":"`+sig+`"}]},"finishReason":"STOP"}]}`,
+		))
+	}))
+	defer server.Close()
+
+	c, err := New(Options{Label: "gemini", BaseURL: server.URL, APIKey: "k", Model: "gemini-3.5-flash", MaxTokens: 8192})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Send(context.Background(), provider.Request{
+		Messages: []provider.Message{{
+			Role:    provider.RoleUser,
+			Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "cari file go"}},
+		}},
+		Tools: []provider.ToolSpec{{Name: "glob", JSONSchema: json.RawMessage(`{"type":"object"}`)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read off the wire and kept on the block, so it is stored with the
+	// session and is still there when one is resumed.
+	if got := resp.Content[0].Signature; got != sig {
+		t.Fatalf("the signature was dropped on arrival: %q", got)
+	}
+
+	// And put back on the same part it arrived on.
+	out := toWire([]provider.Message{{Role: provider.RoleAssistant, Content: resp.Content}})
+	if got := out[0].Parts[0].ThoughtSignature; got != sig {
+		t.Fatalf("the signature was not sent back: %q", got)
+	}
+	if out[0].Parts[0].FunctionCall == nil {
+		t.Error("it belongs on the functionCall part, which is what the API checks")
+	}
+}
+
+// The vendors that send no signature must not start sending an empty one:
+// omitempty is what keeps the field off the wire for them.
+func TestNoSignatureMeansNoField(t *testing.T) {
+	out := toWire([]provider.Message{{
+		Role: provider.RoleAssistant,
+		Content: []provider.ContentBlock{{
+			Type: provider.BlockToolUse, ToolUseID: "c1", ToolName: "glob",
+			ToolInput: json.RawMessage(`{}`),
+		}},
+	}})
+	body, err := json.Marshal(out[0].Parts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "thoughtSignature") {
+		t.Errorf("an absent signature must not be sent at all: %s", body)
+	}
+}

@@ -78,7 +78,11 @@ company:
   and its result are parts of a message, and a result is matched to its call by
   the tool's *name* — so the id every other API hands out has to be looked back
   up while translating, which is the one place the neutral types cost something
-  to carry.
+  to carry. Gemini 3 adds a second: every tool call carries a
+  `thoughtSignature` that has to come back on the same part next turn, or the
+  API answers 400. Nothing else in uhai reads the token, so `ContentBlock`
+  carries it as an opaque `Signature` and the session stores it — a dropped
+  signature only shows up one turn later, on the request after the tool ran.
 
 `config.loadProvider` picks by `API` in the provider table, which the third
 format bought: a name compared against a literal was fine for two.
