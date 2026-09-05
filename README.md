@@ -77,28 +77,28 @@ uhai
 
 ## Commands
 
-| | |
-|---|---|
-| `/connect` | connect a provider and save the key |
-| `/model` | pick a model — the list shows context size, images, price |
-| `/compact` | summarize the history to free up context |
-| `/check` | run the project's tests as a background task, or `/check <command>` |
-| `/bg` | run a prompt in the background, read-only |
-| `/tasks` | list background work, or `/tasks t1` to read one |
-| `/stop` | stop a task: `/stop t1` |
-| `/mouse` | hand the mouse back to the terminal, for selecting text |
-| `/clear`, `/help`, `/exit` | as they sound |
+|                            |                                                                     |
+| -------------------------- | ------------------------------------------------------------------- |
+| `/connect`                 | connect a provider and save the key                                 |
+| `/model`                   | pick a model — the list shows context size, images, price           |
+| `/compact`                 | summarize the history to free up context                            |
+| `/check`                   | run the project's tests as a background task, or `/check <command>` |
+| `/bg`                      | run a prompt in the background, read-only                           |
+| `/tasks`                   | list background work, or `/tasks t1` to read one                    |
+| `/stop`                    | stop a task: `/stop t1`                                             |
+| `/mouse`                   | hand the mouse back to the terminal, for selecting text             |
+| `/clear`, `/help`, `/exit` | as they sound                                                       |
 
 ## Keys
 
-| | |
-|---|---|
-| `enter` | send — or hold the prompt until the model is free |
-| `↑` `↓`, `1`-`3` | answer a permission question; `y`, `a`, `n` still work |
-| `esc` | stop the model, or the compaction, mid-flight |
-| `↑` `↓`, `pgup` `pgdn`, `^p` `^n` | the last five prompts |
-| `^y` `^e`, `shift+↑` `shift+↓`, wheel | scroll the chat |
-| `shift+drag` | select text (in tmux, `prefix + [` selects inside the pane) |
+|                                       |                                                             |
+| ------------------------------------- | ----------------------------------------------------------- |
+| `enter`                               | send — or hold the prompt until the model is free           |
+| `↑` `↓`, `1`-`3`                      | answer a permission question; `y`, `a`, `n` still work      |
+| `esc`                                 | stop the model, or the compaction, mid-flight               |
+| `↑` `↓`, `pgup` `pgdn`, `^p` `^n`     | the last five prompts                                       |
+| `^y` `^e`, `shift+↑` `shift+↓`, wheel | scroll the chat                                             |
+| `shift+drag`                          | select text (in tmux, `prefix + [` selects inside the pane) |
 
 ## Settings
 
@@ -222,3 +222,13 @@ environment fails to build the test binaries, and says nothing useful about why.
 `AGENTS.md` is the guide to the source — which front end runs when, why the
 terminal behaves as it does, and which decisions were made deliberately and
 should not be quietly undone.
+
+<!-- - crush — untuk UI. Dan untuk melihat bagaimana permission, skills, session, lsp dipisah; mereka juga punya hooks dan lsp yang belum ada di uhai.
+- zot — untuk pembanding yang sepadan ukuran. Yang lain semuanya jauh lebih besar; zot mengaku "lightweight harness", jadi perbandingannya paling adil.
+- zero — bukan untuk ditiru, tapi sebagai peringatan. Tujuh puluh package di internal/, termasuk terminalpet. Itu ujung lain dari spektrum yang uhai duduki. -->
+
+## License
+
+MIT — see [LICENSE](LICENSE). The same as bubbletea, lipgloss, glamour and
+chroma, which uhai is built on, so nothing here is more restricted than what it
+stands on.
