@@ -11,10 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/config"
@@ -108,7 +107,7 @@ func TestPickerAlwaysReturnsToChat(t *testing.T) {
 	}
 
 	m.mode = teaProviderPicker
-	m.updatePicker(tea.KeyMsg{Type: tea.KeyEsc})
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != teaPrompt {
 		t.Fatalf("esc must cancel the picker, mode = %v", m.mode)
 	}
@@ -121,8 +120,8 @@ func TestAnswerStreamsThenSettles(t *testing.T) {
 
 	m.Update(teaDeltaMsg("hal"))
 	m.Update(teaDeltaMsg("o dunia"))
-	if !strings.Contains(m.View(), "halo dunia") {
-		t.Fatalf("the answer must appear while it streams:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "halo dunia") {
+		t.Fatalf("the answer must appear while it streams:\n%s", m.View().Content)
 	}
 	if m.streamed != len("halo dunia") {
 		t.Fatalf("streamed chars = %d", m.streamed)
@@ -151,12 +150,12 @@ func TestTypingWhileBusyIsQueued(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.busy = true
 
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("halo")})
+	m.Update(tea.KeyPressMsg{Text: "halo"})
 	if m.input.Value() != "halo" {
 		t.Fatalf("the prompt must accept typing while the model works, got %q", m.input.Value())
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.queued != "halo" || m.input.Value() != "" {
 		t.Fatalf("enter must queue, queued = %q input = %q", m.queued, m.input.Value())
 	}
@@ -174,7 +173,7 @@ func TestEscInterruptsTheTurn(t *testing.T) {
 
 	stopped := false
 	m.busy, m.cancel = true, func() { stopped = true }
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if !stopped {
 		t.Fatal("esc must stop the model while it is working")
 	}
@@ -238,7 +237,7 @@ func TestPromptIsPinnedAndChatScrolls(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.View().Content, "\n")
 	if len(rows) != 24 {
 		t.Fatalf("the screen must be filled exactly, got %d rows", len(rows))
 	}
@@ -249,31 +248,31 @@ func TestPromptIsPinnedAndChatScrolls(t *testing.T) {
 	for i := 0; i < waitTries; i++ {
 		m.addHistory(fmt.Sprintf("line %d", i))
 	}
-	bottom := m.chat.YOffset
+	bottom := m.chat.YOffset()
 
 	// Shift with the arrows scrolls; the arrows alone are the prompt's
 	// history, so the wheel can never type into the box.
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
-	if m.chat.YOffset >= bottom {
-		t.Fatalf("shift+up must scroll the chat, offset stayed at %d", m.chat.YOffset)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift})
+	if m.chat.YOffset() >= bottom {
+		t.Fatalf("shift+up must scroll the chat, offset stayed at %d", m.chat.YOffset())
 	}
-	scrolled := m.chat.YOffset
+	scrolled := m.chat.YOffset()
 	// The page keys are history, not a second way to scroll: on a Mac they
 	// are fn with the arrows, which the hand reads as the same key.
-	m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
-	if m.chat.YOffset != scrolled {
-		t.Fatalf("pgup must not scroll the chat, offset moved to %d", m.chat.YOffset)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if m.chat.YOffset() != scrolled {
+		t.Fatalf("pgup must not scroll the chat, offset moved to %d", m.chat.YOffset())
 	}
-	if got := strings.Split(m.View(), "\n"); !strings.Contains(got[23], "─") {
+	if got := strings.Split(m.View().Content, "\n"); !strings.Contains(got[23], "─") {
 		t.Fatalf("scrolling must not move the form, last row is %q", got[23])
 	}
 
 	// Typing is not scrolling, and it does not follow the chat back down.
 	for _, key := range []string{"j", "k", "f", "b", "u", "d", " "} {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		m.Update(tea.KeyPressMsg{Text: key})
 	}
-	if m.chat.YOffset != scrolled {
-		t.Fatalf("typing must not scroll the chat, offset moved %d → %d", scrolled, m.chat.YOffset)
+	if m.chat.YOffset() != scrolled {
+		t.Fatalf("typing must not scroll the chat, offset moved %d → %d", scrolled, m.chat.YOffset())
 	}
 }
 
@@ -302,8 +301,8 @@ func TestResizeRelaysTheChat(t *testing.T) {
 	if visibleLen(wide) != 80 || visibleLen(narrow) != 60 {
 		t.Fatalf("the chat must follow the width: %d then %d", visibleLen(wide), visibleLen(narrow))
 	}
-	if m.chat.Height != 20-m.blockHeight() {
-		t.Fatalf("the chat must take what the prompt leaves, got %d", m.chat.Height)
+	if m.chat.Height() != 20-m.blockHeight() {
+		t.Fatalf("the chat must take what the prompt leaves, got %d", m.chat.Height())
 	}
 }
 
@@ -322,13 +321,13 @@ func TestPromptHistoryWalksBackFive(t *testing.T) {
 
 	m.input.SetValue("draf") // what is being typed survives the walk
 	for i, want := range []string{"enam", "lima", "empat", "tiga", "dua", "dua"} {
-		m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 		if m.input.Value() != want {
 			t.Fatalf("pgup %d gave %q, want %q", i+1, m.input.Value(), want)
 		}
 	}
 	for i, want := range []string{"tiga", "empat", "lima", "enam", "draf", "draf"} {
-		m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		if m.input.Value() != want {
 			t.Fatalf("down %d gave %q, want %q", i+1, m.input.Value(), want)
 		}
@@ -348,18 +347,18 @@ func TestControlKeysScroll(t *testing.T) {
 		m.addHistory(fmt.Sprintf("line %d", i))
 	}
 
-	bottom := m.chat.YOffset
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
-	up := m.chat.YOffset
+	bottom := m.chat.YOffset()
+	m.Update(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl})
+	up := m.chat.YOffset()
 	if up >= bottom {
 		t.Fatalf("ctrl+y must scroll up, offset stayed at %d", up)
 	}
 	if m.input.Value() != "" {
 		t.Fatalf("scrolling must leave the prompt alone, got %q", m.input.Value())
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
-	if m.chat.YOffset <= up {
-		t.Fatalf("ctrl+e must scroll back down, offset stayed at %d", m.chat.YOffset)
+	m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl})
+	if m.chat.YOffset() <= up {
+		t.Fatalf("ctrl+e must scroll back down, offset stayed at %d", m.chat.YOffset())
 	}
 }
 
@@ -375,19 +374,25 @@ func TestMouseCommandLendsTheWheel(t *testing.T) {
 	if !m.wheel {
 		t.Fatal("the wheel scrolls the chat out of the box")
 	}
-	bottom := m.chat.YOffset
-	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
-	if m.chat.YOffset >= bottom {
-		t.Fatalf("the wheel must scroll the chat, offset stayed at %d", m.chat.YOffset)
+	bottom := m.chat.YOffset()
+	m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if m.chat.YOffset() >= bottom {
+		t.Fatalf("the wheel must scroll the chat, offset stayed at %d", m.chat.YOffset())
 	}
 	// /mouse hands the mouse over whole, for a terminal whose shift-drag is
 	// not enough, and says so while it is gone.
 	m.input.SetValue("/mouse")
-	if cmd := m.submit(); cmd == nil || m.wheel {
+	m.submit()
+	if m.wheel {
 		t.Fatal("/mouse must hand the mouse back")
 	}
-	if !strings.Contains(m.View(), "the terminal's") {
-		t.Fatalf("the status row must say the mouse is gone:\n%s", m.View())
+	// v2 carries the mouse mode on the view rather than in a command, so this
+	// is where handing it back is now visible.
+	if mode := m.View().MouseMode; mode != tea.MouseModeNone {
+		t.Fatalf("the view must stop asking for the mouse, mode = %v", mode)
+	}
+	if !strings.Contains(m.View().Content, "the terminal's") {
+		t.Fatalf("the status row must say the mouse is gone:\n%s", m.View().Content)
 	}
 }
 
@@ -620,7 +625,7 @@ func TestConfirmShowsWhatWillHappen(t *testing.T) {
 		t.Fatalf("title = %q", got)
 	}
 
-	if got := confirmDetail("run_bash", `{"command":"go test ./..."}`); !strings.Contains(got, "$ go test ./...") {
+	if got := confirmDetail("run_bash", `{"command":"go test ./..."}`); !strings.Contains(plain(got), "$ go test ./...") {
 		t.Fatalf("a command must be shown as one: %q", got)
 	}
 }
@@ -632,7 +637,7 @@ func TestAlwaysIsRemembered(t *testing.T) {
 
 	reply := make(chan bool, 1)
 	m.Update(teaConfirmMsg{request: teaConfirm{name: "run_bash", input: `{"command":"ls"}`, reply: reply}})
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m.Update(tea.KeyPressMsg{Text: "a"})
 	if !<-reply {
 		t.Fatal("always must approve the call it answers")
 	}
@@ -653,7 +658,7 @@ func TestConfirmQuestionOutranksTheSpinner(t *testing.T) {
 	m.busy = true
 
 	m.Update(teaConfirmMsg{request: teaConfirm{name: "run_bash", input: `{"command":"ls"}`, reply: make(chan bool, 1)}})
-	view := m.View()
+	view := plain(m.View().Content)
 	for _, want := range []string{"Shell command", "$ ls", "Do you want to proceed?", "1. Yes", "3. No"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("the question must show %q:\n%s", want, view)
@@ -753,7 +758,7 @@ func TestConnectOffersToReplaceASavedKey(t *testing.T) {
 	}
 
 	// Escaping keeps what is stored rather than throwing the connection away.
-	m.updatePicker(tea.KeyMsg{Type: tea.KeyEsc})
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if got := config.APIKey("groq"); got != "kunci-lama-yang-salah" {
 		t.Fatalf("escape must keep the saved key, got %q", got)
 	}
@@ -761,7 +766,7 @@ func TestConnectOffersToReplaceASavedKey(t *testing.T) {
 	// Typing one replaces it.
 	m.selectProvider("groq")
 	m.keyInput.SetValue("kunci-baru")
-	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := config.APIKey("groq"); got != "kunci-baru" {
 		t.Fatalf("a new key must replace the old one, got %q", got)
 	}
@@ -777,7 +782,7 @@ func TestConnectWarnsWhenTheEnvironmentWins(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.selectProvider("groq")
 	m.keyInput.SetValue("dari-ketikan")
-	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	var said bool
 	for _, e := range m.lines {
@@ -799,7 +804,7 @@ func TestKeyEntryShowsWhereToGetOne(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.selectProvider("anthropic")
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, config.KeyURL("anthropic")) {
 		t.Fatalf("the key page must be on screen:\n%s", view)
 	}
@@ -812,8 +817,8 @@ func TestKeyEntryShowsWhereToGetOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.selectProvider("anthropic")
-	if !strings.Contains(m.View(), "esc keeps the key already saved") {
-		t.Fatalf("escape must say what it keeps:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "esc keeps the key already saved") {
+		t.Fatalf("escape must say what it keeps:\n%s", m.View().Content)
 	}
 }
 
@@ -867,19 +872,19 @@ func TestConfirmPanelIsNavigable(t *testing.T) {
 
 	// Down moves the cursor, enter takes what is under it.
 	reply := ask()
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if !strings.Contains(m.View(), "❯ 3. No") {
-		t.Fatalf("the cursor must move:\n%s", m.View())
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if !strings.Contains(m.View().Content, "❯ 3. No") {
+		t.Fatalf("the cursor must move:\n%s", m.View().Content)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if <-reply {
 		t.Fatal("the third answer is no")
 	}
 
 	// A number answers straight away, and 2 remembers the tool.
 	reply = ask()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	m.Update(tea.KeyPressMsg{Text: "2"})
 	if !<-reply {
 		t.Fatal("the second answer is yes")
 	}
@@ -889,7 +894,7 @@ func TestConfirmPanelIsNavigable(t *testing.T) {
 
 	// The letters still work, for hands that already know them.
 	reply = ask()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m.Update(tea.KeyPressMsg{Text: "n"})
 	if <-reply {
 		t.Fatal("n is still no")
 	}
@@ -897,7 +902,7 @@ func TestConfirmPanelIsNavigable(t *testing.T) {
 	// Escape is no, not a way to leave the question unanswered — the tool call
 	// is waiting on the other end of that channel.
 	reply = ask()
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if <-reply {
 		t.Fatal("esc is no")
 	}
@@ -918,12 +923,12 @@ func TestConfirmPanelLeavesTheChatVisible(t *testing.T) {
 
 	m.Update(teaConfirmMsg{request: teaConfirm{name: "run_bash", input: `{"command":"ls"}`, reply: make(chan bool, 1)}})
 
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.View().Content, "\n")
 	if len(rows) != 24 {
 		t.Fatalf("the view must still be one screen, got %d rows", len(rows))
 	}
-	if !strings.Contains(m.View(), "baris 29") {
-		t.Fatalf("the newest chat line must survive the panel:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "baris 29") {
+		t.Fatalf("the newest chat line must survive the panel:\n%s", m.View().Content)
 	}
 	if !strings.Contains(rows[len(rows)-1], "╰") {
 		t.Fatalf("and the panel must end the block, last row is %q", rows[len(rows)-1])
@@ -955,7 +960,7 @@ func TestBlockKeepsItsDistanceFromTheChat(t *testing.T) {
 		m.addHistory(fmt.Sprintf("baris %d", i))
 	}
 
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.View().Content, "\n")
 	if len(rows) != 24 {
 		t.Fatalf("the view is one screen, got %d rows", len(rows))
 	}
@@ -1142,7 +1147,7 @@ func TestToolLinesFitOnOneLine(t *testing.T) {
 	if len(used) != 1 {
 		t.Fatalf("a tool call takes one row, got %d: %q", len(used), used)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(used[0]), "…") {
+	if !strings.HasSuffix(strings.TrimSpace(plain(used[0])), "…") {
 		t.Fatalf("and says it was cut: %q", used[0])
 	}
 }
@@ -1208,7 +1213,7 @@ func TestPickerShowsMoreThanOneModelAtATime(t *testing.T) {
 
 	shown := 0
 	for _, item := range items {
-		if strings.Contains(m.View(), item.(teaItem).title) {
+		if strings.Contains(m.View().Content, item.(teaItem).title) {
 			shown++
 		}
 	}
@@ -1225,21 +1230,21 @@ func TestCommandMenuKeepsTheSelectionOnScreen(t *testing.T) {
 	for _, height := range []int{14, 24, 40} {
 		m := newTeaModel(agent.New(nil), nil)
 		m.Update(tea.WindowSizeMsg{Width: 76, Height: height})
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+		m.Update(tea.KeyPressMsg{Text: "/"})
 
 		menu := matches(m.input.Value())
 		if len(menu) < 5 {
 			t.Fatalf("expected the whole command list, got %d", len(menu))
 		}
 		for step := 0; step <= len(menu); step++ {
-			view := m.View()
+			view := m.View().Content
 			if rows := strings.Count(view, "\n") + 1; rows > height {
 				t.Fatalf("height=%d step=%d: view is %d rows, taller than the screen", height, step, rows)
 			}
 			if selected := menu[m.commandSel].name; !strings.Contains(view, selected+" ") {
 				t.Fatalf("height=%d step=%d: %s is selected but not drawn", height, step, selected)
 			}
-			m.Update(tea.KeyMsg{Type: tea.KeyUp}) // wraps at the top
+			m.Update(tea.KeyPressMsg{Code: tea.KeyUp}) // wraps at the top
 		}
 	}
 }
@@ -1264,7 +1269,7 @@ func TestConnectAsksForTheWorkspaceAfterTheKey(t *testing.T) {
 	if m.credField != config.FieldWorkspace {
 		t.Fatalf("the workspace id is asked for next, got %q", m.credField)
 	}
-	if view := m.View(); !strings.Contains(view, "workspace id") || !strings.Contains(view, "esc connects without it") {
+	if view := m.View().Content; !strings.Contains(view, "workspace id") || !strings.Contains(view, "esc connects without it") {
 		t.Fatalf("the question must name the field and say it is optional:\n%s", view)
 	}
 
@@ -1602,7 +1607,7 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 		t.Errorf("a row must say it is on and what it costs, got %q", desc)
 	}
 
-	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// It stays open: switching one off is rarely the only one.
 	if m.mode != teaSkillPicker {
@@ -1622,7 +1627,7 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 	}
 
 	// And back on again, saying so.
-	m.updatePicker(tea.KeyMsg{Type: tea.KeyEnter})
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if off := config.Skills()[0].Off; off {
 		t.Error("enter again must switch it back on")
 	}
@@ -1661,10 +1666,6 @@ func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
 // column short of the edge, numbered down the side, and in a colour that is
 // not the question's. Glamour draws it as flowing text, so uhai draws it.
 func TestCodeBlockIsABoxLinedUpWithTheProse(t *testing.T) {
-	was := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
-
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 70, Height: 24})
 
@@ -1713,10 +1714,6 @@ func TestCodeBlockIsABoxLinedUpWithTheProse(t *testing.T) {
 // A line too long for the screen is cut, not wrapped: a wrapped line takes the
 // shape of the box with it.
 func TestCodeBlockCutsALineTooWideForTheScreen(t *testing.T) {
-	was := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
-
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
 
@@ -1733,10 +1730,6 @@ func TestCodeBlockCutsALineTooWideForTheScreen(t *testing.T) {
 // sentence that introduced it, and two blocks with one line of prose between
 // them read as a single block with a caption inside it.
 func TestCodeBlockIsSeparatedFromTheProse(t *testing.T) {
-	was := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
-
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
 
@@ -1767,4 +1760,23 @@ func TestCodeBlockIsSeparatedFromTheProse(t *testing.T) {
 	if runs != 2 {
 		t.Errorf("want two separate blocks, got %d", runs)
 	}
+}
+
+// plain strips the escapes from a rendered line, for the assertions that mean
+// "this text is on screen" rather than "these bytes are". lipgloss v1 rendered
+// plain when there was no terminal and v2 always renders the colour, so the
+// difference used to be invisible in a test and now is not.
+func plain(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			if j := strings.IndexByte(s[i:], 'm'); j >= 0 {
+				i += j + 1
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }

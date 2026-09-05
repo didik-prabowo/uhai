@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
 )
@@ -183,10 +183,10 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 		m.wheel = !m.wheel
 		if m.wheel {
 			m.addHistory(teaDim.Render("mouse: the wheel scrolls the chat — hold shift to select text"))
-			return tea.EnableMouseCellMotion
+			return nil
 		}
 		m.addHistory(teaDim.Render("mouse: handed to the terminal — plain drag selects, ^y/^e scroll"))
-		return tea.DisableMouse
+		return nil
 	case value == "/help":
 		m.addHistory(helpText())
 		return nil

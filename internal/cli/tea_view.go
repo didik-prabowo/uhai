@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
@@ -40,7 +41,7 @@ func (m *teaModel) render(e chatEntry) string {
 // keys the prompt has no use for; the arrows are dealt with in update, where
 // it is known whether the prompt itself wants them.
 func newChatViewport() viewport.Model {
-	v := viewport.New(80, 20)
+	v := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	// Shift with the arrows is the only thing that scrolls: it reaches the app
 	// whatever the terminal thinks about wheels, and nothing else wants it.
 	// The page keys are the prompt's history, like the arrows.
@@ -51,18 +52,17 @@ func newChatViewport() viewport.Model {
 	return v
 }
 
-func applyInputStyle(input *textarea.Model) {
-	focused, blurred := textarea.DefaultStyles()
-	for _, style := range []*textarea.Style{&focused, &blurred} {
-		style.Base = lipgloss.NewStyle()
-		style.CursorLine = lipgloss.NewStyle()
-		style.EndOfBuffer = lipgloss.NewStyle()
-		style.Text = lipgloss.NewStyle().Foreground(text)
-		style.Prompt = lipgloss.NewStyle().Foreground(accent)
-		style.Placeholder = lipgloss.NewStyle().Foreground(muted)
+func applyInputStyle(input *textarea.Model, isDark bool) {
+	styles := textarea.DefaultStyles(isDark)
+	for _, state := range []*textarea.StyleState{&styles.Focused, &styles.Blurred} {
+		state.Base = lipgloss.NewStyle()
+		state.CursorLine = lipgloss.NewStyle()
+		state.EndOfBuffer = lipgloss.NewStyle()
+		state.Text = lipgloss.NewStyle().Foreground(text)
+		state.Prompt = lipgloss.NewStyle().Foreground(accent)
+		state.Placeholder = lipgloss.NewStyle().Foreground(muted)
 	}
-	input.FocusedStyle = focused
-	input.BlurredStyle = blurred
+	input.SetStyles(styles)
 }
 
 // workingHint is the "(12s · ↑1.2k ↓340 tokens)" tail on the thinking line.
@@ -258,7 +258,7 @@ func (m *teaModel) resizeInput() {
 		value := m.input.Value()
 		m.input.SetValue(value)
 	}
-	m.chat.Width = m.cols()
+	m.chat.SetWidth(m.cols())
 	m.setChatHeight(m.height - m.blockHeight())
 }
 
@@ -267,7 +267,7 @@ func (m *teaModel) resizeInput() {
 // stop being there.
 func (m *teaModel) setChatHeight(height int) {
 	follow := m.chat.AtBottom()
-	m.chat.Height = max(1, height)
+	m.chat.SetHeight(max(1, height))
 	if follow {
 		m.chat.GotoBottom()
 	}
@@ -324,7 +324,25 @@ func (m *teaModel) turnSummary() string {
 	return teaDim.Render(strings.Join(parts, " · "))
 }
 
-func (m *teaModel) View() string {
+// View returns a tea.View rather than a string: bubbletea v2 lets a view
+// carry layers and a cursor, and the interface asks for the richer type even
+// when, as here, the answer is still one screen of text.
+// View is the screen plus the two things bubbletea v2 moved onto it. The alt
+// screen and the mouse used to be program options and commands; they are
+// properties of the view now, declared every frame, which suits /mouse exactly
+// — the toggle sets a bool and the next frame carries it, with no command to
+// send and no state kept anywhere else.
+func (m *teaModel) View() tea.View {
+	v := tea.NewView(m.screen())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeNone
+	if m.wheel {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
+}
+
+func (m *teaModel) screen() string {
 	if m.width == 0 {
 		return "starting uhai..."
 	}

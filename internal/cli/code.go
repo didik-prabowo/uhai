@@ -14,10 +14,10 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // codeGutter is the width of the line-number column, which stops growing at
@@ -121,6 +121,9 @@ func codeBlock(source, lang string, max int) string {
 
 	band := lipgloss.NewStyle().Background(codeBG)
 	number := lipgloss.NewStyle().Background(codeBG).Foreground(codeNumber)
+	if on, _ := bandEscapes(band); on == "" {
+		return strings.Join(painted, "\n") // no colour: the text, and nothing drawn
+	}
 
 	indent := strings.Repeat(" ", codeIndent)
 	blank := indent + band.Render(strings.Repeat(" ", codeGutter+width+2))
@@ -165,12 +168,27 @@ func highlight(source, lang string) []string {
 // keepBand turns the band back on after every reset chroma writes. Without it
 // the colour dies in the gaps between tokens and the block reads as stripes.
 func keepBand(line string, band lipgloss.Style) string {
-	on := ""
-	if painted := band.Render(" "); strings.HasSuffix(painted, " \x1b[0m") {
-		on = strings.TrimSuffix(painted, " \x1b[0m")
-	}
+	on, off := bandEscapes(band)
 	if on == "" {
 		return line
 	}
-	return on + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+on)
+	return on + strings.ReplaceAll(line, off, off+on)
+}
+
+// bandEscapes asks lipgloss what turning the band on and off looks like, by
+// rendering one space and taking it apart. Both are needed: chroma writes a
+// reset after every token, and the band has to be turned back on after each
+// one or it dies in the gaps.
+//
+// Asked rather than written down because the answer changes. lipgloss v1 wrote
+// the reset as ESC[0m and v2 writes ESC[m, and a hardcoded ESC[0m went on
+// compiling and quietly stopped matching — the block lost its colour and no
+// test could see it.
+func bandEscapes(band lipgloss.Style) (on, off string) {
+	painted := band.Render(" ")
+	space := strings.Index(painted, " ")
+	if space < 0 || space == 0 {
+		return "", "" // no colour to draw with
+	}
+	return painted[:space], painted[space+1:]
 }

@@ -11,6 +11,10 @@ naming, how a function works — read from the source, which is commented for it
 
     CGO_ENABLED=0 go test ./...
 
+Go 1.25 or newer, which the Charm v2 packages require. `go.mod` asks for it and
+`GOTOOLCHAIN=auto` — the default — fetches it, so no toolchain has to be
+installed by hand.
+
 The `CGO_ENABLED=0` is not optional here: the sandboxed linker cannot build cgo
 test binaries, and the failure it produces says nothing about your change.
 
@@ -23,7 +27,16 @@ takes one glance to spot.
 
 `app.go:Run` looks at stdin and picks:
 
-- `tea.go` — a bubbletea program on the alternate screen, for a terminal. It
+- `tea.go` — a bubbletea program on the alternate screen, for a terminal.
+  Charm v2 throughout (`charm.land/...`), which moved three things: the alt
+  screen and the mouse are properties of the `View` rather than program options
+  and commands, so `/mouse` sets a bool and the next frame carries it;
+  `lipgloss.AdaptiveColor` is gone in favour of `LightDark(isDark)`, so the
+  palette is resolved once by `useTheme` when the terminal answers
+  `BackgroundColorMsg` rather than at every use; and lipgloss now renders its
+  colours whether or not a terminal is attached, where v1 rendered plain
+  without one — which is why several tests compare `plain(…)` rather than the
+  bytes. It
   was one 1,455-line file, a fifth of the whole project, and is now four:
   `tea.go` is the model and the loop, `tea_view.go` what the screen looks like
   and the arithmetic that fits it to the window, `tea_pickers.go` the lists and

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/config"
@@ -185,20 +185,20 @@ func newTeaModel(a *agent.Agent, startupErr error) *teaModel {
 	input.CharLimit = 0
 	input.ShowLineNumbers = false
 	input.SetHeight(1)
-	input.SetPromptFunc(2, func(lineIndex int) string {
-		if lineIndex == 0 {
+	input.SetPromptFunc(2, func(info textarea.PromptInfo) string {
+		if info.LineNumber == 0 {
 			return "❯ "
 		}
 		return "  "
 	})
-	applyInputStyle(&input)
+	applyInputStyle(&input, true)
 	input.Focus()
 	keyInput := textarea.New()
 	keyInput.CharLimit = 0
 	keyInput.Prompt = ""
 	keyInput.ShowLineNumbers = false
 	keyInput.SetHeight(1)
-	applyInputStyle(&keyInput)
+	applyInputStyle(&keyInput, true)
 	m := &teaModel{
 		agent:       a,
 		input:       input,
@@ -261,6 +261,17 @@ func (m *teaModel) Init() tea.Cmd { return textarea.Blink }
 
 func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		// The terminal answers this once, early. Until it does the palette is
+		// the dark half of every pair, which is what a terminal almost always
+		// is — and being briefly wrong about it costs one repaint, where
+		// waiting for the answer before drawing costs the first frame.
+		useTheme(msg.IsDark())
+		applyInputStyle(&m.input, msg.IsDark())
+		applyInputStyle(&m.keyInput, msg.IsDark())
+		m.renderer = newRenderer(m.width - 4)
+		m.refresh()
+		return m, nil
 	case tea.WindowSizeMsg:
 		if msg.Width != m.width {
 			m.renderer = newRenderer(msg.Width - 4)
@@ -270,7 +281,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.width, m.height = msg.Width, msg.Height
 		m.input.SetWidth(max(1, msg.Width-4))
-		m.chat.Width = m.cols()
+		m.chat.SetWidth(m.cols())
 		m.resizeInput()
 		if !m.banner {
 			m.banner = true
@@ -321,9 +332,9 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// not the terminal, not tmux — gets to translate them, so this
 			// works where shift with the arrows never arrives.
 			if msg.String() == "ctrl+y" {
-				m.chat.HalfViewUp()
+				m.chat.HalfPageUp()
 			} else {
-				m.chat.HalfViewDown()
+				m.chat.HalfPageDown()
 			}
 			return m, nil
 		case "pgup", "pgdown", "ctrl+p", "ctrl+n":
@@ -513,7 +524,7 @@ func runTea(a *agent.Agent, startupErr error) error {
 	fmt.Fprint(os.Stdout, "\x1b[?1007l")
 	defer fmt.Fprint(os.Stdout, "\x1b[?1007h")
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 
 	// Again once the alternate screen is up: terminals that keep their modes
 	// per screen restore the old one when bubbletea switches. Setting a mode

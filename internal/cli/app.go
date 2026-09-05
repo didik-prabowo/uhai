@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/glamour/v2"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 )
@@ -56,12 +55,6 @@ func newRenderer(width int) *glamour.TermRenderer {
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(width),
-		// Glamour detects the terminal's colours for itself, and lands on a
-		// different answer from lipgloss often enough to matter: the band
-		// drawn around a code block and the one chroma paints behind the
-		// characters have to be the same shade, and 256-colour next to
-		// truecolour is two shades.
-		glamour.WithColorProfile(lipgloss.ColorProfile()),
 	)
 	return r
 }
