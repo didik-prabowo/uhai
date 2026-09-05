@@ -59,6 +59,19 @@ const defaultMaxIterations = 25
 // so there is room for the answer; whoever knows the model sets the real one.
 const defaultMaxContextTokens = 32000
 
+// compactAt is how full the window may get before the history is summarised.
+//
+// Not all of it, which is what this used to be: input and output share the
+// window, so a history that exactly fills it leaves nowhere for the answer to
+// go, and the provider refuses the request rather than truncating it. The
+// fifteen per cent held back is larger than the answer any model here is
+// allowed to write — 150k on a million-token window against a 128k ceiling,
+// 4.8k on the 32k fallback against 4,096 — so the headroom is not a guess.
+//
+// It also covers the estimate being loose: Tokens counts characters over four,
+// which is close enough for English prose and undercounts code and JSON.
+const compactAt = 0.85
+
 // compactKeepMessages is how much of the tail survives compaction verbatim.
 const compactKeepMessages = 4
 
@@ -185,7 +198,7 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 	})
 
 	for i := 0; i < a.MaxIterations; i++ {
-		if a.MaxContextTokens > 0 && a.Tokens() > a.MaxContextTokens {
+		if a.MaxContextTokens > 0 && a.Tokens() > int(float64(a.MaxContextTokens)*compactAt) {
 			before := a.Tokens()
 			if err := a.Compact(ctx); err != nil {
 				a.OnNotice(fmt.Sprintf("could not compact the history: %v", err))

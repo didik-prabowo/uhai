@@ -374,3 +374,63 @@ func TestFailedTurnLeavesTheHistoryUsable(t *testing.T) {
 		t.Errorf("the closing line should say why it stopped: %q", closed)
 	}
 }
+
+// Input and output share the window, so the history is summarised before it
+// fills the whole thing: a history that exactly fits leaves nowhere for the
+// answer, and the provider refuses the request rather than trimming it.
+func TestCompactionLeavesRoomForTheAnswer(t *testing.T) {
+	const window = 1000
+
+	// Just under the mark: nothing should happen.
+	a := New(&plainProvider{})
+	a.MaxContextTokens = window
+	a.System = "" // Tokens counts the system prompt too; keep the sum readable
+	a.History = []provider.Message{{
+		Role:    provider.RoleUser,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: strings.Repeat("x", 3200)}}, // ~800 tokens
+	}}
+	before := len(a.History)
+	if err := a.Ask(context.Background(), "lanjut"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.History) < before {
+		t.Errorf("at 80%% of the window nothing needs summarising: %d messages", len(a.History))
+	}
+
+	// Past it, and still well short of the window: it has to compact anyway,
+	// because the answer needs somewhere to go.
+	b := New(&plainProvider{})
+	b.MaxContextTokens = window
+	b.System = ""
+	b.History = []provider.Message{{
+		Role:    provider.RoleUser,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: strings.Repeat("x", 3800)}}, // ~950 tokens
+	}}
+	var notices []string
+	b.OnNotice = func(s string) { notices = append(notices, s) }
+	if err := b.Ask(context.Background(), "lanjut"); err != nil {
+		t.Fatal(err)
+	}
+	var compacted bool
+	for _, n := range notices {
+		if strings.Contains(n, "compacted") {
+			compacted = true
+		}
+	}
+	if !compacted {
+		t.Errorf("at 95%% of the window the history must be summarised: %v", notices)
+	}
+}
+
+// plainProvider answers once and stops, which is all the compaction test needs
+// — it is the size of the history going in that is under test, not the reply.
+type plainProvider struct{}
+
+func (plainProvider) Name() string { return "plain" }
+
+func (plainProvider) Send(context.Context, provider.Request) (*provider.Response, error) {
+	return &provider.Response{
+		StopReason: provider.StopEndTurn,
+		Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "oke"}},
+	}, nil
+}

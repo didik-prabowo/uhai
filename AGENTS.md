@@ -111,6 +111,16 @@ prices all three. Folding them together would have made the status row quote a
 figure wrong by roughly the whole system prompt, in whichever direction caching
 happened to work.
 
+Compaction fires at 85% of the window, not at all of it. Input and output
+share the window, so a history that exactly fills it leaves nowhere for the
+answer to go and the provider refuses the request rather than trimming it — the
+old rule summarised only once the history had already passed the whole window.
+The fifteen per cent held back is larger than the longest answer any model here
+may write (150k against a 128k ceiling on a million-token window; 4.8k against
+4,096 on the 32k fallback), so the headroom is arithmetic rather than a guess.
+It also absorbs `Tokens` being loose: characters over four is close for prose
+and undercounts code and JSON.
+
 ## When a turn does not finish
 
 A turn fails in the middle more often than anything else here: a rate limit, a
