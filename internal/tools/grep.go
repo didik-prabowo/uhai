@@ -47,8 +47,12 @@ func (grepTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	}
 
 	var hits []string
+	include := func(string) bool { return true }
+	if args.Include != "" {
+		include = matcher(args.Include)
+	}
 	err = walk(args.Path, func(path string) bool {
-		if args.Include != "" && !matchName(args.Include, path) {
+		if !include(path) {
 			return true
 		}
 		data, err := os.ReadFile(path)

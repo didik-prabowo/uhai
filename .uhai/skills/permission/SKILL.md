@@ -56,7 +56,10 @@ The code is split the way the concerns are: `internal/tools` has `tool.go` (the
 contract, the registry and dispatch), one file per tool — `read.go`,
 `write.go`, `edit.go`, `glob.go`, `grep.go`, `bash.go`, `fetch.go`, each
 holding a tool's schema, description, permission and implementation together —
-`walk.go` for what glob and grep share, and `permission.go` — five lines saying which tools escape this process. In
+`walk.go` for what glob and grep share — including the pattern matcher, which
+builds a regexp rather than calling `filepath.Match`, because `filepath.Match`
+reads `**` as two stars that neither cross a separator and so matched exactly
+one folder deep before going quiet — and `permission.go` — five lines saying which tools escape this process. In
 `internal/cli`, `permission.go` answers "may this run, and how is it asked",
 both halves in one place, because an answer is worth nothing if what it
 approves cannot be read.

@@ -125,3 +125,46 @@ func TestBashTimeoutOutlivesATestSuite(t *testing.T) {
 		t.Fatal("a command must be killed when its context ends")
 	}
 }
+
+// The pattern the tool's own description offers, at the depths a real project
+// has. ** in the middle used to match exactly one folder and then go quiet.
+func TestMatcherSpansAnyNumberOfFolders(t *testing.T) {
+	for _, c := range []struct {
+		pattern, path string
+		want          bool
+	}{
+		{"*.go", "internal/tools/glob.go", true},
+		{"*.go", "internal/tools/glob.md", false},
+		{"**/*_test.go", "internal/cli/cli_test.go", true},
+		{"**/repository/constant.go", "app/internal/repository/constant.go", true},
+
+		// One folder deep worked before; two did not.
+		{"internal/**/*.go", "internal/tools/glob.go", true},
+		{"internal/**/*.go", "internal/session/filestore/filestore.go", true},
+		// ** stands for no folder at all as readily as for three.
+		{"internal/**/*.go", "internal/agent.go", true},
+		{"internal/**/*.go", "cmd/uhai/main.go", false},
+
+		// A single star still stops at a separator, or "*.go" would match
+		// every Go file in the tree from the root.
+		{"internal/*/*.go", "internal/session/filestore/filestore.go", false},
+		{"?ain.go", "cmd/uhai/main.go", true},
+		{"*.[ch]", "src/parse.c", true},
+		{"*.[!ch]", "src/parse.c", false},
+	} {
+		if got := matcher(c.pattern)(c.path); got != c.want {
+			t.Errorf("matcher(%q)(%q) = %v, want %v", c.pattern, c.path, got, c.want)
+		}
+	}
+}
+
+// A pattern that cannot compile finds nothing rather than panicking or
+// matching everything.
+func TestMatcherSurvivesNonsense(t *testing.T) {
+	if matcher("[")("[") != true && matcher("[")("x") != false {
+		t.Error("an unclosed class is a literal bracket")
+	}
+	if matcher("*.go")("") {
+		t.Error("nothing is not a match")
+	}
+}

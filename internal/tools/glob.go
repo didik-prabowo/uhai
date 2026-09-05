@@ -41,8 +41,9 @@ func (globTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	}
 
 	var found []string
+	match := matcher(args.Pattern)
 	err := walk(args.Path, func(path string) bool {
-		if matchName(args.Pattern, path) {
+		if match(path) {
 			found = append(found, path)
 		}
 		return len(found) < maxMatches
