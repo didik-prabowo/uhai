@@ -14,7 +14,7 @@ import (
 // rather than in each of them.
 func TestRetryPolicy(t *testing.T) {
 	for status, want := range map[int]bool{429: true, 500: true, 503: true, 200: false, 400: false, 401: false} {
-		if got := worthRetrying(status); got != want {
+		if got := worthRetrying(reply(status, "")); got != want {
 			t.Errorf("worthRetrying(%d) = %v, want %v", status, got, want)
 		}
 	}
@@ -111,5 +111,86 @@ func TestPostRetriesUntilItWorks(t *testing.T) {
 		return http.NewRequestWithContext(ctx, http.MethodPost, always.URL, nil)
 	}); err == nil {
 		t.Fatal("a cancelled context must end the retrying")
+	}
+}
+
+// reply is a response with a body, which worthRetrying reads for a 429.
+func reply(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+// The bodies are the ones the providers actually send.
+func TestARateLimitAboutMoneyIsNotRetried(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}}`,
+		`{"error":{"code":"insufficient_quota","message":"You exceeded your current quota, please check your plan and billing details."}}`,
+	} {
+		if worthRetrying(reply(429, body)) {
+			t.Errorf("waiting will not pay the bill, but this was retried:\n%s", body)
+		}
+	}
+
+	// The ordinary kind still is, including the wording that says quota and
+	// means pace.
+	for _, body := range []string{
+		`{"error":{"code":"1302","message":"Rate limit reached for requests"}}`,
+		`{"error":{"message":"Quota exceeded for quota metric 'Generate requests per minute'"}}`,
+		``,
+	} {
+		if !worthRetrying(reply(429, body)) {
+			t.Errorf("a plain rate limit should be waited out:\n%s", body)
+		}
+	}
+}
+
+// Reading the body to decide must not consume it: the caller still renders the
+// provider's own words, which is the only place the reason appears.
+func TestReadingA429LeavesTheBodyIntact(t *testing.T) {
+	const body = `{"error":{"message":"Insufficient balance. Please recharge."}}`
+	resp := reply(429, body)
+	worthRetrying(resp)
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("body unreadable after the peek: %v", err)
+	}
+	if string(got) != body {
+		t.Errorf("body after the peek =\n%s\nwant\n%s", got, body)
+	}
+}
+
+// The loop, not just the policy: an empty wallet is one attempt and no wait,
+// where it used to be three attempts and fifteen seconds.
+func TestPostDoesNotWaitOnAnEmptyWallet(t *testing.T) {
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusTooManyRequests)
+		io.WriteString(w, `{"error":{"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}}`)
+	}))
+	defer server.Close()
+
+	start := time.Now()
+	resp, err := Post(context.Background(), server.Client(), func() (*http.Request, error) {
+		return http.NewRequest(http.MethodPost, server.URL, strings.NewReader("{}"))
+	})
+	if err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if hits != 1 {
+		t.Errorf("asked %d times for money that is not there, want 1", hits)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Errorf("waited %s before giving up, want none of it", waited)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "recharge") {
+		t.Errorf("the reason has to survive to be shown, got %q", body)
 	}
 }

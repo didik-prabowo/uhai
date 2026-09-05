@@ -159,6 +159,15 @@ seconds and then ten, a 5xx one and two, and a transport error — a timeout, a
 reset — is not retried at all, since the three minutes it already waited are
 the evidence that waiting is not the answer.
 
+A 429 is also the one status read rather than counted, because two failures
+wear it. Z.ai answers an empty wallet with 429 and "Insufficient balance or no
+resource package"; OpenAI says insufficient_quota. Waiting does not pay a bill,
+so uhai spent fifteen seconds failing three times identically before saying so.
+The body is peeked for the words that mean money — not the vendor's error
+code, which every vendor numbers differently, and not a bare "quota", which is
+how several of them word an ordinary rate limit — and then put back, since the
+provider's own sentence is the only place the reason appears.
+
 ## Permission
 
 `tools.Tool` is an interface — `Name`, `Description`, `Schema`, `NeedsConfirm`,
