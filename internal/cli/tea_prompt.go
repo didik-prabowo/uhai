@@ -87,6 +87,40 @@ func (m *teaModel) submit() tea.Cmd {
 	m.chatted = true
 	m.add(chatEntry{kind: entryAsk, text: value})
 	m.addHistory("") // the answer starts a line below the question, not against it
+
+	if strings.HasPrefix(value, "/") {
+		return m.slashCommand(value)
+	}
+	if m.agent.Provider == nil {
+		m.addHistory(teaDim.Render("no provider connected — type /connect"))
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	// Anything that finished while the prompt was being typed travels with it.
+	m.collectFinished()
+	if len(m.notes) > 0 {
+		m.addHistory(teaDim.Render(fmt.Sprintf("(sending %d background report(s) with this)", len(m.notes))))
+		value = strings.Join(m.notes, "\n\n") + "\n\n" + value
+		m.notes = nil
+	}
+
+	m.busy = true
+	m.started = time.Now()
+	m.usage = provider.Usage{}
+	m.toolCalls = 0
+	m.stream = ""
+	m.streamed = 0
+	return tea.Batch(m.spinner.Tick, func() tea.Msg {
+		defer cancel()
+		return teaDoneMsg{err: m.agent.Ask(ctx, value)}
+	})
+}
+
+// slashCommand answers a line beginning with "/". It is apart from submit
+// because a command and a question share nothing past the slash: one is
+// answered here and now, the other starts a turn.
+func (m *teaModel) slashCommand(value string) tea.Cmd {
 	switch {
 	case value == "/exit" || value == "/quit":
 		return tea.Quit
@@ -154,7 +188,28 @@ func (m *teaModel) submit() tea.Cmd {
 		m.addHistory(teaDim.Render("mouse: handed to the terminal — plain drag selects, ^y/^e scroll"))
 		return tea.DisableMouse
 	case value == "/help":
-		m.addHistory(teaTitle.Render("commands") + `
+		m.addHistory(helpText())
+		return nil
+	case strings.HasPrefix(value, "/model"):
+		arg := strings.TrimSpace(strings.TrimPrefix(value, "/model"))
+		if arg == "" {
+			return m.beginModels()
+		}
+		return m.changeModel(arg, true)
+	case strings.HasPrefix(value, "/connect"):
+		return m.beginConnect(strings.TrimSpace(strings.TrimPrefix(value, "/connect")))
+	case strings.HasPrefix(value, "/"):
+		m.addHistory(teaDim.Render("unknown command: " + value))
+		return nil
+	}
+	return nil
+}
+
+// helpText is the whole of /help. It sat inside the command switch and was
+// most of its length — fifty lines of string in the middle of a dispatch,
+// which made the dispatch look like the hard part when it is a list.
+func helpText() string {
+	return teaTitle.Render("commands") + `
   /connect  connect a provider
   /model    choose a model
   /check    run the project's tests as a task, or /check <command>
@@ -195,43 +250,7 @@ func (m *teaModel) submit() tea.Cmd {
   uhai -resume [id]  carry on with one, on the model it was held with
   AGENTS.md           this project's own instructions, read every prompt —
                       CLAUDE.md and UHAI.md are read the same way
-  .claude/skills/     instructions for particular jobs, opened when needed`)
-		return nil
-	case strings.HasPrefix(value, "/model"):
-		arg := strings.TrimSpace(strings.TrimPrefix(value, "/model"))
-		if arg == "" {
-			return m.beginModels()
-		}
-		return m.changeModel(arg, true)
-	case strings.HasPrefix(value, "/connect"):
-		return m.beginConnect(strings.TrimSpace(strings.TrimPrefix(value, "/connect")))
-	case strings.HasPrefix(value, "/"):
-		m.addHistory(teaDim.Render("unknown command: " + value))
-		return nil
-	case m.agent.Provider == nil:
-		m.addHistory(teaDim.Render("no provider connected — type /connect"))
-		return nil
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	// Anything that finished while the prompt was being typed travels with it.
-	m.collectFinished()
-	if len(m.notes) > 0 {
-		m.addHistory(teaDim.Render(fmt.Sprintf("(sending %d background report(s) with this)", len(m.notes))))
-		value = strings.Join(m.notes, "\n\n") + "\n\n" + value
-		m.notes = nil
-	}
-
-	m.busy = true
-	m.started = time.Now()
-	m.usage = provider.Usage{}
-	m.toolCalls = 0
-	m.stream = ""
-	m.streamed = 0
-	return tea.Batch(m.spinner.Tick, func() tea.Msg {
-		defer cancel()
-		return teaDoneMsg{err: m.agent.Ask(ctx, value)}
-	})
+  .claude/skills/     instructions for particular jobs, opened when needed`
 }
 
 func (m *teaModel) confirmChoices() []string {
