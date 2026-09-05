@@ -18,14 +18,14 @@ import (
 // skillDirs are where a project keeps its skills, ours first. The other two are
 // what projects already use — a repository should not have to move its files
 // to be read here.
-var skillDirs = []string{".uhai/skills", ".claude/skills", ".agents/skills"}
+var skillDirs = []string{ProjectDir + "/skills", ".claude/skills", ".agents/skills"}
 
 // homeSkillDirs are the same idea one level up: skills that belong to the
 // person rather than to the repository, and so travel to every project. Claude
 // Code keeps them in ~/.claude/skills, which is read for the same reason the
 // project layout is — somebody who already has them should not have to move
 // them. There is no ~/.agents/skills; that convention is per-repository.
-var homeSkillDirs = []string{".uhai/skills", ".claude/skills"}
+var homeSkillDirs = []string{dirName + "/skills", ".claude/skills"}
 
 // SkillDirs is every place Skills looks, in the order it looks. It is exported
 // because a skill that was not found is the failure with no symptom — the
@@ -43,9 +43,9 @@ func SkillDirs() []string {
 	// Personal skills come last on purpose. Skills keeps the first name it
 	// finds, so a project that has a skill of its own overrides the one you
 	// carry everywhere — the repository is the more specific answer.
-	if home, err := os.UserHomeDir(); err == nil {
-		for _, d := range homeSkillDirs {
-			dirs = append(dirs, filepath.Join(home, d))
+	for _, d := range homeSkillDirs {
+		if path, err := homeJoin(d); err == nil {
+			dirs = append(dirs, path)
 		}
 	}
 	return dirs

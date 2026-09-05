@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/session"
 )
 
@@ -32,11 +33,7 @@ func (f store) root() (string, error) {
 	if f.dir != "" {
 		return f.dir, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".uhai", "sessions"), nil
+	return config.InDir("sessions")
 }
 
 // Save writes the conversation under its id.

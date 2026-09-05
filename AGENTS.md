@@ -193,6 +193,15 @@ The question is asked from the agent's goroutine while the model works, which
 is why it outranks the spinner in the status row and why the session's list
 carries its own lock.
 
+`config/dir.go` is the only file that names `.uhai`. It was four copies across
+two packages, and the rename from ouhai survived on a global search rather than
+on design — a folder name is a string, not something the compiler checks, so
+one that got missed would have hidden a conversation rather than failed a
+build. `Dir`, `InDir` and `ProjectDir` are what everything else asks, and a
+test walks `internal/` failing any file that spells it out again. `~/.claude`
+goes through `homeJoin` instead, because that folder is Claude Code's and not
+ours to name.
+
 ## Sessions
 
 One conversation, one file under `~/.uhai/sessions`, rewritten after every

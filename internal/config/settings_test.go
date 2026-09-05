@@ -489,3 +489,29 @@ func TestSkillsCanBeSwitchedOff(t *testing.T) {
 		t.Errorf("a skill switched off must not reach the prompt at all:\n%s", notes)
 	}
 }
+
+// The folder's name is a string, not something the compiler checks, so a
+// rename survives only if every copy is found. Renaming ouhai to uhai found
+// four copies across two packages and survived on a global search rather than
+// on design. There is one copy now, and this is what keeps it that way.
+func TestTheDirectoryIsNamedInOnePlace(t *testing.T) {
+	err := filepath.Walk("..", func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(path) != ".go" {
+			return err
+		}
+		if strings.HasSuffix(path, "_test.go") || filepath.Base(path) == "dir.go" {
+			return nil // the tests may say it, and dir.go is where it is said
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(source), `".uhai"`) || strings.Contains(string(source), `".uhai/`) {
+			t.Errorf("%s names the directory itself; use config.Dir, config.InDir or config.ProjectDir", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

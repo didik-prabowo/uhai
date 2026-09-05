@@ -54,7 +54,7 @@ func SetSkillOff(name string, off bool) error {
 // project has none. It is save's twin, pointed at the project rather than the
 // home directory.
 func saveProject(edit func(*Settings)) error {
-	path := filepath.Join(".uhai", "settings.json")
+	path := filepath.Join(ProjectDir, "settings.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -78,11 +78,10 @@ func saveProject(edit func(*Settings)) error {
 // save edits ~/.uhai/settings.json in place, leaving the fields it does not
 // touch alone.
 func save(edit func(*Settings)) error {
-	home, err := os.UserHomeDir()
+	path, err := InDir("settings.json")
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(home, ".uhai", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -217,12 +216,12 @@ type Settings struct {
 // settingsFiles returns the settings locations, lowest priority first.
 func settingsFiles() []string {
 	var out []string
-	if home, err := os.UserHomeDir(); err == nil {
-		out = append(out, filepath.Join(home, ".uhai", "settings.json"))
+	if path, err := InDir("settings.json"); err == nil {
+		out = append(out, path)
 	}
 	return append(out,
-		filepath.Join(".uhai", "settings.json"),
-		filepath.Join(".uhai", "settings.local.json"),
+		filepath.Join(ProjectDir, "settings.json"),
+		filepath.Join(ProjectDir, "settings.local.json"),
 	)
 }
 

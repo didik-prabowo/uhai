@@ -55,11 +55,7 @@ var vendorEnv = map[string]map[string]string{
 
 // AuthPath returns the credentials file location: ~/.uhai/auth.json.
 func AuthPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".uhai", "auth.json"), nil
+	return InDir("auth.json")
 }
 
 // LoadAuth reads all of auth.json. A missing file is not an error — it
