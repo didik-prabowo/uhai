@@ -30,6 +30,11 @@ const codeGutter = 4
 // like a wide one.
 const codeTab = 4
 
+// codeIndent lines the box up with the paragraph above it. Glamour gives the
+// document two columns of margin, and a block flush against the edge while the
+// prose is inset reads as a mistake.
+const codeIndent = 2
+
 // fence is a line that opens or closes a code block: three or more backticks
 // or tildes, and nothing before them but spaces.
 func fence(line string) (marker, lang string, ok bool) {
@@ -102,20 +107,25 @@ func codeBlock(source, lang string, max int) string {
 		painted = lines // the lexer disagreed about line count; show it plainly
 	}
 
-	width := 0
-	for _, line := range lines {
-		if n := visibleLen(line); n > width {
-			width = n
-		}
-	}
-	if room := max - codeGutter - 2; width > room {
-		width = room
+	// The box runs from the same column the prose starts at to very nearly the
+	// right edge — lined up with the paragraph above it, rather than fitted to
+	// whatever the longest line happens to be, which made every block a
+	// different width and the answer look ragged.
+	// One column short of the edge, deliberately: a line as wide as the
+	// terminal wraps on its own, which scrolls the screen out from under the
+	// renderer.
+	width := max - codeIndent - codeGutter - 3
+	if width < 8 {
+		width = 8
 	}
 
 	band := lipgloss.NewStyle().Background(codeBG)
 	number := lipgloss.NewStyle().Background(codeBG).Foreground(codeNumber)
 
-	rows := []string{band.Render(strings.Repeat(" ", codeGutter+width+2))}
+	indent := strings.Repeat(" ", codeIndent)
+	blank := indent + band.Render(strings.Repeat(" ", codeGutter+width+2))
+
+	rows := []string{blank}
 	for i, line := range painted {
 		gutter := number.Render(fmt.Sprintf("%*s ", codeGutter-1, strconv.Itoa(i+1)))
 		// Cut by columns, not by characters: a coloured line is mostly escape
@@ -125,9 +135,9 @@ func codeBlock(source, lang string, max int) string {
 		if pad := width - visibleLen(lines[i]); pad > 0 {
 			body += band.Render(strings.Repeat(" ", pad))
 		}
-		rows = append(rows, gutter+band.Render(" ")+body+band.Render(" "))
+		rows = append(rows, indent+gutter+band.Render(" ")+body+band.Render(" "))
 	}
-	return strings.Join(append(rows, rows[0]), "\n")
+	return strings.Join(append(rows, blank), "\n")
 }
 
 // highlight runs chroma over the source and returns it one line at a time. An

@@ -549,11 +549,17 @@ Four rules the layout keeps, each of which took a bug to learn:
   characters.** A coloured line is mostly escape codes.
 
 A fenced code block is drawn in `code.go`, not by glamour. The fences are cut
-out of the answer before glamour sees it, and what comes back is a box: as wide
-as its own longest line, numbered down the side, one colour throughout, in
-`codeBG` — deliberately not `band`, which is the question's, since the two sit
+out of the answer before glamour sees it, and what comes back is a box: lined
+up with the paragraph above it, reaching to one column short of the edge,
+numbered down the side, one grey throughout. `codeBG` is deliberately not
+`band`, which is the question's and is tinted with the accent — the two sit
 within a screen of each other and the eye should not have to work out which is
 which.
+
+It was fitted to its longest line for one revision, which made every block a
+different width and the answer read as ragged. Lining the left edge up with the
+prose and running almost to the right one is what makes a page of answer look
+like one thing.
 
 Patching glamour's output was tried three times and each round taught the same
 thing. A background set on the code block is ignored, because chroma paints the

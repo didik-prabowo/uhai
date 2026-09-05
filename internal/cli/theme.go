@@ -18,12 +18,12 @@ var (
 	band   = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#1E293B"} // a quiet background
 	onAcc  = lipgloss.AdaptiveColor{Light: "#F8FAFC", Dark: "#0F172A"} // text on the accent
 
-	// codeBG is the band behind a fenced code block. Deliberately not band,
-	// which is the question's: the two sit within a screen of each other, and
-	// the eye should not have to work out which is which. band is tinted with
-	// the accent, so this one goes the other way — flat slate, no violet in it.
-	codeBG     = lipgloss.AdaptiveColor{Light: "#F1F5F9", Dark: "#0B1220"}
-	codeNumber = lipgloss.AdaptiveColor{Light: "#94A3B8", Dark: "#475569"}
+	// codeBG is the band behind a fenced code block: plain grey, and lighter
+	// than the page rather than darker. Deliberately not band, which is the
+	// question's and is tinted with the accent — the two sit within a screen
+	// of each other, and the eye should not have to work out which is which.
+	codeBG     = lipgloss.AdaptiveColor{Light: "#E8EAED", Dark: "#2A2F3A"}
+	codeNumber = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#7B8598"}
 
 	added   = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#86EFAC"}
 	removed = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#FCA5A5"}

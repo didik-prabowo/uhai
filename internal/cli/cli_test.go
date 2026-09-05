@@ -1657,10 +1657,10 @@ func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
 	}
 }
 
-// A code block is a box: as wide as its own longest line rather than as wide
-// as the screen, numbered down the side, and in a colour that is not the
-// question's. Glamour draws it as flowing text, so uhai draws it instead.
-func TestCodeBlockIsABoxFittedToItsContent(t *testing.T) {
+// A code block is a box: lined up with the paragraph above it, reaching to one
+// column short of the edge, numbered down the side, and in a colour that is
+// not the question's. Glamour draws it as flowing text, so uhai draws it.
+func TestCodeBlockIsABoxLinedUpWithTheProse(t *testing.T) {
 	was := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(was) })
@@ -1687,9 +1687,16 @@ func TestCodeBlockIsABoxFittedToItsContent(t *testing.T) {
 			t.Errorf("every row of the box is the same width: %d against %d", got, width)
 		}
 	}
-	// Fitted, not full: the longest line here is nowhere near seventy columns.
-	if width >= m.cols() {
-		t.Errorf("the box is %d wide on a %d-column screen; it should fit its content", width, m.cols())
+	// Almost the full width, and never all of it: a line as wide as the
+	// terminal wraps on its own and scrolls the screen under the renderer.
+	if width != m.cols()-1 {
+		t.Errorf("the box is %d wide on a %d-column screen, want one short", width, m.cols())
+	}
+	// And it starts where the prose starts, not against the edge.
+	for _, line := range banded {
+		if !strings.HasPrefix(line, strings.Repeat(" ", codeIndent)) {
+			t.Errorf("the box must line up with the paragraph above it:\n%q", line)
+		}
 	}
 	for i, want := range []string{"1", "2", "3"} {
 		if !strings.Contains(banded[i+1], want) {
