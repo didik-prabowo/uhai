@@ -15,5 +15,5 @@ package tools
 // the asking is not worth it for you.
 func NeedsConfirm(name string) bool {
 	t, ok := find(name)
-	return ok && t.Confirm
+	return ok && t.NeedsConfirm()
 }

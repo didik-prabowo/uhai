@@ -148,6 +148,21 @@ the evidence that waiting is not the answer.
 
 ## Permission
 
+`tools.Tool` is an interface — `Name`, `Description`, `Schema`, `NeedsConfirm`,
+`Run` — so a tool need not live in `internal/tools`. Everything shipped is
+built from the unexported `tool` struct, which carries its handler in a field
+and implements those five methods once rather than once per tool, so a built-in
+stays a single literal. `Register` is how a tool from elsewhere joins, and it
+refuses a name already taken: two tools answering to one name is a bug the
+model experiences as the wrong thing happening, with nothing to read.
+
+The interface costs 22 lines over the plain table it replaced. It buys one
+thing the table could not do at all — a tool whose name is not known until the
+program runs, which is what an MCP server or a plugin would be. `external_test`
+is the proof, and the only test that could be: it defines a tool outside the
+package, registers it, and reaches it through `Definitions`, `NeedsConfirm` and
+`Execute`. A built-in would pass that test even if `Tool` were a struct.
+
 The code is split the way the concerns are: `internal/tools` has `tool.go` (the
 list the model is given, and dispatch), `files.go`, `search.go`, `shell.go`,
 `web.go`, and `permission.go` — five lines saying which tools escape this process. In
