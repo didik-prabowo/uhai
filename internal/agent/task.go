@@ -66,6 +66,14 @@ func (a *Agent) spawn(ctx context.Context, input json.RawMessage) (string, bool)
 		// Permission stays with the user: a task asks through the same prompt
 		// the main agent does, rather than being trusted because it is nested.
 		sub.Confirm = a.Confirm
+		// And the denials come with it. Without this a spawned agent was
+		// handed the tools the settings had refused — Confirm would still have
+		// asked before a write, but "deny" means never, not "ask again in a
+		// different window".
+		sub.AllowTool = a.AllowTool
+		if a.onSpawn != nil {
+			a.onSpawn(sub)
+		}
 		sub.OnToolCall = func(name, input string) { a.OnToolCall(t.ID+" "+name, input) }
 		sub.OnNotice = a.OnNotice
 

@@ -434,3 +434,31 @@ func (plainProvider) Send(context.Context, provider.Request) (*provider.Response
 		Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "oke"}},
 	}, nil
 }
+
+// A denial is not a question asked twice. A spawned agent used to be handed
+// the tools the settings had refused: Confirm still stood between it and a
+// write, but "deny" means never, and a background task is exactly where nobody
+// is watching the prompt.
+func TestSpawnedAgentInheritsTheDenials(t *testing.T) {
+	a := New(&plainProvider{})
+	a.AllowTool = func(name string) bool { return name != "run_bash" }
+	a.Tasks = &task.Registry{}
+	a.OnNotice = func(string) {}
+	a.OnToolCall = func(string, string) {}
+	a.Confirm = func(string, string) bool { return true }
+
+	var sub *Agent
+	a.onSpawn = func(s *Agent) { sub = s }
+	if _, isErr := a.spawn(context.Background(), []byte(`{"description":"d","prompt":"p"}`)); isErr {
+		t.Fatal("the task should have run")
+	}
+	if sub == nil {
+		t.Fatal("no sub-agent was built")
+	}
+	if sub.AllowTool == nil || sub.AllowTool("run_bash") {
+		t.Error("a denied tool must stay denied inside a spawned agent")
+	}
+	if !sub.AllowTool("read_file") {
+		t.Error("denying one tool must not deny the rest")
+	}
+}

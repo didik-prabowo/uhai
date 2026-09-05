@@ -134,6 +134,11 @@ type Agent struct {
 	// live UI can show tokens while the turn is still running.
 	OnUsage func(provider.Usage)
 
+	// onSpawn hands the freshly built sub-agent to a test. Nothing in the
+	// program sets it: a spawned agent is otherwise unreachable from outside,
+	// and what it inherits is exactly what is worth checking.
+	onSpawn func(*Agent)
+
 	// Tasks records every job spawned through spawn_task.
 	Tasks *task.Registry
 

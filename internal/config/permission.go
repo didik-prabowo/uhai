@@ -43,6 +43,10 @@ var toolNames = map[string]string{
 	"glob":  "glob",
 	"grep":  "grep",
 	"fetch": "fetch_url", "fetch_url": "fetch_url",
+	// spawn_task is the agent's, not this package's, but a rule has to be able
+	// to name it: without this "deny": ["spawn_task"] parses as nothing and
+	// protects nothing, which is the worst way for a denial to fail.
+	"task": "spawn_task", "spawn_task": "spawn_task",
 	"*": "*",
 }
 

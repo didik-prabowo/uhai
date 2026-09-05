@@ -193,7 +193,17 @@ JSON.
 beats ask beats allow, and the longest specifier wins, so ordering in the file
 decides nothing. A tool denied outright is never offered to the model —
 `agent.AllowTool` filters the list before it is sent — and refused if called
-from memory anyway. The agent takes that as a function rather than reading
+from memory anyway. A spawned agent inherits that function along with
+`Confirm`: it used to inherit only the asking, which meant a background task
+was handed tools the settings had refused. A denial is not a question asked
+again in a window nobody is watching.
+
+Two tests hold the wiring together, both added after a question exposed how
+little was holding it: every tool in `Definitions` must actually reach a case
+in `Execute` — the name in the schema and the name in the switch are two
+strings that only happen to match — and every tool must have an entry in
+`toolNames`, or a rule naming it parses as nothing and denies nothing. The
+second one found `spawn_task`, which could not be named in a rule at all. The agent takes that as a function rather than reading
 settings itself, which is what keeps `internal/agent` free of
 `internal/config`.
 

@@ -378,3 +378,24 @@ func TestFetchStripsMarkup(t *testing.T) {
 		t.Errorf("the words survive, entities included: %q", got)
 	}
 }
+
+// The name in Definitions and the name in Execute's switch are two strings
+// that only happen to match. Rename one — "run_bash" to "bash", say — and the
+// build passes, every other test passes, and the model gets "unknown tool" the
+// first time it tries. Nothing else notices, because nothing else can.
+//
+// The empty object is deliberate: every tool has to reject it, so this reaches
+// the dispatch without any of them doing their job. A tool that ran on {} and
+// did something would be a finding of its own.
+func TestEveryToolIsActuallyDispatched(t *testing.T) {
+	for _, spec := range Definitions() {
+		out, _ := Execute(context.Background(), spec.Name, json.RawMessage(`{}`))
+		if strings.Contains(out, "unknown tool") {
+			t.Errorf("%s is offered to the model but Execute has no case for it", spec.Name)
+		}
+	}
+	// And the other direction, so the check cannot pass by accident.
+	if out, _ := Execute(context.Background(), "nope", json.RawMessage(`{}`)); !strings.Contains(out, "unknown tool") {
+		t.Errorf("a tool nobody defined must be refused, got %q", out)
+	}
+}

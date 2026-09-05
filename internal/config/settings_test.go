@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // Every field a settings file can carry must survive the merge: LoadSettings
@@ -513,5 +514,21 @@ func TestTheDirectoryIsNamedInOnePlace(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A permission rule names a tool through toolNames. A tool missing from that
+// map cannot be named in a rule at all: parseRule does not recognise it, the
+// rule is dropped, and "deny" quietly protects nothing. The failure is silent
+// in the worst direction — you believe a tool is denied and it is not.
+func TestEveryToolCanBeNamedInARule(t *testing.T) {
+	named := map[string]bool{}
+	for _, real := range toolNames {
+		named[real] = true
+	}
+	for _, spec := range tools.Definitions() {
+		if !named[spec.Name] {
+			t.Errorf("%s cannot be named in a permission rule; add it to toolNames", spec.Name)
+		}
 	}
 }
