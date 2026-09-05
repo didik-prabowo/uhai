@@ -104,13 +104,13 @@ func Register(t Tool) error {
 // given, and that order is part of the cached prefix, so it should be written
 // down rather than left to whatever order the files happen to initialise in.
 var all = []Tool{
-	readFileTool,
-	writeFileTool,
-	editFileTool,
+	readTool,
+	writeTool,
+	editTool,
 	globTool,
 	grepTool,
-	runBashTool,
-	fetchURLTool,
+	bashTool,
+	fetchTool,
 }
 
 // find is the one lookup. A name nobody defined finds nothing, which is what

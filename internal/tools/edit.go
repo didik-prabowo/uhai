@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func editFile(input json.RawMessage) (string, bool) {
+func edit(input json.RawMessage) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
 		Old  string `json:"old"`
@@ -44,11 +44,11 @@ func editFile(input json.RawMessage) (string, bool) {
 	return fmt.Sprintf("OK, edited %s", args.Path), false
 }
 
-// editFileTool is how the model is told about edit_file.
-var editFileTool = tool{
+// editTool is how the model is told about edit_file.
+var editTool = tool{
 	name:        "edit_file",
 	confirm:     true,
-	run:         noCtx(editFile),
+	run:         noCtx(edit),
 	description: "Replace one exact piece of text in a file. Use this instead of write_file for changing part of an existing file. The old text must appear exactly once.",
 	schema: json.RawMessage(`{
 			"type": "object",

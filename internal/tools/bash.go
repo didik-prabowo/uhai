@@ -35,7 +35,7 @@ func killGroup(ctx context.Context, cmd *exec.Cmd) func() {
 	return func() { close(done) }
 }
 
-func runBash(ctx context.Context, input json.RawMessage) (string, bool) {
+func bash(ctx context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		Command string `json:"command"`
 	}
@@ -108,11 +108,11 @@ func Shell(ctx context.Context, command string, onLine func(string)) (string, er
 	return out.String(), cmd.Wait()
 }
 
-// runBashTool is how the model is told about run_bash.
-var runBashTool = tool{
+// bashTool is how the model is told about run_bash.
+var bashTool = tool{
 	name:        "run_bash",
 	confirm:     true,
-	run:         runBash,
+	run:         bash,
 	description: "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input.",
 	schema: json.RawMessage(`{
 			"type": "object",

@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-func readFile(input json.RawMessage) (string, bool) {
+func read(input json.RawMessage) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -22,10 +22,10 @@ func readFile(input json.RawMessage) (string, bool) {
 	return string(data), false
 }
 
-// readFileTool is how the model is told about read_file.
-var readFileTool = tool{
+// readTool is how the model is told about read_file.
+var readTool = tool{
 	name:        "read_file",
-	run:         noCtx(readFile),
+	run:         noCtx(read),
 	description: "Read a file from disk and return its full contents as text.",
 	schema: json.RawMessage(`{
 			"type": "object",

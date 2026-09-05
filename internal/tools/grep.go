@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-func grepFiles(input json.RawMessage) (string, bool) {
+func grep(input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -56,7 +56,7 @@ func grepFiles(input json.RawMessage) (string, bool) {
 // grepTool is how the model is told about grep.
 var grepTool = tool{
 	name:        "grep",
-	run:         noCtx(grepFiles),
+	run:         noCtx(grep),
 	description: "Search file contents with a regular expression and return matching lines as path:line:text. Use this instead of run_bash for searching; it never needs permission.",
 	schema: json.RawMessage(`{
 			"type": "object",

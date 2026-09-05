@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func edit(t *testing.T, path, old, new string) (string, bool) {
+func tryEdit(t *testing.T, path, old, new string) (string, bool) {
 	t.Helper()
 	in, err := json.Marshal(map[string]string{"path": path, "old": old, "new": new})
 	if err != nil {
@@ -23,7 +23,7 @@ func TestEditFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "a.go")
 	os.WriteFile(path, []byte("package a\n\nfunc one() {}\nfunc two() {}\n"), 0644)
 
-	if out, isErr := edit(t, path, "func one() {}", "func one() { return }"); isErr {
+	if out, isErr := tryEdit(t, path, "func one() {}", "func one() { return }"); isErr {
 		t.Fatalf("a unique match should be replaced: %s", out)
 	}
 	got, _ := os.ReadFile(path)
@@ -33,10 +33,10 @@ func TestEditFile(t *testing.T) {
 
 	// An ambiguous or missing match must fail loudly and leave the file alone.
 	before, _ := os.ReadFile(path)
-	if _, isErr := edit(t, path, "func ", "X"); !isErr {
+	if _, isErr := tryEdit(t, path, "func ", "X"); !isErr {
 		t.Fatal("two matches should be refused")
 	}
-	if _, isErr := edit(t, path, "nowhere", "X"); !isErr {
+	if _, isErr := tryEdit(t, path, "nowhere", "X"); !isErr {
 		t.Fatal("a missing match should be refused")
 	}
 	if after, _ := os.ReadFile(path); string(after) != string(before) {

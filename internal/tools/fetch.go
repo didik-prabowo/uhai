@@ -39,7 +39,7 @@ var fetchClient = &http.Client{
 	},
 }
 
-func fetchURL(ctx context.Context, input json.RawMessage) (string, bool) {
+func fetch(ctx context.Context, input json.RawMessage) (string, bool) {
 	var args struct {
 		URL string `json:"url"`
 	}
@@ -168,11 +168,11 @@ func textFromHTML(page string) string {
 	return strings.TrimSpace(blanks.ReplaceAllString(page, "\n\n"))
 }
 
-// fetchURLTool is how the model is told about fetch_url.
-var fetchURLTool = tool{
+// fetchTool is how the model is told about fetch_url.
+var fetchTool = tool{
 	name:    "fetch_url",
 	confirm: true,
-	run:     fetchURL,
+	run:     fetch,
 	description: "Fetch a web page or document over http(s) and return it as text. " +
 		"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
 		"Markup is stripped; only addresses on the public internet can be reached.",

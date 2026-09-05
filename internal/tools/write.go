@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func writeFile(input json.RawMessage) (string, bool) {
+func write(input json.RawMessage) (string, bool) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -28,11 +28,11 @@ func writeFile(input json.RawMessage) (string, bool) {
 	return fmt.Sprintf("OK, wrote %d bytes to %s", len(args.Content), args.Path), false
 }
 
-// writeFileTool is how the model is told about write_file.
-var writeFileTool = tool{
+// writeTool is how the model is told about write_file.
+var writeTool = tool{
 	name:        "write_file",
 	confirm:     true,
-	run:         noCtx(writeFile),
+	run:         noCtx(write),
 	description: "Write (overwrite) content to a file, creating it and its parent folders if needed.",
 	schema: json.RawMessage(`{
 			"type": "object",

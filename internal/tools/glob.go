@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func globFiles(input json.RawMessage) (string, bool) {
+func glob(input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -38,7 +38,7 @@ func globFiles(input json.RawMessage) (string, bool) {
 // globTool is how the model is told about glob.
 var globTool = tool{
 	name:        "glob",
-	run:         noCtx(globFiles),
+	run:         noCtx(glob),
 	description: "List files whose name matches a pattern, such as *.go or **/*_test.go. Faster than run_bash for finding files, and it never needs permission.",
 	schema: json.RawMessage(`{
 			"type": "object",
