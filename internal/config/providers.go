@@ -32,12 +32,6 @@ var providers = map[string]providerInfo{
 		Cost:         "paid API",
 		Extra:        []string{FieldWorkspace},
 	},
-	"groq": {
-		BaseURL:      "https://api.groq.com/openai/v1",
-		DefaultModel: "llama-3.3-70b-versatile",
-		KeyURL:       "https://console.groq.com/keys",
-		Cost:         "free tier",
-	},
 	"openai": {
 		BaseURL:      "https://api.openai.com/v1",
 		DefaultModel: "gpt-4o-mini",
@@ -47,7 +41,7 @@ var providers = map[string]providerInfo{
 	"gemini": {
 		API:          "gemini",
 		BaseURL:      "https://generativelanguage.googleapis.com/v1beta",
-		DefaultModel: "gemini-2.5-flash",
+		DefaultModel: "gemini-3.5-flash",
 		KeyURL:       "https://aistudio.google.com/apikey",
 		Cost:         "free tier",
 	},
@@ -99,7 +93,7 @@ func ConnectedProviders() []string {
 }
 
 // API is the wire format a provider speaks, "openai" when it has not said
-// otherwise — which is most of them, and the reason one client covers Groq,
+// otherwise — which is most of them, and the reason one client covers
 // OpenRouter, Ollama and OpenAI itself.
 func API(provider string) string {
 	if api := providers[provider].API; api != "" {

@@ -68,8 +68,8 @@ imports a vendor.
 Three implementations sit behind it, and the split is by *wire format*, not by
 company:
 
-- `provider/openai` — Chat Completions, which Groq, OpenAI, OpenRouter, Z.ai
-  and Ollama all speak. Only the base URL differs, which is why five vendors
+- `provider/openai` — Chat Completions, which OpenAI, OpenRouter, Z.ai and
+  Ollama all speak. Only the base URL differs, which is why four vendors
   share one folder: a `provider/zai` would have been the same file twice.
 - `provider/anthropic` — the Messages API. Blocks rather than a flattened
   string, `max_tokens` required, and a tool call whose arguments arrive as
@@ -460,7 +460,7 @@ sent at all, and what the turn costs — shown in the model picker and in the
 status row while the model works.
 
 Prices are list prices per million tokens, and only for models sold by the
-vendor that made them. The same open model costs different money at Groq, at
+vendor that made them. The same open model costs different money at
 OpenRouter, or on a machine under the desk, so those carry no price and are
 simply not priced: no figure beats a confident wrong one.
 
@@ -470,6 +470,18 @@ one entry — `claude-`, not one line per release — and
 Anything unlisted falls back to figures small enough to be safe anywhere: being
 wrong low costs an early compaction, being wrong high costs the turn. Add a
 family when a model behaves oddly, not because the table looks short.
+
+The picker shows six models per provider, and chooses the six by the table.
+What the vendor cannot chat with is dropped first — pictures, speech,
+embeddings, a batch queue — along with families the table marks `Retired`,
+because a listing cannot be asked: Gemini answers 404 for 2.5 on a new key and
+goes on returning it from /models. Of what is left, what uhai has figures for
+comes first, the rest in the order the provider sent. That order is worth
+nothing on its own — Z.ai returns its ten oldest first, so taking the head
+showed four releases of GLM 4 and neither 5.3 nor 5.3-flash, the two newest
+and the only ones with a price. A dated id and its alias are one model listed
+twice, so the dated one goes when the alias is in the same reply — but only
+then, since Anthropic lists nothing else.
 
 The window follows the model, not the session, so `/model` and `/connect` move
 it (`useProvider` in tea.go).

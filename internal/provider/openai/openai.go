@@ -1,5 +1,5 @@
 // Package openai is the client for every provider speaking OpenAI-style Chat
-// Completions — Groq, Gemini (compat endpoint), Ollama, OpenRouter, Z.ai.
+// Completions — Gemini (compat endpoint), Ollama, OpenRouter, Z.ai.
 // Only the base URL, key and model name differ, so one implementation covers
 // them all.
 package openai
@@ -35,9 +35,9 @@ const headerTimeout = 3 * time.Minute
 const listTimeout = 15 * time.Second
 
 // Options builds a client. BaseURL includes the version, e.g.
-// "https://api.groq.com/openai/v1".
+// "https://api.z.ai/api/paas/v4".
 type Options struct {
-	Label   string // shown to the user, e.g. "groq"
+	Label   string // shown to the user, e.g. "zai"
 	BaseURL string
 	APIKey  string // may be empty for local servers such as Ollama
 	Model   string
@@ -215,7 +215,7 @@ func toWireTools(specs []provider.ToolSpec) []wireTool {
 }
 
 // Models lists the model ids the endpoint offers (GET /models). Every
-// OpenAI-compatible server implements it, so /model works for Groq, Gemini,
+// OpenAI-compatible server implements it, so /model works for Gemini,
 // Ollama and the rest without vendor-specific code.
 func (c *Client) Models() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)

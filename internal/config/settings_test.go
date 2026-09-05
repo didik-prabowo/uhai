@@ -18,7 +18,7 @@ func TestLoadSettingsMergesEveryField(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(home, ".uhai", "settings.json")
-	if err := os.WriteFile(file, []byte(`{"model":"groq/x","baseUrl":"http://localhost:1234/v1"}`), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(`{"model":"openai/x","baseUrl":"http://localhost:1234/v1"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -26,15 +26,15 @@ func TestLoadSettingsMergesEveryField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Model != "groq/x" || s.BaseURL != "http://localhost:1234/v1" {
+	if s.Model != "openai/x" || s.BaseURL != "http://localhost:1234/v1" {
 		t.Fatalf("a field was dropped in the merge: %+v", s)
 	}
 
 	// Saving one setting must leave the others alone.
-	if err := SaveModel("groq/y"); err != nil {
+	if err := SaveModel("openai/y"); err != nil {
 		t.Fatal(err)
 	}
-	if s, _ := LoadSettings(); s.Model != "groq/y" || s.BaseURL != "http://localhost:1234/v1" {
+	if s, _ := LoadSettings(); s.Model != "openai/y" || s.BaseURL != "http://localhost:1234/v1" {
 		t.Fatalf("saving one setting dropped another: %+v", s)
 	}
 }
@@ -82,17 +82,18 @@ func TestModelLimits(t *testing.T) {
 		// stays at the figures that are safe everywhere.
 		"anthropic/claude-3-5-sonnet-20241022":         {Context: 200_000, MaxOutput: 8_192},
 		"openai/gpt-4o-mini":                           {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
-		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192},
+		"gemini/gemini-2.5-flash":                      {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
+		"gemini/gemini-3.5-flash":                      {Context: 1_000_000, MaxOutput: 65_536},
 		"ollama/qwen2.5-coder":                         {Context: 32_768, MaxOutput: 4_096},
 		"openrouter/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
 		"zai/glm-4.7":                                  {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
 		"zai/glm-4.6":                                  {Context: 200_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
 		// A cheap variant must not inherit its family's price: -flashx lands on
 		// the free entry, which shows no figure rather than a wrong one.
-		"zai/glm-4.7-flashx":                 {Context: 128_000, MaxOutput: 8_192},
-		"zai/glm-4.5-air":                    {Context: 128_000, MaxOutput: 8_192},
-		"openrouter/amazon/nova-lite-v1":     {Context: defaultContext, MaxOutput: defaultMaxOutput},
-		"groq/something-nobody-has-heard-of": {Context: defaultContext, MaxOutput: defaultMaxOutput},
+		"zai/glm-4.7-flashx":                   {Context: 128_000, MaxOutput: 8_192},
+		"zai/glm-4.5-air":                      {Context: 128_000, MaxOutput: 8_192},
+		"openrouter/amazon/nova-lite-v1":       {Context: defaultContext, MaxOutput: defaultMaxOutput},
+		"openai/something-nobody-has-heard-of": {Context: defaultContext, MaxOutput: defaultMaxOutput},
 	} {
 		if got := infoFor(setting); got != want {
 			t.Errorf("%s: got %+v, want %+v", setting, got, want)
@@ -117,7 +118,7 @@ func TestModelSummaryAndCost(t *testing.T) {
 	}
 	// An open model is hosted by everyone at a different price, so it carries
 	// none, and a model nobody has heard of says only what is safe to assume.
-	if got := ModelSummary("groq/llama-3.3-70b-versatile"); got != "128k context" {
+	if got := ModelSummary("openrouter/llama-3.3-70b-versatile"); got != "128k context" {
 		t.Fatalf("llama summary = %q", got)
 	}
 	if got := ModelSummary("openrouter/amazon/nova-lite-v1"); got != "32k context" {
@@ -138,7 +139,7 @@ func TestModelSummaryAndCost(t *testing.T) {
 	if got := CostUSD("anthropic/claude-sonnet-5", provider.Usage{Input: 200, Output: 100}); got != "<$0.01" {
 		t.Fatalf("a cheap turn = %q", got)
 	}
-	if got := CostUSD("groq/llama-3.3-70b-versatile", provider.Usage{Input: 1_000_000, Output: 100_000}); got != "" {
+	if got := CostUSD("openrouter/llama-3.3-70b-versatile", provider.Usage{Input: 1_000_000, Output: 100_000}); got != "" {
 		t.Fatalf("an unpriced model must stay quiet, got %q", got)
 	}
 
@@ -367,7 +368,7 @@ func TestBaseURLPerProvider(t *testing.T) {
 	t.Setenv("HOME", dir)
 	t.Setenv("UHAI_BASE_URL", "")
 	t.Setenv("ZAI_API_KEY", "k")
-	t.Setenv("GROQ_API_KEY", "k")
+	t.Setenv("OPENAI_API_KEY", "k")
 
 	if err := os.MkdirAll(filepath.Join(dir, ".uhai"), 0o755); err != nil {
 		t.Fatal(err)
@@ -385,8 +386,8 @@ func TestBaseURLPerProvider(t *testing.T) {
 		t.Fatalf("the override did not load: %q", got)
 	}
 	// Any other provider keeps the endpoint the table gives it.
-	if got := providerURL(s, "groq"); got != providers["groq"].BaseURL {
-		t.Fatalf("groq was redirected to %q", got)
+	if got := providerURL(s, "openai"); got != providers["openai"].BaseURL {
+		t.Fatalf("openai was redirected to %q", got)
 	}
 	if got := providerURL(s, "zai"); got != s.BaseURLs["zai"] {
 		t.Fatalf("zai should use the override, got %q", got)

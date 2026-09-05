@@ -21,8 +21,8 @@ func TestSessionRoundTrip(t *testing.T) {
 	msg := func(text string) provider.Message {
 		return provider.Message{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}
 	}
-	older := session.Session{Started: time.Now().Add(-time.Hour), Model: "groq/a", Messages: []provider.Message{msg("older")}}
-	newer := session.Session{Started: time.Now(), Model: "groq/b", Messages: []provider.Message{msg("newer")}}
+	older := session.Session{Started: time.Now().Add(-time.Hour), Model: "openai/a", Messages: []provider.Message{msg("older")}}
+	newer := session.Session{Started: time.Now(), Model: "openai/b", Messages: []provider.Message{msg("newer")}}
 	for _, s := range []session.Session{older, newer} {
 		if err := st.Save(s); err != nil {
 			t.Fatal(err)
@@ -38,7 +38,7 @@ func TestSessionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Model != "groq/b" || len(got.Messages) != 1 || got.Messages[0].Content[0].Text != "newer" {
+	if got.Model != "openai/b" || len(got.Messages) != 1 || got.Messages[0].Content[0].Text != "newer" {
 		t.Fatalf("the newest session should come back, got %+v", got)
 	}
 }
@@ -54,19 +54,19 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	}
 	start := time.Date(2026, 9, 1, 10, 30, 0, 0, time.UTC)
 	first := session.New()
-	first.Started, first.Model, first.Messages = start, "groq/a", []provider.Message{msg("first prompt\nsecond line")}
+	first.Started, first.Model, first.Messages = start, "openai/a", []provider.Message{msg("first prompt\nsecond line")}
 	if err := st.Save(first); err != nil {
 		t.Fatal(err)
 	}
 	second := session.New()
-	second.Started, second.Model, second.Messages = start.Add(2*time.Hour), "groq/b", []provider.Message{msg("later")}
+	second.Started, second.Model, second.Messages = start.Add(2*time.Hour), "openai/b", []provider.Message{msg("later")}
 	if err := st.Save(second); err != nil {
 		t.Fatal(err)
 	}
 
 	// A session saved before ids existed: no id, no updated.
 	old := filepath.Join(dir, "2026-08-30T09-00-00.json")
-	if err := os.WriteFile(old, []byte(`{"started":"2026-08-30T09:00:00Z","model":"groq/c","messages":[{"role":"user","content":[{"type":"text","text":"ancient"}]}]}`), 0o644); err != nil {
+	if err := os.WriteFile(old, []byte(`{"started":"2026-08-30T09:00:00Z","model":"openai/c","messages":[{"role":"user","content":[{"type":"text","text":"ancient"}]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +76,7 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	}
 	// Newest first now comes from what the files say, not from what they are
 	// called: an opaque name sorts alphabetically, which is no order at all.
-	if len(all) != 3 || all[0].ID != second.ID || all[0].Model != "groq/b" {
+	if len(all) != 3 || all[0].ID != second.ID || all[0].Model != "openai/b" {
 		t.Fatalf("sessions should come back newest first: %+v", all)
 	}
 	if all[2].ID != "2026-08-30T09-00-00" || all[2].Updated.IsZero() {
@@ -87,16 +87,16 @@ func TestSessionsAreFoundByID(t *testing.T) {
 	}
 
 	got, err := st.Load(first.ID)
-	if err != nil || got.Model != "groq/a" {
+	if err != nil || got.Model != "openai/a" {
 		t.Fatalf("load by id: %+v %v", got, err)
 	}
 	if got.Prompt() != "first prompt" {
 		t.Errorf("the listing shows the first line asked, got %q", got.Prompt())
 	}
-	if got, err := st.Load(first.ID[:4]); err != nil || got.Model != "groq/a" {
+	if got, err := st.Load(first.ID[:4]); err != nil || got.Model != "openai/a" {
 		t.Errorf("four characters is enough to name one: %+v %v", got, err)
 	}
-	if got, err := st.Load("2026-08"); err != nil || got.Model != "groq/c" {
+	if got, err := st.Load("2026-08"); err != nil || got.Model != "openai/c" {
 		t.Errorf("a prefix matching one session is enough: %+v %v", got, err)
 	}
 	if _, err := st.Load("nope"); err == nil {
@@ -136,7 +136,7 @@ func TestSavedSessionKeepsItsWireNames(t *testing.T) {
 	st := New(dir)
 
 	s := session.New()
-	s.Model = "groq/a"
+	s.Model = "openai/a"
 	s.Messages = []provider.Message{
 		{Role: provider.RoleUser, Content: []provider.ContentBlock{
 			{Type: provider.BlockText, Text: "jalankan testnya"},

@@ -22,11 +22,11 @@ import (
 // price of every turn without saying so.
 func TestResumeBringsBackTheModel(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("GROQ_API_KEY", "k")
+	t.Setenv("OPENAI_API_KEY", "k")
 
 	saved := session.Session{
 		Started: time.Now(),
-		Model:   "groq/openai/gpt-oss-120b",
+		Model:   "openai/gpt-4o-mini",
 		Messages: []provider.Message{{
 			Role:    provider.RoleUser,
 			Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "where were we"}},
@@ -75,8 +75,8 @@ func TestResumeByID(t *testing.T) {
 
 	msg := provider.Message{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "older"}}}
 	older, newer := session.New(), session.New()
-	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "groq/older", []provider.Message{msg}
-	newer.Started, newer.Model, newer.Messages = time.Now(), "groq/newer", []provider.Message{msg}
+	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "openai/older", []provider.Message{msg}
+	newer.Started, newer.Model, newer.Messages = time.Now(), "openai/newer", []provider.Message{msg}
 	for _, s := range []session.Session{older, newer} {
 		if err := store.Save(s); err != nil {
 			t.Fatal(err)
@@ -99,8 +99,8 @@ func TestResumeByID(t *testing.T) {
 // default breaks these silently — the turn simply goes out without them.
 func TestNewAgentComposesTheSession(t *testing.T) {
 	dir := workIn(t)
-	t.Setenv("GROQ_API_KEY", "k")
-	t.Setenv("UHAI_MODEL", "groq/llama-3.3-70b-versatile")
+	t.Setenv("OPENAI_API_KEY", "k")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
 
 	write(t, filepath.Join(dir, "UHAI.md"), "Jalankan test dengan CGO_ENABLED=0.")
 	write(t, filepath.Join(dir, ".uhai", "skills", "planning", "SKILL.md"),
@@ -145,8 +145,8 @@ func TestNewAgentComposesTheSession(t *testing.T) {
 // else to stderr so it does not land in the pipe with it.
 func TestRunOnceAnswersOnStdout(t *testing.T) {
 	workIn(t)
-	t.Setenv("GROQ_API_KEY", "k")
-	t.Setenv("UHAI_MODEL", "groq/llama-3.3-70b-versatile")
+	t.Setenv("OPENAI_API_KEY", "k")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"halo\"}}]}\n\ndata: [DONE]\n")
@@ -182,8 +182,8 @@ func TestRunOnceAnswersOnStdout(t *testing.T) {
 // without one so /connect can fix it from inside, but a pipe has nobody to ask.
 func TestRunOnceWithoutAProviderIsFatal(t *testing.T) {
 	workIn(t)
-	t.Setenv("GROQ_API_KEY", "")
-	t.Setenv("UHAI_MODEL", "groq/llama-3.3-70b-versatile")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
 
 	if err := RunOnce("hi", false); err == nil {
 		t.Error("a one-shot run with no key must fail rather than answer nothing")
@@ -200,7 +200,7 @@ func TestListSessionsIsReadableEnoughToCopyFrom(t *testing.T) {
 		return []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
 	}
 	older, newer := session.New(), session.New()
-	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "groq/llama-3.3-70b-versatile", msg("yang lama")
+	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "openai/gpt-4o-mini", msg("yang lama")
 	newer.Started, newer.Model, newer.Messages = time.Now(), "zai/glm-4.6", msg("yang baru")
 	for _, s := range []session.Session{older, newer} {
 		if err := store.Save(s); err != nil {

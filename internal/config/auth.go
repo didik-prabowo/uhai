@@ -39,9 +39,6 @@ var vendorEnv = map[string]map[string]string{
 	"openai": {
 		FieldKey: "OPENAI_API_KEY",
 	},
-	"groq": {
-		FieldKey: "GROQ_API_KEY",
-	},
 	"gemini": {
 		FieldKey: "GEMINI_API_KEY",
 	},
@@ -82,7 +79,7 @@ func LoadAuth() (map[string]Creds, error) {
 }
 
 // Get returns one provider's credentials, merged from file and env. Lowest
-// to highest precedence: auth.json, the vendor env vars (GROQ_API_KEY,
+// to highest precedence: auth.json, the vendor env vars (OPENAI_API_KEY,
 // ANTHROPIC_WORKSPACE_ID, ...), then UHAI_API_KEY. Fields set nowhere are
 // simply absent from the result.
 func Get(provider string) Creds {

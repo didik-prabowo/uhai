@@ -15,7 +15,7 @@ import (
 //
 // Prices are list prices in US dollars per million tokens, and only for models
 // sold by the vendor that made them. The same open model costs different money
-// at Groq, OpenRouter or a machine under the desk, so those are left at zero
+// at OpenRouter or on a machine under the desk, so those are left at zero
 // and simply not priced: no figure is better than a confident wrong one.
 type modelInfo struct {
 	Context   int
@@ -27,6 +27,11 @@ type modelInfo struct {
 	// NoTools marks the rare model that cannot be given tools, so the zero
 	// value is the common case: it can.
 	NoTools bool
+
+	// Retired marks a family the vendor still lists but no longer serves.
+	// Gemini answers 404 for 2.5 on a new key while /models goes on returning
+	// it, so the list cannot be asked — only the table can say.
+	Retired bool
 }
 
 const (
@@ -59,8 +64,13 @@ var models = map[string]modelInfo{
 	"gpt-4o":      {Context: 128_000, MaxOutput: 16_384, InputUSD: 2.50, OutputUSD: 10},
 	"gpt-4.1":     {Context: 128_000, MaxOutput: 16_384},
 
-	"gemini-2.5": {Context: 1_000_000, MaxOutput: 8_192},
-	"gemini-2.0": {Context: 1_000_000, MaxOutput: 8_192},
+	// The only figures here that were not read off a pricing page: Gemini's
+	// /models reports inputTokenLimit and outputTokenLimit per model, and the
+	// gemini-3 flash family answers 1048576 and 65536. 2.5 is retired — it
+	// answers 404 for new keys — and is kept only for old sessions to resume.
+	"gemini-3":   {Context: 1_000_000, MaxOutput: 65_536},
+	"gemini-2.5": {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
+	"gemini-2.0": {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
 
 	// GLM, from Z.ai, which makes and sells them — so they are priced. The
 	// pricing page publishes no context windows: 128k is the figure that is
@@ -84,6 +94,13 @@ var models = map[string]modelInfo{
 // itself carry slashes — "openrouter/meta-llama/llama-3.3-70b-instruct" — so
 // the match is made on the last segment, which is where the family lives.
 func infoFor(modelSetting string) modelInfo {
+	info, _ := lookup(modelSetting)
+	return info
+}
+
+// lookup is infoFor plus the prefix that matched, which is how Known tells an
+// entry written for a model from the family fallback that caught it.
+func lookup(modelSetting string) (modelInfo, string) {
 	name := modelSetting
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		name = name[i+1:]
@@ -91,13 +108,60 @@ func infoFor(modelSetting string) modelInfo {
 	name = strings.ToLower(name)
 
 	best := modelInfo{Context: defaultContext, MaxOutput: defaultMaxOutput}
-	longest := 0
+	match, longest := "", 0
 	for prefix, info := range models {
 		if strings.HasPrefix(name, prefix) && len(prefix) > longest {
-			best, longest = info, len(prefix)
+			best, match, longest = info, prefix, len(prefix)
 		}
 	}
-	return best
+	return best, match
+}
+
+// Known reports whether the table has figures for this model in particular
+// rather than for its family. A family entry is spelled with the trailing
+// dash it matches on — "glm-", "claude-" — so the two are told apart by the
+// shape of the key, with nothing extra to keep in step.
+//
+// The picker asks, because a provider's own list has no order worth trusting:
+// Z.ai returns its ten models oldest first, so keeping the first six dropped
+// glm-5.3 and glm-5.3-flash, the two newest and the only ones with a price.
+func KnownModel(modelSetting string) bool {
+	_, prefix := lookup(modelSetting)
+	return prefix != "" && !strings.HasSuffix(prefix, "-")
+}
+
+// notChat are the parts of a name that mark a model uhai cannot hold a
+// conversation with — pictures, speech, embeddings, a batch queue that answers
+// hours later. Matched as substrings because no vendor agrees where to put
+// them, and kept to what has actually turned up in a real /models reply.
+var notChat = []string{
+	"-image", "-tts", "-transcribe", "embedding", "-live",
+	"computer-use", "deep-research", ":batch",
+}
+
+// Recommendable reports whether a model belongs in the picker at all. Being
+// listed by the vendor is not enough: Gemini returns forty models, of which
+// the first six alphabetically are three retired and three that cannot chat,
+// which is how the picker came to offer no live Gemini model at all.
+//
+// It is only about what to *suggest*. Anything here can still be typed, and an
+// old session resumes on a retired model without complaint.
+func Recommendable(modelSetting string) bool {
+	info, _ := lookup(modelSetting)
+	if info.Retired {
+		return false
+	}
+	name := modelSetting
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	name = strings.ToLower(name)
+	for _, mark := range notChat {
+		if strings.Contains(name, mark) {
+			return false
+		}
+	}
+	return true
 }
 
 // ContextWindow is how much history a model will take, in tokens. The agent

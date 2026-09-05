@@ -42,7 +42,7 @@ instead, so the agent loop is exercised rather than replaced.
 - `internal/provider` as the contract: neutral content blocks, a stop reason,
   token usage, a hook for streamed text.
 - Three implementations split by **wire format, not by company** —
-  `openai` (Chat Completions: Groq, OpenAI, OpenRouter, Ollama),
+  `openai` (Chat Completions: OpenAI, OpenRouter, Z.ai, Ollama),
   `anthropic` (Messages), `gemini` (generateContent).
 - A shared `provider.Post` with backoff, because two copies of a retry loop is
   one too many.
@@ -81,9 +81,9 @@ against servers we wrote ourselves.
 - [ ] One turn through Anthropic and one through Gemini on a live key. A fake
       endpoint proves the shape of a request, never that the vendor agrees
       with it.
-- [ ] Fix the model registry against what the APIs actually list — starting
-      with groq's default `llama-3.3-70b-versatile`, which answers `404 does
-      not exist` on a real key.
+- [ ] Fix the model registry against what the APIs actually list. Z.ai now
+      sells `glm-5`, `glm-5.1` and `glm-5.2`, none of which the table knows,
+      and OpenAI's entries stop at `gpt-4.1`.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 

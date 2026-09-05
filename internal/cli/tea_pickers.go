@@ -4,6 +4,8 @@
 package cli
 
 import (
+	"regexp"
+	"sort"
 	"strings"
 
 	"charm.land/bubbles/v2/list"
@@ -258,15 +260,74 @@ func loadModelItems() ([]list.Item, error) {
 		if err != nil {
 			continue
 		}
-		for i, modelName := range models {
-			if i >= maxRecommendedModelsPerProvider {
-				break
-			}
+		for _, modelName := range recommended(name, models) {
 			setting := name + "/" + modelName
 			items = append(items, teaItem{title: setting, desc: config.ModelSummary(setting)})
 		}
 	}
 	return items, nil
+}
+
+// recommended is the handful of a provider's models the picker shows, the ones
+// uhai has figures for first. The cut used to be the first six the provider
+// returned, which is the head of an order no vendor documents.
+func recommended(name string, models []string) []string {
+	live := make([]string, 0, len(models))
+	for _, m := range models {
+		if config.Recommendable(name + "/" + m) {
+			live = append(live, m)
+		}
+	}
+	// A dated id and its alias are one model listed twice, which is how OpenAI
+	// spent all six slots on gpt-4.1: the plain name, the dated one, and the
+	// same pair again for -mini and -nano. Dropped only when the undecorated
+	// name is in the same reply — Anthropic lists nothing but dated ids, and
+	// dropping those would leave it with no models at all.
+	named := make(map[string]bool, len(live))
+	for _, m := range live {
+		named[m] = true
+	}
+	var once []string
+	for _, m := range live {
+		if plain := undecorated(m); plain == m || !named[plain] {
+			once = append(once, m)
+		}
+	}
+
+	// Everything filtered out says the table is wrong about this provider, not
+	// that the provider has nothing to offer, so fall back to the whole list.
+	if len(once) > 0 {
+		models = once
+	}
+
+	sort.SliceStable(models, func(i, j int) bool {
+		return config.KnownModel(name+"/"+models[i]) && !config.KnownModel(name+"/"+models[j])
+	})
+	if len(models) > maxRecommendedModelsPerProvider {
+		models = models[:maxRecommendedModelsPerProvider]
+	}
+	return models
+}
+
+// stamp matches the release date vendors bolt onto a model id, in each of the
+// three shapes they use: 2025-04-14, 20260115, 10-2025.
+var stamp = regexp.MustCompile(`-(?:\d{4}-\d{2}-\d{2}|\d{8}|\d{2}-\d{4})$`)
+
+// undecorated strips the date and the "-preview" that mark a release of a
+// model rather than a different model, so gpt-4.1-2025-04-14 can be recognised
+// as gpt-4.1 and gemini-3.1-flash-lite-preview as gemini-3.1-flash-lite. Both
+// at once and repeatedly, since they arrive stacked.
+func undecorated(name string) string {
+	for {
+		switch {
+		case stamp.MatchString(name):
+			name = stamp.ReplaceAllString(name, "")
+		case strings.HasSuffix(name, "-preview"):
+			name = strings.TrimSuffix(name, "-preview")
+		default:
+			return name
+		}
+	}
 }
 
 // verify says whether the name is worth checking against the provider's list.
@@ -278,7 +339,7 @@ func (m *teaModel) changeModel(setting string, verify bool) tea.Cmd {
 	m.mode = teaPrompt
 	m.input.Focus()
 	if setting == "" {
-		m.addHistory(teaDim.Render("use /model provider/model, for example /model groq/openai/gpt-oss-120b"))
+		m.addHistory(teaDim.Render("use /model provider/model, for example /model zai/glm-4.7"))
 		return nil
 	}
 	p, err := config.LoadProviderFor(setting)

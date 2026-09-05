@@ -107,14 +107,14 @@ func TestEnvBeatsFile(t *testing.T) {
 func TestSaveModelIsReadBack(t *testing.T) {
 	isolate(t)
 
-	if err := SaveModel("groq/" + DefaultModel("groq")); err != nil {
+	if err := SaveModel("openai/" + DefaultModel("openai")); err != nil {
 		t.Fatal(err)
 	}
 	got, err := LoadSettings()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Model != "groq/llama-3.3-70b-versatile" {
+	if got.Model != "openai/gpt-4o-mini" {
 		t.Fatalf("wrong model stored: %q", got.Model)
 	}
 

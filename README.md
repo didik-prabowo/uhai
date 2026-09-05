@@ -3,7 +3,7 @@
 A coding agent that lives in the terminal. It reads and writes files, runs
 commands, and asks before doing anything it cannot take back.
 
-It talks to whichever model you point it at — Anthropic, Gemini, OpenAI, Groq,
+It talks to whichever model you point it at — Anthropic, Gemini, OpenAI, Z.ai,
 OpenRouter, or Ollama on your own machine — and the whole of it is about 4,800
 lines of Go, small enough to read in an afternoon.
 
@@ -22,7 +22,7 @@ which is the quickest way to catch having forgotten.
 It opens without a provider, so the first thing to type is `/connect`, which
 asks for a key and remembers it in `~/.uhai/auth.json`. If an API key is
 already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
+`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
 used as it is, and there is nothing to connect.
 
 Ollama needs no key at all: `/connect ollama`, once it is running locally.

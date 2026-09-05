@@ -78,8 +78,8 @@ func TestStoreContract(t *testing.T) {
 				return []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
 			}
 			first, second := session.New(), session.New()
-			first.Model, first.Messages = "groq/a", msg("yang pertama")
-			second.Model, second.Messages = "groq/b", msg("yang kedua")
+			first.Model, first.Messages = "openai/a", msg("yang pertama")
+			second.Model, second.Messages = "openai/b", msg("yang kedua")
 			for _, s := range []session.Session{first, second} {
 				if err := st.Save(s); err != nil {
 					t.Fatal(err)
@@ -102,10 +102,10 @@ func TestStoreContract(t *testing.T) {
 			if err != nil || got.ID != second.ID {
 				t.Fatalf("latest is the one updated last: %+v %v", got, err)
 			}
-			if got, err := st.Load(first.ID); err != nil || got.Model != "groq/a" {
+			if got, err := st.Load(first.ID); err != nil || got.Model != "openai/a" {
 				t.Errorf("load by id: %+v %v", got, err)
 			}
-			if got, err := st.Load(first.ID[:4]); err != nil || got.Model != "groq/a" {
+			if got, err := st.Load(first.ID[:4]); err != nil || got.Model != "openai/a" {
 				t.Errorf("a prefix that names one is enough: %+v %v", got, err)
 			}
 			if _, err := st.Load("nope"); err == nil {

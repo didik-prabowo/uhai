@@ -740,16 +740,16 @@ func TestBackgroundTaskInheritsTheModelsLimits(t *testing.T) {
 func TestConnectOffersToReplaceASavedKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	for _, env := range []string{"GROQ_API_KEY", "UHAI_API_KEY", "UHAI_MODEL"} {
+	for _, env := range []string{"OPENAI_API_KEY", "UHAI_API_KEY", "UHAI_MODEL"} {
 		t.Setenv(env, "")
 	}
-	if err := config.Save("groq", config.Creds{config.FieldKey: "kunci-lama-yang-salah"}); err != nil {
+	if err := config.Save("openai", config.Creds{config.FieldKey: "kunci-lama-yang-salah"}); err != nil {
 		t.Fatal(err)
 	}
 
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.selectProvider("groq")
+	m.selectProvider("openai")
 	if m.mode != teaKeyEntry {
 		t.Fatal("a provider with a saved key must still offer to take a new one")
 	}
@@ -759,15 +759,15 @@ func TestConnectOffersToReplaceASavedKey(t *testing.T) {
 
 	// Escaping keeps what is stored rather than throwing the connection away.
 	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if got := config.APIKey("groq"); got != "kunci-lama-yang-salah" {
+	if got := config.APIKey("openai"); got != "kunci-lama-yang-salah" {
 		t.Fatalf("escape must keep the saved key, got %q", got)
 	}
 
 	// Typing one replaces it.
-	m.selectProvider("groq")
+	m.selectProvider("openai")
 	m.keyInput.SetValue("kunci-baru")
 	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if got := config.APIKey("groq"); got != "kunci-baru" {
+	if got := config.APIKey("openai"); got != "kunci-baru" {
 		t.Fatalf("a new key must replace the old one, got %q", got)
 	}
 }
@@ -776,17 +776,17 @@ func TestConnectOffersToReplaceASavedKey(t *testing.T) {
 // like nothing happened unless it is said.
 func TestConnectWarnsWhenTheEnvironmentWins(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("GROQ_API_KEY", "dari-env")
+	t.Setenv("OPENAI_API_KEY", "dari-env")
 
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.selectProvider("groq")
+	m.selectProvider("openai")
 	m.keyInput.SetValue("dari-ketikan")
 	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	var said bool
 	for _, e := range m.lines {
-		said = said || strings.Contains(e.text, "GROQ_API_KEY is set")
+		said = said || strings.Contains(e.text, "OPENAI_API_KEY is set")
 	}
 	if !said {
 		t.Fatalf("the environment winning must be said out loud: %+v", m.lines)
@@ -1283,10 +1283,10 @@ func TestConnectAsksForTheWorkspaceAfterTheKey(t *testing.T) {
 	}
 
 	// A provider with no extras connects as soon as the key is in.
-	m.selectProvider("groq")
+	m.selectProvider("openai")
 	m.saveCredential("gsk-test")
 	if m.mode == teaKeyEntry {
-		t.Error("groq has nothing to ask after the key")
+		t.Error("openai has nothing to ask after the key")
 	}
 }
 
@@ -1781,4 +1781,125 @@ func plain(s string) string {
 		i++
 	}
 	return b.String()
+}
+
+// The order Z.ai actually returns, oldest first, which is what made the cap
+// throw away the newest two.
+var zaiModels = []string{
+	"glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7",
+	"glm-5", "glm-5-turbo", "glm-5.1", "glm-5.2", "glm-5.3", "glm-5.3-flash",
+}
+
+func TestRecommendedKeepsTheModelsUhaiKnows(t *testing.T) {
+	got := recommended("zai", append([]string(nil), zaiModels...))
+	if len(got) != maxRecommendedModelsPerProvider {
+		t.Fatalf("want %d models, got %d: %v", maxRecommendedModelsPerProvider, len(got), got)
+	}
+	for _, want := range []string{"glm-5.3-flash", "glm-5.3", "glm-4.7", "glm-4.6"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("%s is priced in the table and was dropped: %v", want, got)
+		}
+	}
+}
+
+// A provider whose models are all strangers keeps the order it sent, so the
+// sort cannot make an unknown list worse than it was.
+func TestRecommendedLeavesAnUnknownListAlone(t *testing.T) {
+	models := []string{"a", "b", "c"}
+	if got := recommended("somewhere", models); !slices.Equal(got, models) {
+		t.Errorf("want %v, got %v", models, got)
+	}
+}
+
+// Gemini's own listing, in the order it arrives: forty models alphabetically,
+// so the six the picker used to take were three retired 2.5 releases and three
+// that cannot hold a conversation at all.
+var geminiModels = []string{
+	"antigravity-preview-05-2026",
+	"deep-research-max-preview-04-2026",
+	"embedding-001",
+	"gemini-2.5-computer-use-preview-10-2025",
+	"gemini-2.5-flash",
+	"gemini-2.5-flash-image",
+	"gemini-2.5-flash-lite",
+	"gemini-2.5-flash-preview-tts",
+	"gemini-2.5-pro",
+	"gemini-3-flash-preview",
+	"gemini-3.1-flash-lite",
+	"gemini-3.5-flash",
+	"gemini-3.5-transcribe",
+}
+
+func TestRecommendedSkipsWhatCannotAnswer(t *testing.T) {
+	got := recommended("gemini", append([]string(nil), geminiModels...))
+
+	if !slices.Contains(got, "gemini-3.5-flash") {
+		t.Errorf("the live default is missing from the picker: %v", got)
+	}
+	for _, gone := range []string{
+		"gemini-2.5-flash",                        // 404 for a new key
+		"gemini-2.5-flash-image",                  // draws
+		"gemini-2.5-flash-preview-tts",            // speaks
+		"gemini-2.5-computer-use-preview-10-2025", // drives a browser
+		"gemini-3.5-transcribe",                   // listens
+		"embedding-001",                           // measures
+		"deep-research-max-preview-04-2026",       // answers in its own time
+	} {
+		if slices.Contains(got, gone) {
+			t.Errorf("%s cannot be chatted with and was offered: %v", gone, got)
+		}
+	}
+}
+
+// A retired model stays usable — it is only unrecommended. Old sessions resume
+// on one, and typing its name still works.
+func TestRetiredModelsAreOnlyUnrecommended(t *testing.T) {
+	if config.Recommendable("gemini/gemini-2.5-flash") {
+		t.Error("a retired model should not be suggested")
+	}
+	if got := config.ContextWindow("gemini/gemini-2.5-flash"); got != 1_000_000 {
+		t.Errorf("a retired model must still size correctly, got %d", got)
+	}
+}
+
+// OpenAI lists every model twice, plain and dated, which spent all six slots
+// on three models.
+func TestRecommendedCollapsesDatedDuplicates(t *testing.T) {
+	got := recommended("openai", []string{
+		"gpt-4.1", "gpt-4.1-2025-04-14",
+		"gpt-4.1-mini", "gpt-4.1-mini-2025-04-14",
+		"gpt-4.1-nano", "gpt-4.1-nano-2025-04-14",
+		"gpt-4o", "gpt-4o-mini",
+	})
+	want := []string{"gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// Anthropic is the opposite case and the reason the alias has to be present
+// before its dated twin is dropped: it lists dated ids and nothing else, so a
+// rule that simply removed them would leave the provider empty.
+func TestRecommendedKeepsDatedIdsThatStandAlone(t *testing.T) {
+	models := []string{"claude-sonnet-5-20260115", "claude-opus-5-20260115"}
+	if got := recommended("anthropic", models); !slices.Equal(got, models) {
+		t.Errorf("got %v, want all of %v", got, models)
+	}
+}
+
+// A preview beside its stable release is the same duplication wearing a
+// different word, and they stack: -preview-10-2025 is both at once.
+func TestUndecorated(t *testing.T) {
+	for name, want := range map[string]string{
+		"gpt-4.1-2025-04-14":                      "gpt-4.1",
+		"claude-sonnet-5-20260115":                "claude-sonnet-5",
+		"gemini-3.1-flash-lite-preview":           "gemini-3.1-flash-lite",
+		"gemini-2.5-computer-use-preview-10-2025": "gemini-2.5-computer-use",
+		"gpt-4o":      "gpt-4o",
+		"glm-4.5-air": "glm-4.5-air",
+	} {
+		if got := undecorated(name); got != want {
+			t.Errorf("undecorated(%q) = %q, want %q", name, got, want)
+		}
+	}
 }

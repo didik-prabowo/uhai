@@ -16,9 +16,9 @@ import (
 )
 
 // defaultModel is used when both settings.json and the env vars are empty.
-// Groq is free and OpenAI-compatible, so uhai runs as soon as the user has
-// a GROQ_API_KEY.
-const defaultModel = "groq/llama-3.3-70b-versatile"
+// Gemini has a free tier, so uhai runs as soon as the user has a
+// GEMINI_API_KEY. It took over from Groq, which uhai no longer speaks to.
+const defaultModel = "gemini/gemini-3.5-flash"
 
 // SaveModel stores the chosen model in ~/.uhai/settings.json. /connect uses
 // it so the provider just connected is the one actually used.

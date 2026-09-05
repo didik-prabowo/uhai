@@ -1,4 +1,4 @@
-// Package provider defines the contract every LLM vendor (Groq, OpenAI,
+// Package provider defines the contract every LLM vendor (OpenAI,
 // Anthropic, ...) must satisfy so the agent loop can use it without knowing
 // each vendor's request/response format.
 package provider
@@ -123,7 +123,7 @@ type Response struct {
 // Provider is the contract each LLM vendor implements. Adding a vendor means
 // adding a type that satisfies this interface — the agent code never changes.
 type Provider interface {
-	// Name is shown to the user, e.g. "groq/llama-3.3-70b-versatile".
+	// Name is shown to the user, e.g. "zai/glm-4.7".
 	Name() string
 
 	// Send performs one full request and returns a neutral response.
