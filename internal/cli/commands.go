@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,26 +75,69 @@ func pipeAnswer(prompt string) string {
 // with frontmatter that did not parse, fails in the one way that cannot be
 // debugged — the model simply does not follow it, and nothing anywhere says
 // why. This turns that into a line.
+//
+// One row each, the way /tasks does it: the name is what the eye lands on, and
+// everything after it is context. The last row says where it looked, which is
+// the answer when the skill you expected is not in the rows above.
 func skillsReport() string {
+	dirs := config.SkillDirs()
 	skills := config.Skills()
 	if len(skills) == 0 {
-		return "no skills found. Looked in: " + strings.Join(config.SkillDirs(), ", ") +
-			"\nA skill is a folder with a SKILL.md in it."
+		return dim + "  no skills yet — a folder with a SKILL.md in it, under " +
+			shortPath(dirs[0]) + "\n  looked in " + shortDirs(dirs) + reset
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "%d skill(s) — only these lines travel with each prompt; the bodies stay on disk:\n", len(skills))
+	width := len("looked in") // the last row is a column too, so it sets the floor
+	for _, s := range skills {
+		if n := len(s.Name); n > width {
+			width = n
+		}
+	}
+
+	var rows []string
 	for _, s := range skills {
 		desc := s.Description
 		if desc == "" {
-			// Worth saying: the model chooses from the description, so a
-			// skill without one is a skill it has little reason to open.
-			desc = "(no description — add one to the frontmatter)"
+			// Worth saying rather than leaving blank: the model picks a skill
+			// by its description, so one without it is one it has little
+			// reason ever to open.
+			desc = "no description — add one to the frontmatter"
 		}
-		fmt.Fprintf(&b, "  %-16s %s\n  %-16s %s\n", s.Name, desc, "", s.Path)
+		rows = append(rows, fmt.Sprintf("  %s%-*s%s %s%s · %s%s",
+			accentAt, width, s.Name, reset, dim, desc, shortPath(sourceDir(s.Path, dirs)), reset))
 	}
-	fmt.Fprintf(&b, "Looked in: %s", strings.Join(config.SkillDirs(), ", "))
-	return b.String()
+	return strings.Join(rows, "\n") +
+		fmt.Sprintf("\n  %s%-*s %s%s", dim, width, "looked in", shortDirs(dirs), reset)
+}
+
+// sourceDir is which of the searched directories a skill came from, which is
+// more use than its own folder: the question being asked is "why is mine not
+// here", and the answer is always about the root, never the leaf.
+func sourceDir(path string, dirs []string) string {
+	for _, dir := range dirs {
+		if strings.HasPrefix(path, dir+string(filepath.Separator)) {
+			return dir
+		}
+	}
+	return filepath.Dir(path)
+}
+
+// shortPath puts the home directory back as ~. An absolute path to a personal
+// skill is half the width of the terminal and says nothing the ~ does not.
+func shortPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || !strings.HasPrefix(path, home) {
+		return path
+	}
+	return "~" + strings.TrimPrefix(path, home)
+}
+
+func shortDirs(dirs []string) string {
+	out := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		out = append(out, shortPath(dir))
+	}
+	return strings.Join(out, ", ")
 }
 
 // matches returns the commands whose name starts with the input. The menu

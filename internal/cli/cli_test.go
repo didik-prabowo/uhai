@@ -1482,9 +1482,12 @@ func TestSkillsReportSaysWhatWasFoundAndWhere(t *testing.T) {
 	write(filepath.Join(dir, ".uhai", "skills", "sunyi", "SKILL.md"), "# tanpa frontmatter\n")
 
 	got := skillsReport()
+	// The directory a skill came from, not its own path: the question being
+	// asked is "why is mine not listed", and that is always about the root.
 	for _, want := range []string{
-		"rilis", "Langkah merilis versi baru", ".uhai/skills/rilis/SKILL.md",
-		"review", "Checklist sebelum merge", ".claude/skills/review/SKILL.md",
+		"rilis", "Langkah merilis versi baru", ".uhai/skills",
+		"review", "Checklist sebelum merge", ".claude/skills",
+		"looked in",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the report must carry %q:\n%s", want, got)
@@ -1499,6 +1502,17 @@ func TestSkillsReportSaysWhatWasFoundAndWhere(t *testing.T) {
 	// any more than they are in the prompt.
 	if strings.Contains(got, "badan yang panjang") {
 		t.Errorf("a skill's body must not be printed:\n%s", got)
+	}
+
+	// One row each. Two lines per skill is how a list of ten stops being a
+	// list you can read.
+	if lines := strings.Count(got, "\n") + 1; lines != 4 {
+		t.Errorf("three skills and the looked-in row make four lines, got %d:\n%s", lines, got)
+	}
+	// A personal skill's absolute path is half the terminal and says nothing
+	// the ~ does not.
+	if strings.Contains(got, dir) {
+		t.Errorf("the home directory must read as ~:\n%s", got)
 	}
 }
 
