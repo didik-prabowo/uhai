@@ -330,3 +330,24 @@ func RunAttached() error {
 	cli.Run(a, err)
 	return nil
 }
+
+// StopDaemon stops the running daemon. It is a person's decision rather than
+// something a front end does after an upgrade: one daemon serves every project
+// now, so stopping it ends background work everywhere, not only here.
+func StopDaemon() error {
+	socket, err := daemon.SocketHere()
+	if err != nil {
+		return err
+	}
+	c, ok := daemon.Running(socket)
+	if !ok {
+		// Might be a version it cannot talk to, which is exactly when someone
+		// reaches for this. Shutdown does not care what version answers.
+		c = daemon.Dial(socket)
+	}
+	if err := c.Shutdown(context.Background()); err != nil {
+		return fmt.Errorf("no daemon stopped: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "uhai: daemon stopped")
+	return nil
+}

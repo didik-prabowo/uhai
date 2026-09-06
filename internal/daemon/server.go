@@ -148,6 +148,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/questions/{id}", s.handleAnswer)
 	mux.HandleFunc("POST /v1/prompt", s.handlePrompt)
 	mux.HandleFunc("POST /v1/prompt/stop", s.handleStopTurn)
+	mux.HandleFunc("POST /v1/shutdown", s.handleShutdown)
 	return mux
 }
 
@@ -195,7 +196,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	holds := ws.prompt != nil
-	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid(), "conversation": holds})
+	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid(), "conversation": holds, "proto": ProtoVersion})
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -278,4 +279,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// handleShutdown stops the daemon. It answers first and closes after, so the
+// caller is told rather than seeing its connection cut and having to guess
+// whether it worked.
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{"stopping": true, "pid": os.Getpid()})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond) // let the answer leave
+		s.Close()
+	}()
 }

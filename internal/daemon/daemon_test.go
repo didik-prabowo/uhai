@@ -2,8 +2,12 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -995,5 +999,60 @@ func TestWatchingANonexistentDaemonFailsAtOnce(t *testing.T) {
 	c := DialFor(filepath.Join(dir, "tidak-ada.sock"), dir)
 	if _, err := c.Events(context.Background()); err == nil {
 		t.Error("watching nothing must be an error, not a wait")
+	}
+}
+
+// A daemon outlives the terminal that started it, which is the point of having
+// one — so after `go install` a week-old daemon is still holding the socket and
+// the new binary talks to it. Without a version that meets as a confusing
+// failure somewhere downstream instead of a sentence at the door.
+func TestAnOlderDaemonIsNamedRatherThanTalkedTo(t *testing.T) {
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+
+	// The daemon of the day: same build, so it answers.
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatalf("a matching daemon must answer: %v", err)
+	}
+
+	// And one from before versions existed, which reports none at all.
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"ok":true,"pid":1,"conversation":true}`)
+	}))
+	defer old.Close()
+
+	stale := &Client{root: dir, http: old.Client()}
+	stale.base = old.URL
+	_, err := stale.Health(context.Background())
+	var wrong ErrWrongVersion
+	if !errors.As(err, &wrong) {
+		t.Fatalf("an unversioned daemon must be named as the wrong version, got %v", err)
+	}
+	if wrong.Daemon != 0 || wrong.Mine != ProtoVersion {
+		t.Errorf("the error has to carry both versions, got %+v", wrong)
+	}
+	// And say what to do about it, because the fix is not obvious.
+	if !strings.Contains(err.Error(), "-daemon-stop") {
+		t.Errorf("the message has to say how to fix it, got %q", err)
+	}
+}
+
+// Stopping is a person's decision: one daemon serves every project now, so it
+// ends background work everywhere.
+func TestShutdownStopsTheDaemon(t *testing.T) {
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+
+	if err := c.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := c.Health(context.Background()); err != nil {
+			return // gone
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the daemon was asked to stop and did not")
+		}
 	}
 }

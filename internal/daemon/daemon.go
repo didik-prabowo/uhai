@@ -30,6 +30,19 @@ import (
 // socketPerm is why the socket is not in /tmp. Anything that can open it can
 // ask the agent to run a command, so it is 0600 in the user's own directory
 // and never world-readable: a socket that grants a shell is a credential.
+// ProtoVersion is what this build speaks over the socket. Bump it whenever a
+// change would make an older front end misread a newer daemon, or the other
+// way round — a new event kind an old client ignores is not that, a changed
+// meaning for an existing one is.
+//
+// It exists because a daemon outlives the terminal that started it, which is
+// the whole point of having one: after `go install`, a week-old daemon is
+// still holding the socket and the new binary talks to it. Without a version
+// that meets as a confusing failure somewhere downstream instead of a sentence
+// at the door. zero sends a CtrlHello frame carrying one; crush serves
+// /v1/version; this rides along on health, which every client already calls.
+const ProtoVersion = 1
+
 const socketPerm fs.FileMode = 0o600
 
 // SocketPath is where the daemon listens: one per user, serving every project

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,6 +33,16 @@ const envSpawned = "UHAI_DAEMON_SPAWNED"
 func Ensure(ctx context.Context, socket string) (*Client, error) {
 	if c, ok := Running(socket); ok {
 		return c, nil
+	}
+	// A daemon that is there but speaks another version is not a daemon to
+	// replace: it still holds the socket, so a second one could not bind, and
+	// it may be holding another project's work. Say which it is and stop.
+	probe := Dial(socket)
+	if _, err := probe.status(ctx); err != nil {
+		var wrong ErrWrongVersion
+		if errors.As(err, &wrong) {
+			return nil, wrong
+		}
 	}
 	// A binary that does not understand -daemon runs its front end again,
 	// which calls Ensure, which starts another — a chain with no end. Seen

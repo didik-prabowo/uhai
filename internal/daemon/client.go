@@ -24,6 +24,10 @@ const dialHost = "http://uhai.local"
 type Client struct {
 	http *http.Client
 
+	// base is the URL requests are addressed to. Only a test sets it: over a
+	// unix socket the host is a fiction the dialer ignores.
+	base string
+
 	// root is the project every request from this client is about. Held on
 	// the client rather than passed to each call: a caller that had to
 	// remember it on every call is a caller that will forget once, and
@@ -69,15 +73,39 @@ type health struct {
 	OK           bool `json:"ok"`
 	PID          int  `json:"pid"`
 	Conversation bool `json:"conversation"`
+	Proto        int  `json:"proto"`
+}
+
+// ErrWrongVersion is a daemon this build cannot talk to. It is worth telling
+// apart from "no daemon": one means start one, the other means the one that is
+// there has to go first, and a front end that confused them would start a
+// second daemon that could not bind the socket.
+type ErrWrongVersion struct{ Daemon, Mine int }
+
+func (e ErrWrongVersion) Error() string {
+	return fmt.Sprintf("the running daemon speaks version %d and this build speaks %d — "+
+		"stop it with `uhai -daemon-stop` and it will start again on the next use",
+		e.Daemon, e.Mine)
 }
 
 func (c *Client) status(ctx context.Context) (health, error) {
 	var out health
-	return out, c.get(ctx, "/v1/health", &out)
+	if err := c.get(ctx, "/v1/health", &out); err != nil {
+		return out, err
+	}
+	// Checked here rather than at each call site, so no route can be added
+	// that forgets: health is the first thing every client asks.
+	//
+	// A daemon too old to report a version at all answers 0, which is a
+	// mismatch and reads as one.
+	if out.Proto != ProtoVersion {
+		return out, ErrWrongVersion{Daemon: out.Proto, Mine: ProtoVersion}
+	}
+	return out, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, into any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dialHost+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.host()+path, nil)
 	if err != nil {
 		return err
 	}
@@ -167,7 +195,7 @@ const (
 )
 
 func (c *Client) openEvents(ctx context.Context) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dialHost+"/v1/events", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.host()+"/v1/events", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +264,7 @@ func (c *Client) post(ctx context.Context, path string, body, into any) error {
 		}
 		payload = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dialHost+path, payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.host()+path, payload)
 	if err != nil {
 		return err
 	}
@@ -305,4 +333,18 @@ func (c *Client) Prompt(ctx context.Context, text string) error {
 // press it when nothing is running.
 func (c *Client) StopTurn(ctx context.Context) error {
 	return c.post(ctx, "/v1/prompt/stop", nil, &struct{}{})
+}
+
+// Shutdown asks the daemon to stop. Separate from anything automatic: it takes
+// every project's running work down with it, so it is a thing a person does
+// rather than something a front end decides on their behalf after an upgrade.
+func (c *Client) Shutdown(ctx context.Context) error {
+	return c.post(ctx, "/v1/shutdown", nil, &struct{}{})
+}
+
+func (c *Client) host() string {
+	if c.base != "" {
+		return c.base
+	}
+	return dialHost
 }

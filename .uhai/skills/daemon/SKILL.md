@@ -119,6 +119,28 @@ crush routes the same thing through `/v1/workspaces/{id}/...` and registers
 workspaces up front; here a project is remembered the first time it speaks, so
 a machine with ten checkouts pays for the ones actually used.
 
+## Versions
+
+A daemon outlives the terminal that started it — that is the point of having
+one — so after `go install` a week-old daemon is still holding the socket and
+the new binary talks to it. `ProtoVersion` rides on `/v1/health`, which every
+client calls first, so the check sits in one place and no route can be added
+that forgets it.
+
+A mismatch is `ErrWrongVersion`, told apart from "no daemon" deliberately: one
+means start one, the other means the one that is there has to go first, and a
+front end that confused them would start a second daemon that could not bind
+the socket. A daemon too old to report a version at all answers 0, which is a
+mismatch and reads as one.
+
+`uhai -daemon-stop` is the fix, and it is a person's command rather than
+something a front end does after an upgrade: one daemon serves every project,
+so stopping it ends background work everywhere.
+
+Bump `ProtoVersion` when a change would make an older front end misread a newer
+daemon or the reverse. A new event kind an old client ignores is not that; a
+changed meaning for an existing one is.
+
 ## When the daemon goes away
 
 The event stream reconnects, with a backoff from 100ms to five seconds. A
