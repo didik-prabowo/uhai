@@ -15,6 +15,7 @@
 package daemon
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -31,16 +32,37 @@ import (
 // and never world-readable: a socket that grants a shell is a credential.
 const socketPerm fs.FileMode = 0o600
 
-// SocketPath is where the daemon listens. One per user rather than one per
-// project: the process holds sessions and tasks, which are already per-user,
-// and a socket per working directory would leave one behind in every folder
-// uhai was ever run in.
-func SocketPath() (string, error) {
+// SocketPath is where the daemon for one project listens.
+//
+// Per project, not per user. A daemon builds its agent from the directory it
+// was started in — AGENTS.md, the tools' idea of where the tree begins, the
+// project's own permission lists — so one daemon shared across projects
+// answers with the wrong project's instructions and says nothing about it. A
+// task started in project B came back "PROYEK A."; that is the failure this
+// path prevents, and it is silent, which is the worst kind.
+//
+// crush solves the same problem with workspaces inside one daemon. A socket
+// per project is the smaller answer: no routing, no ids, no shared process
+// holding two conversations that must not see each other.
+func SocketPath(root string) (string, error) {
 	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "daemon.sock"), nil
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	// Symlinks resolved, so /tmp and /private/tmp are one project rather than
+	// two daemons that cannot see each other's work.
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	// Hashed rather than spelled out: a path has slashes and spaces in it, and
+	// a socket address is a filename with a hard length limit — 104 bytes on
+	// this platform, which a real project path can pass on its own.
+	sum := sha256.Sum256([]byte(abs))
+	return filepath.Join(dir, fmt.Sprintf("daemon-%x.sock", sum[:6])), nil
 }
 
 // removeStale clears a socket left behind by a daemon that did not shut down,
@@ -70,3 +92,14 @@ func removeStale(path string) error {
 // Generous for a connect to something on the same machine, which either
 // answers at once or is not there.
 const dialProbe = 250 * time.Millisecond
+
+// SocketHere is the daemon for the project the caller is working in. Every
+// front end wants this one; SocketPath takes a root only so a test can name a
+// different project without changing directory.
+func SocketHere() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return SocketPath(cwd)
+}

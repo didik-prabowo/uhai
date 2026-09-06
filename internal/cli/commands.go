@@ -609,7 +609,7 @@ func RecordUsage(a *agent.Agent, u provider.Usage) {
 // It never starts one. Reading a task list is not a reason to leave a process
 // behind on a machine that had none.
 func daemonClient() (*daemon.Client, bool) {
-	socket, err := daemon.SocketPath()
+	socket, err := daemon.SocketHere()
 	if err != nil {
 		return nil, false
 	}
@@ -623,7 +623,7 @@ func daemonClient() (*daemon.Client, bool) {
 // A nil client with a nil error means there is no daemon and no complaint —
 // nothing to report, run it locally.
 func daemonFor() (*daemon.Client, error) {
-	socket, err := daemon.SocketPath()
+	socket, err := daemon.SocketHere()
 	if err != nil {
 		return nil, err
 	}

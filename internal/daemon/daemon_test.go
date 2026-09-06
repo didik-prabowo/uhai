@@ -651,3 +651,68 @@ func TestEscapeReleasesAQuestionWaitingForAnAnswer(t *testing.T) {
 		t.Fatal("the question was left waiting after its turn was abandoned")
 	}
 }
+
+// A daemon builds its agent from the directory it was started in — AGENTS.md,
+// where the tools think the tree begins, the project's permission lists — so
+// one daemon shared across projects answers with the wrong project's
+// instructions and says nothing. Measured before this existed: a task started
+// in project B came back "PROYEK A."
+func TestEachProjectGetsItsOwnDaemon(t *testing.T) {
+	home, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(home)
+	t.Setenv("HOME", home)
+
+	a, err := SocketPath(filepath.Join(home, "proyek-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := SocketPath(filepath.Join(home, "proyek-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Fatalf("two projects share one daemon: %s", a)
+	}
+
+	// Stable, or a front end would lose track of its own daemon between runs.
+	again, _ := SocketPath(filepath.Join(home, "proyek-a"))
+	if again != a {
+		t.Errorf("the same project got two sockets: %s then %s", a, again)
+	}
+
+	// Short enough to be a socket address. A unix path is capped at about 104
+	// bytes, which a real project path passes on its own — which is why it is
+	// hashed rather than spelled out.
+	if len(a) > 100 {
+		t.Errorf("socket path is %d bytes, too long to bind: %s", len(a), a)
+	}
+}
+
+// The same project reached by a symlink is the same project: /tmp and
+// /private/tmp must not be two daemons that cannot see each other's work.
+func TestASymlinkedProjectIsTheSameProject(t *testing.T) {
+	home, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(home)
+	t.Setenv("HOME", home)
+
+	real := filepath.Join(home, "proyek")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "pintasan")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+
+	direct, _ := SocketPath(real)
+	viaLink, _ := SocketPath(link)
+	if direct != viaLink {
+		t.Errorf("a symlink made a second daemon:\n  %s\n  %s", direct, viaLink)
+	}
+}

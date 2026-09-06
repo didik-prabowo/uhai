@@ -5,7 +5,8 @@ description: The agent as a process the terminal can outlive — the socket, the
 
 # Daemon
 
-`uhai -daemon` runs a process that listens on `~/.uhai/daemon.sock`. It exists
+`uhai -daemon` runs a process that listens on `~/.uhai/daemon-<hash>.sock`,
+one socket per project. It exists
 for one thing that can be seen today: `/bg` starts a goroutine in the front
 end's own process, so closing the tab kills the task mid-flight and loses its
 report. Every other reason a daemon is usually built — an editor client, LSP,
@@ -64,6 +65,25 @@ Both registries number from `t1`, so a task the daemon holds is shown as `d1`
 and `/stop d1` routes there. Without the prefix, `/stop t1` is ambiguous the
 moment a session has one of each — which happens as soon as the model calls
 spawn_task while a daemon is running.
+
+## One daemon per project
+
+A daemon builds its agent from the directory it was started in: `AGENTS.md`,
+where the tools think the tree begins, the project's own permission lists. One
+daemon shared across projects therefore answers with the wrong project's
+instructions and says nothing about it — measured before the socket was split,
+a task started in project B came back "PROYEK A."
+
+So the socket carries a hash of the project's absolute path. Hashed because a
+unix socket address is a filename with a hard length cap — about 104 bytes,
+which a real project path passes on its own. Symlinks are resolved first, so
+`/tmp` and `/private/tmp` are one project rather than two daemons that cannot
+see each other's work.
+
+crush solves the same problem with workspaces inside one daemon, routing every
+request through `/v1/workspaces/{id}/...`. A socket per project is the smaller
+answer: no routing, no ids, and no single process holding two conversations
+that must never see each other.
 
 ## Attaching
 

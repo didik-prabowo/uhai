@@ -25,7 +25,7 @@ var attached *daemon.Client
 // an error rather than a fallback: someone who asked to attach and got a local
 // conversation instead would not know which one they were in.
 func Attach(ctx context.Context) error {
-	socket, err := daemon.SocketPath()
+	socket, err := daemon.SocketHere()
 	if err != nil {
 		return err
 	}

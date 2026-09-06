@@ -175,7 +175,7 @@ func newAgent() (*agent.Agent, error) {
 // It owns nothing yet but the socket. Moving the agent behind it is the next
 // step and a larger one — this is the transport, proved on its own.
 func RunDaemon() error {
-	socket, err := daemon.SocketPath()
+	socket, err := daemon.SocketHere()
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,8 @@ func RunDaemon() error {
 	if err := srv.Listen(socket); err != nil {
 		return fmt.Errorf("could not listen on %s: %w", socket, err)
 	}
-	fmt.Fprintln(os.Stderr, "uhai: daemon listening on", socket)
+	here, _ := os.Getwd()
+	fmt.Fprintln(os.Stderr, "uhai: daemon for", here, "listening on", socket)
 
 	// The socket is a file. A daemon killed without clearing it leaves the
 	// next one to do it, which works, but only because removeStale exists —
