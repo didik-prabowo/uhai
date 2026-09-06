@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -51,8 +50,7 @@ func Ensure(ctx context.Context, socket string) (*Client, error) {
 		return nil, fmt.Errorf("could not find uhai to start a daemon: %w", err)
 	}
 
-	log, err := os.OpenFile(filepath.Join(filepath.Dir(socket), "daemon.log"),
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	log, err := os.OpenFile(LogPath(socket), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +76,7 @@ func Ensure(ctx context.Context, socket string) (*Client, error) {
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("a daemon was started but did not answer within %s — see %s",
-				startWait, filepath.Join(filepath.Dir(socket), "daemon.log"))
+				startWait, LogPath(socket))
 		}
 		select {
 		case <-ctx.Done():

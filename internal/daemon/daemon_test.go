@@ -716,3 +716,28 @@ func TestASymlinkedProjectIsTheSameProject(t *testing.T) {
 		t.Errorf("a symlink made a second daemon:\n  %s\n  %s", direct, viaLink)
 	}
 }
+
+// Daemons are per project, so their logs are too: one shared file interleaves
+// two of them into something nobody can read at the moment they need to.
+func TestEachDaemonWritesItsOwnLog(t *testing.T) {
+	home, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(home)
+	t.Setenv("HOME", home)
+
+	a, _ := SocketPath(filepath.Join(home, "proyek-a"))
+	b, _ := SocketPath(filepath.Join(home, "proyek-b"))
+	if LogPath(a) == LogPath(b) {
+		t.Fatalf("two projects share one log: %s", LogPath(a))
+	}
+	// Named after its own socket, so the pair can be found together by
+	// someone reading the directory.
+	if LogPath(a) != strings.TrimSuffix(a, ".sock")+".log" {
+		t.Errorf("the log does not match its socket: %s beside %s", LogPath(a), a)
+	}
+	if strings.HasSuffix(LogPath(a), ".sock") {
+		t.Errorf("the log is still named like a socket: %s", LogPath(a))
+	}
+}

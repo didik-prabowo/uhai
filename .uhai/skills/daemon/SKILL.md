@@ -80,6 +80,10 @@ which a real project path passes on its own. Symlinks are resolved first, so
 `/tmp` and `/private/tmp` are one project rather than two daemons that cannot
 see each other's work.
 
+The log sits beside its socket — `daemon-<hash>.log` next to
+`daemon-<hash>.sock` — for the same reason: one shared file interleaves two
+projects' daemons into something nobody can read at the moment they need to.
+
 crush solves the same problem with workspaces inside one daemon, routing every
 request through `/v1/workspaces/{id}/...`. A socket per project is the smaller
 answer: no routing, no ids, and no single process holding two conversations

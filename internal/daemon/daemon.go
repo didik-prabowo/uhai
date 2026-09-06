@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/config"
@@ -102,4 +103,12 @@ func SocketHere() (string, error) {
 		return "", err
 	}
 	return SocketPath(cwd)
+}
+
+// LogPath is where the daemon on one socket writes. Derived from the socket
+// rather than fixed, so a project's log is its own: daemons are per project
+// now, and one shared file would interleave two of them into something nobody
+// can read at the moment they need to.
+func LogPath(socket string) string {
+	return strings.TrimSuffix(socket, ".sock") + ".log"
 }
