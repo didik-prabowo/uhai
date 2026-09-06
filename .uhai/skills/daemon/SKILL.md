@@ -119,6 +119,25 @@ crush routes the same thing through `/v1/workspaces/{id}/...` and registers
 workspaces up front; here a project is remembered the first time it speaks, so
 a machine with ten checkouts pays for the ones actually used.
 
+## Leaving
+
+A daemon that starts itself has to leave by itself, or a machine collects them
+— which this one already did before there was a daemon at all: four orphaned
+processes turned up from runs days earlier.
+
+It stops after half an hour with nothing to do. Half an hour rather than
+minutes because stopping is not free: the conversation each project holds lives
+in that process, and a daemon that exits takes it with it. The turns are on
+disk — every one is saved — but a daemon started again does not read them back,
+so an attached terminal after an idle exit begins a fresh conversation.
+
+Nothing that would be lost is: a task running or queued holds it open, a turn
+in flight holds it open, and so does a terminal sitting at an idle prompt.
+Watching counts on purpose. A terminal that has said nothing for an hour is
+still the reason the daemon exists, and pulling the socket from under it would
+leave it drawing a session connected to nothing — the failure the reconnect was
+written for, and not one to cause deliberately.
+
 ## Versions
 
 A daemon outlives the terminal that started it — that is the point of having

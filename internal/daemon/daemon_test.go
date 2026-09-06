@@ -1056,3 +1056,67 @@ func TestShutdownStopsTheDaemon(t *testing.T) {
 		}
 	}
 }
+
+// A daemon that starts itself has to leave by itself, or a machine collects
+// them — which this one already did: four orphaned processes turned up from
+// runs days earlier, before there was a daemon at all.
+func TestAnIdleDaemonStops(t *testing.T) {
+	s, _ := serve(t, nil, nil)
+
+	gone := make(chan struct{})
+	go s.ReapWhenIdle(80*time.Millisecond, func() { close(gone) })
+
+	select {
+	case <-gone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("an idle daemon stayed running")
+	}
+}
+
+// Nothing that would be lost is lost. A task still running holds it open, and
+// so does a terminal sitting at an idle prompt: pulling the socket from under
+// one would leave it drawing a session connected to nothing.
+func TestABusyDaemonStaysUp(t *testing.T) {
+	release := make(chan struct{})
+	s, dir := serve(t, nil, func(root string) (Runner, Runner, error) {
+		return func(ctx context.Context, prompt string) (string, int, error) {
+			<-release
+			return "", 0, nil
+		}, nil, nil
+	})
+	c := s.clientFor(t, dir, "proyek")
+
+	if _, err := c.StartTask(context.Background(), "kerja panjang"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.busy() {
+		t.Fatal("a running task has to hold the daemon open")
+	}
+
+	gone := make(chan struct{})
+	go s.ReapWhenIdle(50*time.Millisecond, func() { close(gone) })
+	select {
+	case <-gone:
+		t.Fatal("the daemon stopped with a task still running")
+	case <-time.After(400 * time.Millisecond):
+	}
+
+	// A watcher holds it open too, even with nothing running.
+	close(release)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := c.Events(ctx); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !s.busy() {
+		if time.Now().After(deadline) {
+			t.Fatal("a watching terminal has to hold the daemon open")
+		}
+	}
+	select {
+	case <-gone:
+		t.Fatal("the daemon stopped with a terminal attached")
+	case <-time.After(300 * time.Millisecond):
+	}
+}

@@ -304,6 +304,14 @@ func RunDaemon() error {
 		os.Remove(socket)
 	}()
 
+	// A daemon that starts itself has to leave by itself, or a machine
+	// collects them. Nothing running, nothing queued, nobody watching, for
+	// long enough — and it goes, taking the socket with it.
+	go srv.ReapWhenIdle(0, func() {
+		fmt.Fprintln(os.Stderr, "uhai: nothing to do for a while, stopping")
+		os.Remove(socket)
+	})
+
 	return srv.Serve()
 }
 
