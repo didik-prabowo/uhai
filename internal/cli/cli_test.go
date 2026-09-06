@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/didik-prabowo/uhai/internal/daemon"
 	"github.com/didik-prabowo/uhai/internal/session/filestore"
 	"os"
 	"path/filepath"
@@ -2012,5 +2013,40 @@ func TestSpendIsPricedPerModel(t *testing.T) {
 	got := spentReport(nil)
 	if !strings.Contains(got, "$3.00") {
 		t.Errorf("want only the paid share billed, got %q", got)
+	}
+}
+
+// Attached, the answer arrives over a socket instead of through a Go closure,
+// and everything downstream has to be unable to tell. A terminal is not
+// something these tests can drive, so the translation is checked where it can
+// be: as a function.
+func TestDaemonEventsBecomeTheSameMessages(t *testing.T) {
+	if got := daemonMsg(daemon.Event{Kind: daemon.EventDelta, Text: "ha"}); got != tea.Msg(teaDeltaMsg("ha")) {
+		t.Errorf("a delta must arrive as a delta, got %#v", got)
+	}
+	if got := daemonMsg(daemon.Event{Kind: daemon.EventText, Text: "halo"}); got != tea.Msg(teaTextMsg("halo")) {
+		t.Errorf("text must arrive as text, got %#v", got)
+	}
+	if got := daemonMsg(daemon.Event{Kind: daemon.EventReasoning, Text: "hm"}); got != tea.Msg(teaThinkMsg("hm")) {
+		t.Errorf("reasoning is not the answer and must stay apart, got %#v", got)
+	}
+
+	usage := daemonMsg(daemon.Event{Kind: daemon.EventUsage, Usage: &daemon.Usage{Input: 12, Output: 3, CacheRead: 900}})
+	want := teaUsageMsg(provider.Usage{Input: 12, Output: 3, CacheRead: 900})
+	if usage != tea.Msg(want) {
+		t.Errorf("usage lost something on the wire: %#v", usage)
+	}
+
+	// A usage event with nothing in it is not a usage of zero: it would reset
+	// the cost row to nothing halfway through a turn.
+	if got := daemonMsg(daemon.Event{Kind: daemon.EventUsage}); got != nil {
+		t.Errorf("an empty usage event has nothing to say, got %#v", got)
+	}
+	// The turn's own bookkeeping is not drawn: the POST returning is what ends
+	// a turn here.
+	for _, kind := range []string{daemon.EventDone, daemon.EventTaskDone, "something-new"} {
+		if got := daemonMsg(daemon.Event{Kind: kind}); got != nil {
+			t.Errorf("%s should not be drawn, got %#v", kind, got)
+		}
 	}
 }

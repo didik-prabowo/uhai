@@ -76,6 +76,11 @@ type teaModel struct {
 	// cancel stops the turn in flight; nil when nothing is running.
 	cancel context.CancelFunc
 
+	// program is how anything outside Update sends a message in. The agent's
+	// callbacks close over it already; attached mode needs the same door for
+	// events arriving from the socket.
+	program *tea.Program
+
 	// wheel is whether the app has asked for mouse reports. It has to ask for
 	// the wheel to reach it at all, and that is the same thing that stops a
 	// plain drag selecting text — which the terminals hand back when shift is
@@ -344,16 +349,14 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recall(msg.String() == "pgup" || msg.String() == "ctrl+p")
 			return m, nil
 		case "esc":
-			if m.busy && m.cancel != nil {
-				m.cancel()
+			if m.busy {
+				m.stopTurn()
 			}
 		case "ctrl+c", "ctrl+d":
 			if !m.busy {
 				return m, tea.Quit
 			}
-			if m.cancel != nil {
-				m.cancel()
-			}
+			m.stopTurn()
 		case "enter":
 			if !m.busy {
 				return m, m.submit()
@@ -538,6 +541,13 @@ func runTea(a *agent.Agent, startupErr error) error {
 		fmt.Fprint(os.Stdout, "\x1b[?1007l")
 	}()
 
+	m.program = p
+	// Attached: the answer comes from the socket rather than from an agent in
+	// this process, and the pump turns it into the same messages.
+	if attached != nil {
+		go m.pumpDaemon(context.Background())
+	}
+
 	a.OnText = func(text string) { p.Send(teaTextMsg(text)) }
 	a.OnToolCall = func(name, input string) { p.Send(teaToolMsg(toolLine(name, input))) }
 	a.OnUsage = func(u provider.Usage) { p.Send(teaUsageMsg(u)) }
@@ -566,4 +576,16 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// stopTurn is Escape. Attached, the turn belongs to the daemon and cancelling
+// a context here would stop nothing: this process is watching, not running it.
+func (m *teaModel) stopTurn() {
+	if attached != nil {
+		go attached.StopTurn(context.Background()) //nolint:errcheck // pressing it twice is not a mistake
+		return
+	}
+	if m.cancel != nil {
+		m.cancel()
+	}
 }

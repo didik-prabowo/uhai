@@ -21,7 +21,11 @@ which is the quickest way to catch having forgotten.
 
 It opens without a provider, so the first thing to type is `/connect`, which
 asks for a key and remembers it in `~/.uhai/auth.json`. `/disconnect` forgets one
-again. If an API key is
+again.
+
+`uhai -attach` talks to a conversation running in a background daemon rather
+than starting one in the terminal, so the work survives the window closing.
+`/bg` starts that daemon on its own. If an API key is
 already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
 used as it is, and there is nothing to connect.

@@ -275,3 +275,27 @@ func RunDaemon() error {
 
 	return srv.Serve()
 }
+
+// RunAttached opens the terminal on the conversation the daemon holds, rather
+// than starting one here. A daemon is started if there is none.
+//
+// A mode rather than a default, because the two conversations are separate:
+// the daemon built its agent from config when it started, so /model and
+// /connect in an attached terminal would change this process and not the one
+// answering. Making the choice explicit is the difference between a user who
+// knows which conversation they are in and one who cannot tell.
+func RunAttached() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := cli.Attach(ctx); err != nil {
+		return err
+	}
+	// The local agent is still built: it holds the tools list, the model name
+	// for the status row, and everything a slash command reads. It just never
+	// answers a prompt.
+	a, err := newAgent()
+	cli.UseStore(store)
+	cli.Run(a, err)
+	return nil
+}

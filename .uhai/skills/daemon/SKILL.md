@@ -29,8 +29,7 @@ screen asks a human whether to write a file.
 conversation the daemon holds; what the answer looked like on the way is on the
 event stream, so a front end subscribes first, posts second, and draws as it
 goes — which is what it already did when the agent was a function call in its
-own process. The TUI still runs its own agent: wiring it across is the last
-step, and the one this repository cannot test itself.
+own process. `uhai -attach` opens a terminal on it.
 
 One turn at a time, under a mutex. A conversation is a single history, and two
 turns writing to it at once interleave into something neither caller asked for.
@@ -65,6 +64,28 @@ Both registries number from `t1`, so a task the daemon holds is shown as `d1`
 and `/stop d1` routes there. Without the prefix, `/stop t1` is ambiguous the
 moment a session has one of each — which happens as soon as the model calls
 spawn_task while a daemon is running.
+
+## Attaching
+
+`uhai -attach` draws the daemon's conversation instead of starting one here.
+A mode, not a silent upgrade, because the two conversations are separate: the
+daemon built its agent from config when it started, so `/model` and `/connect`
+in an attached terminal would change this process and not the one answering.
+Choosing quietly between them would leave a user unable to say which
+conversation they were in, and a wrong guess costs a turn against the wrong
+model. Attaching to a daemon that holds no conversation is an error rather than
+a fallback, for the same reason.
+
+`daemonMsg` turns each event into the message the agent's own callback would
+have produced, so the screen, the spinner and the cost row cannot tell which
+side of the socket the answer came from. It is a function of its own because a
+terminal is not something this repository's tests can drive — the translation
+is the part that can be checked, and it is.
+
+A question is the one event that is not a translation: it needs a reply channel
+and a POST back, so it goes through the same confirmation the local agent uses
+and the answer is posted in a goroutine. The pump has to keep draining, or a
+second question would wait behind a human.
 
 ## Starting it
 

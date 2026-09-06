@@ -40,14 +40,26 @@ func Dial(socket string) *Client {
 
 // Health reports the daemon's pid, and an error when there is no daemon.
 func (c *Client) Health(ctx context.Context) (int, error) {
-	var out struct {
-		OK  bool `json:"ok"`
-		PID int  `json:"pid"`
-	}
-	if err := c.get(ctx, "/v1/health", &out); err != nil {
-		return 0, err
-	}
-	return out.PID, nil
+	h, err := c.status(ctx)
+	return h.PID, err
+}
+
+// HoldsConversation reports whether this daemon can run a turn. One started
+// without a provider cannot, and says so rather than failing at the prompt.
+func (c *Client) HoldsConversation(ctx context.Context) bool {
+	h, err := c.status(ctx)
+	return err == nil && h.Conversation
+}
+
+type health struct {
+	OK           bool `json:"ok"`
+	PID          int  `json:"pid"`
+	Conversation bool `json:"conversation"`
+}
+
+func (c *Client) status(ctx context.Context) (health, error) {
+	var out health
+	return out, c.get(ctx, "/v1/health", &out)
 }
 
 func (c *Client) get(ctx context.Context, path string, into any) error {

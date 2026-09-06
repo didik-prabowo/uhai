@@ -213,7 +213,15 @@ func (s *Server) watch() (<-chan Event, func()) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid()})
+	// Whether it holds a conversation, not only whether it is alive: a daemon
+	// started without a provider serves sessions and events and nothing else,
+	// and a front end deciding where to send a prompt needs to know which it
+	// is before it sends one.
+	writeJSON(w, map[string]any{
+		"ok":           true,
+		"pid":          os.Getpid(),
+		"conversation": s.Prompt != nil,
+	})
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {

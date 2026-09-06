@@ -95,9 +95,9 @@ against servers we wrote ourselves.
       DuckDuckGo does not answer this machine at all and Mojeek returns a
       captcha. A real one needs a key (Brave, Tavily, Serper) or a
       self-hosted SearXNG, which is a decision about dependencies.
-- [ ] Point the TUI at the daemon's conversation. The daemon holds one and
-      runs turns on it — proved across processes, history and all — but the
-      TUI still runs its own agent, so nothing uses it yet.
+- [ ] Let an attached terminal change the model. /model and /connect reach
+      this process, not the daemon's agent, so an attached session cannot
+      switch models — which is why attaching is a mode rather than a default.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 

@@ -113,6 +113,9 @@ func (m *teaModel) submit() tea.Cmd {
 	m.streamed = 0
 	return tea.Batch(m.spinner.Tick, func() tea.Msg {
 		defer cancel()
+		if attached != nil {
+			return m.askDaemon(ctx, value)
+		}
 		return teaDoneMsg{err: m.agent.Ask(ctx, value)}
 	})
 }
