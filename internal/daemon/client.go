@@ -2,12 +2,15 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // dialHost is a name the daemon never sees. net/http insists on a URL with a
@@ -106,4 +109,66 @@ func (c *Client) Events(ctx context.Context) (<-chan Event, error) {
 		}
 	}()
 	return out, nil
+}
+
+// StartTask asks the daemon to run a prompt in the background. It returns as
+// soon as the task exists, not when it finishes — the daemon is holding it, so
+// the caller is free to close its terminal.
+func (c *Client) StartTask(ctx context.Context, prompt string) (TaskView, error) {
+	var out TaskView
+	err := c.post(ctx, "/v1/tasks", map[string]string{"prompt": prompt}, &out)
+	return out, err
+}
+
+// Tasks is everything the daemon is holding, finished or not.
+func (c *Client) Tasks(ctx context.Context) ([]TaskView, error) {
+	var out []TaskView
+	return out, c.get(ctx, "/v1/tasks", &out)
+}
+
+// StopTask cancels one, and reports whether there was one to cancel.
+func (c *Client) StopTask(ctx context.Context, id string) error {
+	return c.post(ctx, "/v1/tasks/"+id+"/stop", nil, &struct{}{})
+}
+
+func (c *Client) post(ctx context.Context, path string, body, into any) error {
+	var payload io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		payload = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dialHost+path, payload)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		// The daemon's own words: it says why, and the front end shows it
+		// rather than inventing a sentence about a status code.
+		said, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("%s", strings.TrimSpace(string(said)))
+	}
+	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+// Running reports whether a daemon is there to talk to. Front ends ask before
+// choosing between the daemon and their own process, and a failure here is an
+// answer rather than an error: no daemon is the ordinary case.
+func Running(socket string) (*Client, bool) {
+	c := Dial(socket)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if _, err := c.Health(ctx); err != nil {
+		return nil, false
+	}
+	return c, true
 }

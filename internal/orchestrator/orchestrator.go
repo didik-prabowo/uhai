@@ -188,7 +188,33 @@ func RunDaemon() error {
 		}
 	}
 
-	srv := daemon.NewServer(store)
+	// The daemon builds its own agent from the same config the front end
+	// reads, and hands the sub-agent the read-only rules /bg already used:
+	// nobody is watching to answer a confirmation, so anything that writes or
+	// runs commands is refused and the model is told why. That is exactly why
+	// background work is the first thing worth moving here — it never needed
+	// the permission round trip that the main conversation does.
+	run := func(ctx context.Context, prompt string) (string, int, error) {
+		a, err := newAgent()
+		if err != nil {
+			return "", 0, err
+		}
+		a.Confirm = func(string, string) bool { return false }
+
+		var report string
+		a.OnText = func(text string) { report = text }
+		a.OnNotice = func(string) {}
+		a.OnToolCall = func(string, string) {}
+
+		err = a.Ask(ctx, prompt)
+		return report, a.Tokens(), err
+	}
+	if _, perr := config.LoadProvider(); perr != nil {
+		run = nil // it can still serve sessions and events, and says so
+		fmt.Fprintln(os.Stderr, "uhai: no provider connected, so the daemon cannot run tasks:", perr)
+	}
+
+	srv := daemon.NewServer(store, run)
 	if err := srv.Listen(socket); err != nil {
 		return fmt.Errorf("could not listen on %s: %w", socket, err)
 	}

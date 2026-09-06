@@ -14,6 +14,7 @@ import (
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/config"
+	"github.com/didik-prabowo/uhai/internal/daemon"
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/session"
 	"github.com/didik-prabowo/uhai/internal/session/filestore"
@@ -402,6 +403,16 @@ func spawnBackground(a *agent.Agent, prompt string) error {
 		return errors.New("usage: /bg <what the task should do>")
 	}
 
+	// The daemon first, when there is one. A task started here is a goroutine
+	// in this process: closing the terminal kills it mid-flight and loses the
+	// report, which is the whole reason the daemon exists. When there is no
+	// daemon the old way still works, because requiring one to run a
+	// background task would be a worse trade than losing one on exit.
+	if c, ok := daemonClient(); ok {
+		_, err := c.StartTask(context.Background(), prompt)
+		return err
+	}
+
 	// Read what the task needs before starting it: /connect and /model may
 	// replace the provider while the task is still running.
 	p, system := a.Provider, a.System
@@ -508,6 +519,16 @@ func stopTask(a *agent.Agent, id string) string {
 	if id == "" {
 		return dim + "  usage: /stop t1" + reset
 	}
+	if strings.HasPrefix(id, daemonTaskPrefix) {
+		c, ok := daemonClient()
+		if !ok {
+			return fmt.Sprintf("%s  %s belongs to a daemon that is no longer running%s", dim, id, reset)
+		}
+		if err := c.StopTask(context.Background(), strings.TrimPrefix(id, daemonTaskPrefix)); err != nil {
+			return fmt.Sprintf("%s  nothing to stop: %v%s", dim, err, reset)
+		}
+		return fmt.Sprintf("%s  stopping %s%s", dim, id, reset)
+	}
 	if !a.Tasks.Stop(id) {
 		return fmt.Sprintf("%s  nothing to stop: %s is not running%s", dim, id, reset)
 	}
@@ -517,7 +538,7 @@ func stopTask(a *agent.Agent, id string) string {
 // tasksReport is that listing as text, so a front end that does not print
 // straight to the terminal can show it too.
 func tasksReport(a *agent.Agent, id string) string {
-	list := a.Tasks.Snapshot()
+	list := allTasks(a)
 	if len(list) == 0 {
 		return dim + "  no tasks yet — spawn one with /bg, or let the model do it" + reset
 	}
@@ -575,4 +596,55 @@ func RecordUsage(a *agent.Agent, u provider.Usage) {
 		return
 	}
 	recordUsage(a.Provider.Name(), u)
+}
+
+// daemonClient is the daemon, when one is running. Looked up per call rather
+// than held: a daemon can be started or stopped while the front end is open,
+// and a handle kept from startup would be wrong either way round.
+func daemonClient() (*daemon.Client, bool) {
+	socket, err := daemon.SocketPath()
+	if err != nil {
+		return nil, false
+	}
+	return daemon.Running(socket)
+}
+
+// daemonTaskPrefix marks a task the daemon is holding rather than this
+// process. Both registries number from t1, so without it /stop t1 would be
+// ambiguous the moment a session has one of each — which happens as soon as
+// the model spawns a task while a daemon is running.
+const daemonTaskPrefix = "d"
+
+// allTasks is everything the front end knows about: its own, and whatever the
+// daemon is holding. Both, because a session can have started tasks either
+// way — the model's spawn_task still runs here, and /bg no longer does.
+func allTasks(a *agent.Agent) []task.Task {
+	list := a.Tasks.Snapshot()
+	c, ok := daemonClient()
+	if !ok {
+		return list
+	}
+	views, err := c.Tasks(context.Background())
+	if err != nil {
+		// A daemon that answered a moment ago and cannot now is not worth an
+		// error in the middle of a task list: what is local is still true.
+		return list
+	}
+	for _, v := range views {
+		list = append(list, fromView(v))
+	}
+	return list
+}
+
+// fromView turns a task on the wire back into one the front end can print.
+func fromView(v daemon.TaskView) task.Task {
+	t := task.Task{
+		ID: daemonTaskPrefix + v.ID, Description: v.Description,
+		Status: task.Status(v.Status), Elapsed: v.Elapsed,
+		Tokens: v.Tokens, Report: v.Report, Output: v.Output,
+	}
+	if v.Err != "" {
+		t.Err = errors.New(v.Err)
+	}
+	return t
 }

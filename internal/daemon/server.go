@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/session"
+	"github.com/didik-prabowo/uhai/internal/task"
 )
 
 // Event is one thing the daemon has to tell its front ends. It is deliberately
@@ -36,6 +37,16 @@ const (
 type Server struct {
 	Sessions session.Store
 
+	// Tasks is the work the daemon is holding for its front ends. It lives
+	// here rather than in the front end because that is the whole point: a
+	// task in the front end's process dies when the terminal closes.
+	Tasks *task.Registry
+
+	// Run is what a task does with its prompt, and is nil in a daemon that
+	// started without a provider — it can still serve sessions and events,
+	// and says so when asked to run something.
+	Run Runner
+
 	mu       sync.Mutex
 	watchers map[chan Event]struct{}
 
@@ -45,8 +56,13 @@ type Server struct {
 
 // NewServer builds a daemon. Sessions may be nil in a test that only speaks to
 // the socket.
-func NewServer(store session.Store) *Server {
-	return &Server{Sessions: store, watchers: map[chan Event]struct{}{}}
+func NewServer(store session.Store, run Runner) *Server {
+	return &Server{
+		Sessions: store,
+		Tasks:    &task.Registry{},
+		Run:      run,
+		watchers: map[chan Event]struct{}{},
+	}
 }
 
 // Listen opens the socket. Separate from Serve so a caller — or a test — can
@@ -83,6 +99,9 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("GET /v1/health", s.handleHealth)
 	mux.HandleFunc("GET /v1/sessions", s.handleSessions)
 	mux.HandleFunc("GET /v1/events", s.handleEvents)
+	mux.HandleFunc("POST /v1/tasks", s.handlePostTasks)
+	mux.HandleFunc("GET /v1/tasks", s.handleGetTasks)
+	mux.HandleFunc("POST /v1/tasks/{id}/stop", s.handleStopTask)
 
 	s.http = &http.Server{Handler: mux}
 	err := s.http.Serve(s.listener)

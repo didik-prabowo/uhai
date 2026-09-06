@@ -14,11 +14,27 @@ was started.
 
 ## What is on it, and what is not
 
-The transport, proved on its own: `GET /v1/health`, `GET /v1/sessions`, and
-`GET /v1/events`. **The agent has not moved yet.** The front end still owns it,
-still calls it through Go closures, and does not speak to the daemon at all.
-That is the next step and a larger one; this one is a socket that works and can
-be driven with curl:
+`/bg` is on it. `POST /v1/tasks`, `GET /v1/tasks` and `POST /v1/tasks/{id}/stop`,
+alongside `/v1/health`, `/v1/sessions` and `/v1/events`. A background task now
+runs in the daemon and keeps going after the terminal that asked for it has
+closed.
+
+Background work went first for a reason that is not about size: the `/bg`
+sub-agent already refuses anything needing confirmation, because nobody is
+watching to answer. So it is the one part of the agent that needs no permission
+round trip — the daemon can run it without first solving how a process with no
+screen asks a human whether to write a file.
+
+**The main conversation has not moved.** The front end still owns that agent
+and still calls it through Go closures. Permission is why, and it is a piece of
+work of its own.
+
+Both registries number from `t1`, so a task the daemon holds is shown as `d1`
+and `/stop d1` routes there. Without the prefix, `/stop t1` is ambiguous the
+moment a session has one of each — which happens as soon as the model calls
+spawn_task while a daemon is running.
+
+The socket can be driven with curl:
 
 ```
 curl -s --unix-socket ~/.uhai/daemon.sock http://uhai.local/v1/health
