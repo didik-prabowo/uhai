@@ -15,9 +15,13 @@
 package daemon
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/didik-prabowo/uhai/internal/config"
 )
@@ -39,16 +43,30 @@ func SocketPath() (string, error) {
 	return filepath.Join(dir, "daemon.sock"), nil
 }
 
-// removeStale clears a socket left behind by a daemon that did not shut down.
-// A unix socket is a file: it survives the process, and the next Listen fails
-// on it with "address already in use" even though nothing is listening.
+// removeStale clears a socket left behind by a daemon that did not shut down,
+// and refuses when the socket is live.
 //
-// Not a lock, and not a liveness check — Listen itself is the check. If a live
-// daemon holds the address, the caller's Listen fails and it can say so.
+// The check matters now that front ends start daemons on their own: two of
+// them can reach this at once, and a plain os.Remove would let the loser
+// delete the winner's socket. The winner would go on running, reachable by
+// nobody, while the loser listened on a new file — the worst kind of failure,
+// because both processes believe they succeeded.
+//
+// A live daemon answers a dial. A leftover file does not: the address exists
+// but nothing is accepting, and connect fails immediately.
 func removeStale(path string) error {
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	return err
+	conn, err := net.DialTimeout("unix", path, dialProbe)
+	if err == nil {
+		conn.Close()
+		return fmt.Errorf("a daemon is already listening on %s", path)
+	}
+	return os.Remove(path)
 }
+
+// dialProbe is how long to wait for an answer before calling a socket dead.
+// Generous for a connect to something on the same machine, which either
+// answers at once or is not there.
+const dialProbe = 250 * time.Millisecond

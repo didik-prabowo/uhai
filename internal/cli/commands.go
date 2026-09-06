@@ -408,9 +408,13 @@ func spawnBackground(a *agent.Agent, prompt string) error {
 	// report, which is the whole reason the daemon exists. When there is no
 	// daemon the old way still works, because requiring one to run a
 	// background task would be a worse trade than losing one on exit.
-	if c, ok := daemonClient(); ok {
+	if c, err := daemonFor(); c != nil {
 		_, err := c.StartTask(context.Background(), prompt)
 		return err
+	} else if err != nil {
+		// Said rather than swallowed: a task that quietly went local is one
+		// the user will lose on exit without ever being told why.
+		a.OnNotice("could not use the daemon, running this task here instead: " + err.Error())
 	}
 
 	// Read what the task needs before starting it: /connect and /model may
@@ -598,15 +602,39 @@ func RecordUsage(a *agent.Agent, u provider.Usage) {
 	recordUsage(a.Provider.Name(), u)
 }
 
-// daemonClient is the daemon, when one is running. Looked up per call rather
-// than held: a daemon can be started or stopped while the front end is open,
-// and a handle kept from startup would be wrong either way round.
+// daemonClient is the daemon, when one is already running. Looked up per call
+// rather than held: a daemon can be started or stopped while the front end is
+// open, and a handle kept from startup would be wrong either way round.
+//
+// It never starts one. Reading a task list is not a reason to leave a process
+// behind on a machine that had none.
 func daemonClient() (*daemon.Client, bool) {
 	socket, err := daemon.SocketPath()
 	if err != nil {
 		return nil, false
 	}
 	return daemon.Running(socket)
+}
+
+// daemonFor is the daemon to run a background task in, started if there is
+// none. This is the one call that starts one, because /bg is the one thing
+// that is worse without it: a task here dies with the terminal.
+//
+// A nil client with a nil error means there is no daemon and no complaint —
+// nothing to report, run it locally.
+func daemonFor() (*daemon.Client, error) {
+	socket, err := daemon.SocketPath()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c, err := daemon.Ensure(ctx, socket)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // daemonTaskPrefix marks a task the daemon is holding rather than this

@@ -95,8 +95,6 @@ against servers we wrote ourselves.
       DuckDuckGo does not answer this machine at all and Mojeek returns a
       captcha. A real one needs a key (Brave, Tavily, Serper) or a
       self-hosted SearXNG, which is a decision about dependencies.
-- [ ] Start the daemon when it is needed. It has to be run by hand in
-      another tab today, which nobody will do, so /bg quietly stays local.
 - [ ] Move the main conversation behind the daemon. Background work went
       first because its sub-agent refuses confirmations already; the
       conversation needs a way for a process with no screen to ask a human

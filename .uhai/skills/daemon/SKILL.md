@@ -34,6 +34,27 @@ and `/stop d1` routes there. Without the prefix, `/stop t1` is ambiguous the
 moment a session has one of each — which happens as soon as the model calls
 spawn_task while a daemon is running.
 
+## Starting it
+
+`/bg` starts one when there is none, and only `/bg` does: reading a task list
+is not a reason to leave a process behind on a machine that had none. The child
+is detached with `Setsid`, so it reparents to init rather than dying with the
+terminal — a daemon inside the terminal's session would be the same bug one
+process further away.
+
+Two things that had to be got right, both found by running it rather than
+reading it:
+
+**A second daemon refuses rather than clobbering.** `removeStale` dials before
+it deletes. Without that, two front ends starting at once end with the loser
+deleting the winner's socket: the winner keeps running, reachable by nobody,
+and both believe they succeeded.
+
+**A spawned process does not spawn again.** A binary that does not understand
+`-daemon` runs its front end instead, which calls `Ensure`, which starts
+another — a chain with no end. `UHAI_DAEMON_SPAWNED` marks the child so it
+stops at one. Seen for real from a stand-in that lacked the flag.
+
 The socket can be driven with curl:
 
 ```

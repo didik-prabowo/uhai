@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -249,5 +250,95 @@ func TestADaemonWithNoProviderSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no provider") {
 		t.Errorf("the refusal has to say why, got %q", err)
+	}
+}
+
+// Front ends start daemons on their own now, so two can reach Listen at once.
+// A plain os.Remove would let the loser delete the winner's socket: the winner
+// keeps running, reachable by nobody, while the loser listens on a new file —
+// and both processes believe they succeeded.
+func TestASecondDaemonRefusesInsteadOfClobbering(t *testing.T) {
+	first, _, socket := listen(t, nil)
+
+	second := NewServer(nil, nil)
+	err := second.Listen(socket)
+	if err == nil {
+		second.Close()
+		t.Fatal("the second daemon took the socket from the first")
+	}
+	if !strings.Contains(err.Error(), "already listening") {
+		t.Errorf("the refusal has to say why, got %q", err)
+	}
+
+	// And the first is still reachable, which is the thing that was at risk.
+	if _, err := Dial(socket).Health(context.Background()); err != nil {
+		t.Errorf("the running daemon was left unreachable: %v", err)
+	}
+	_ = first
+}
+
+// A leftover file from a daemon that did not shut down is still cleared: the
+// check is for a live socket, not for any socket.
+func TestALeftoverSocketIsStillCleared(t *testing.T) {
+	dir, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	socket := filepath.Join(dir, "d.sock")
+	// A real unix socket, then closed: the file survives, nothing accepts.
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+	if _, err := os.Stat(socket); err == nil {
+		s := NewServer(nil, nil)
+		if err := s.Listen(socket); err != nil {
+			t.Fatalf("a dead socket must not stop the next daemon: %v", err)
+		}
+		s.Close()
+	}
+}
+
+// A binary that does not understand -daemon runs its front end again, which
+// calls Ensure, which starts another. Seen once for real, from a stand-in with
+// no -daemon flag: the log filled with the same sentence from a new process
+// each time. The child is marked so it stops the chain at one.
+func TestASpawnedProcessDoesNotSpawnAgain(t *testing.T) {
+	t.Setenv(envSpawned, "1")
+
+	dir, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Nothing is listening here, so Ensure would otherwise reach for exec.
+	_, err = Ensure(context.Background(), filepath.Join(dir, "d.sock"))
+	if err == nil {
+		t.Fatal("a spawned process must not spawn another")
+	}
+	if !strings.Contains(err.Error(), "refusing to start another") {
+		t.Errorf("the refusal has to say what it is refusing, got %q", err)
+	}
+}
+
+// And an unmarked process still finds a daemon that is already up, without
+// starting anything.
+func TestEnsureUsesTheDaemonThatIsAlreadyThere(t *testing.T) {
+	_, _, socket := listen(t, nil)
+
+	c, err := Ensure(context.Background(), socket)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	pid, err := c.Health(context.Background())
+	if err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	if pid != os.Getpid() {
+		t.Errorf("Ensure started a second daemon instead of using the running one")
 	}
 }
