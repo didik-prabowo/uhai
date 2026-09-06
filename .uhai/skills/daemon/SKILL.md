@@ -119,6 +119,22 @@ crush routes the same thing through `/v1/workspaces/{id}/...` and registers
 workspaces up front; here a project is remembered the first time it speaks, so
 a machine with ten checkouts pays for the ones actually used.
 
+## When the daemon goes away
+
+The event stream reconnects, with a backoff from 100ms to five seconds. A
+daemon that restarts — upgraded, crashed, stopped by hand — used to leave every
+attached terminal silent with nothing on screen to say so: the stream ended and
+the front end went on drawing a session connected to nothing.
+
+The *first* connection is not retried. Someone asking to watch a daemon that is
+not there should be told now, not left holding a channel that may never produce
+anything.
+
+Events published while it was away are lost, and the reconnect says so out
+loud. Keeping them would need the daemon to know who had been listening and how
+far behind they were — a sequence number and a queue per client — and a notice
+about the gap is the honest smaller answer.
+
 ## Attaching
 
 `uhai -attach` draws the daemon's conversation instead of starting one here.

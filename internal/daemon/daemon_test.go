@@ -897,3 +897,103 @@ func TestAPanicInOneProjectDoesNotTakeTheDaemon(t *testing.T) {
 		}
 	}
 }
+
+// A daemon that restarts — upgraded, crashed, stopped by hand — used to leave
+// every attached terminal silent, with nothing on screen to say so: the stream
+// simply ended and the front end went on drawing a session connected to
+// nothing.
+func TestAWatcherSurvivesTheDaemonRestarting(t *testing.T) {
+	dir, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "d.sock")
+	root := filepath.Join(dir, "proyek")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	first := NewServer(nil, nil)
+	if err := first.Listen(socket); err != nil {
+		t.Fatal(err)
+	}
+	go first.Serve()
+
+	c := DialFor(socket, root)
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, err := c.Events(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The daemon goes away, socket and all.
+	first.Close()
+	os.Remove(socket)
+
+	// And comes back, the way a restarted one does.
+	second := NewServer(nil, nil)
+	if err := second.Listen(socket); err != nil {
+		t.Fatalf("the replacement could not listen: %v", err)
+	}
+	go second.Serve()
+	t.Cleanup(func() { second.Close() })
+
+	// The terminal reconnects, is told it missed something, and goes on
+	// receiving.
+	deadline := time.After(15 * time.Second)
+	var told bool
+	for {
+		select {
+		case e, open := <-events:
+			if !open {
+				t.Fatal("the watcher gave up instead of reconnecting")
+			}
+			if e.Kind == EventNotice && strings.Contains(e.Text, "reconnected") {
+				told = true
+				// Publishing needs the workspace, which the reconnect's own
+				// request created. The root is resolved here rather than in
+				// the goroutine: calling t from one that outlives the test
+				// panics the whole package, which is what it did.
+				resolved := rootOf(t, dir, "proyek")
+				go func() {
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(50 * time.Millisecond):
+							second.Publish(resolved, Event{Kind: EventDelta, Text: "setelah restart"})
+						}
+					}
+				}()
+			}
+			if e.Kind == EventDelta && e.Text == "setelah restart" {
+				if !told {
+					t.Error("the terminal reconnected without being told it had missed anything")
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("the watcher never came back")
+		}
+	}
+}
+
+// Asking to watch a daemon that is not there is answered now, not by a channel
+// that may never produce anything.
+func TestWatchingANonexistentDaemonFailsAtOnce(t *testing.T) {
+	dir, err := os.MkdirTemp("", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	c := DialFor(filepath.Join(dir, "tidak-ada.sock"), dir)
+	if _, err := c.Events(context.Background()); err == nil {
+		t.Error("watching nothing must be an error, not a wait")
+	}
+}

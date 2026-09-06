@@ -101,12 +101,72 @@ func (c *Client) get(ctx context.Context, path string, into any) error {
 	return json.NewDecoder(resp.Body).Decode(into)
 }
 
-// Events streams what the daemon is doing until ctx ends or the daemon goes
-// away. The channel is closed on the way out, so a range over it terminates.
+// Events streams what the daemon is doing until ctx ends. The channel is
+// closed on the way out, so a range over it terminates.
 //
-// Errors are not returned per event: a front end can do nothing useful about a
-// malformed one, and stopping the stream over it would lose the rest.
+// It reconnects. A daemon that restarts — upgraded, crashed, stopped by hand —
+// used to leave every attached terminal silent with nothing on screen to say
+// so: the stream simply ended and the front end went on drawing a session that
+// was no longer connected to anything.
+//
+// The first connection is not retried. A caller asking to watch a daemon that
+// is not there should be told now, not left waiting on a channel that may
+// never produce anything.
+//
+// Events published while it was away are lost. Buffering them would need the
+// daemon to know who had been listening and how far behind they were, which is
+// a sequence number and a per-client queue; a notice saying the gap happened is
+// the honest smaller answer.
 func (c *Client) Events(ctx context.Context) (<-chan Event, error) {
+	body, err := c.openEvents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan Event)
+	go func() {
+		defer close(out)
+		wait := reconnectFirst
+		for {
+			c.pump(ctx, body, out)
+			body.Close()
+			if ctx.Err() != nil {
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			if wait *= 2; wait > reconnectCap {
+				wait = reconnectCap
+			}
+
+			next, err := c.openEvents(ctx)
+			if err != nil {
+				continue // still down; wait longer and try again
+			}
+			body, wait = next, reconnectFirst
+			select {
+			case out <- Event{Kind: EventNotice, Text: "reconnected to the daemon — anything it said while this terminal was away is lost"}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// reconnectFirst and reconnectCap bound the wait between attempts: quick
+// enough that a daemon restarting under a front end is barely noticed, slow
+// enough that one which is gone for good is not hammered.
+const (
+	reconnectFirst = 100 * time.Millisecond
+	reconnectCap   = 5 * time.Second
+)
+
+func (c *Client) openEvents(ctx context.Context) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dialHost+"/v1/events", nil)
 	if err != nil {
 		return nil, err
@@ -120,32 +180,31 @@ func (c *Client) Events(ctx context.Context) (<-chan Event, error) {
 		resp.Body.Close()
 		return nil, fmt.Errorf("daemon answered %s to /v1/events", resp.Status)
 	}
+	return resp.Body, nil
+}
 
-	out := make(chan Event)
-	go func() {
-		defer close(out)
-		defer resp.Body.Close()
-
-		lines := bufio.NewScanner(resp.Body)
-		lines.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for lines.Scan() {
-			line := lines.Text()
-			// ": beat" is the heartbeat, and a blank line ends an event.
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			var e Event
-			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &e) != nil {
-				continue
-			}
-			select {
-			case out <- e:
-			case <-ctx.Done():
-				return
-			}
+// pump reads one connection until it ends. Errors are not reported per event:
+// a front end can do nothing useful about a malformed one, and stopping over
+// it would lose the rest.
+func (c *Client) pump(ctx context.Context, body io.Reader, out chan<- Event) {
+	lines := bufio.NewScanner(body)
+	lines.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for lines.Scan() {
+		line := lines.Text()
+		// ": beat" is the heartbeat, and a blank line ends an event.
+		if !strings.HasPrefix(line, "data: ") {
+			continue
 		}
-	}()
-	return out, nil
+		var e Event
+		if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &e) != nil {
+			continue
+		}
+		select {
+		case out <- e:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // StartTask asks the daemon to run a prompt in the background. It returns as
