@@ -342,3 +342,130 @@ func TestEnsureUsesTheDaemonThatIsAlreadyThere(t *testing.T) {
 		t.Errorf("Ensure started a second daemon instead of using the running one")
 	}
 }
+
+// In one process, asking permission is a function call that returns a bool.
+// Across two it is an event out and a POST back, and that round trip is the
+// reason moving the conversation into the daemon is a piece of work rather
+// than a move.
+func TestAQuestionGoesOutAndTheAnswerComesBack(t *testing.T) {
+	s, c, _ := listen(t, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, err := c.Events(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowed := make(chan bool, 1)
+	go func() { allowed <- s.Ask(context.Background(), "write_file", `{"path":"main.go"}`) }()
+
+	// The question reaches the terminal as it is asked, not when the turn ends.
+	var asked Question
+	for e := range events {
+		if e.Kind == EventQuestion && e.Question != nil {
+			asked = *e.Question
+			break
+		}
+	}
+	if asked.Tool != "write_file" || asked.ID == "" {
+		t.Fatalf("the question did not survive the wire: %+v", asked)
+	}
+
+	if err := c.Answer(context.Background(), asked.ID, true); err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	select {
+	case ok := <-allowed:
+		if !ok {
+			t.Error("the answer was yes and arrived as no")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the agent was never told what the human decided")
+	}
+}
+
+// The agent's own default denies everything so a caller who forgets the hook
+// cannot silently write files. A daemon nobody is watching is that situation
+// from further away, and answers the same way.
+func TestAQuestionNobodyAnswersIsDenied(t *testing.T) {
+	s, _, _ := listen(t, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if s.Ask(ctx, "run_bash", `{"command":"rm -rf /"}`) {
+		t.Error("a question with nobody to answer it must not be allowed")
+	}
+	// And it is not left open for the next terminal to trip over.
+	if open := s.questions.list(); len(open) != 0 {
+		t.Errorf("a question that was given up on is still open: %+v", open)
+	}
+}
+
+// A terminal that attaches mid-turn can still find the question, rather than
+// leaving the agent to wait out the timeout for nothing.
+func TestAQuestionIsVisibleToATerminalThatArrivesLate(t *testing.T) {
+	s, c, _ := listen(t, nil)
+
+	go s.Ask(context.Background(), "edit_file", `{"path":"go.mod"}`)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		open, err := c.Questions(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(open) == 1 {
+			if open[0].Tool != "edit_file" {
+				t.Errorf("want the open question, got %+v", open[0])
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a question in flight was invisible to a new terminal")
+		}
+	}
+}
+
+// Answering twice must not look like it worked twice: the second terminal has
+// to be told the decision was already made.
+func TestAnAlreadyAnsweredQuestionSaysSo(t *testing.T) {
+	s, c, _ := listen(t, nil)
+
+	go s.Ask(context.Background(), "write_file", "{}")
+	var id string
+	for id == "" {
+		if open, _ := c.Questions(context.Background()); len(open) == 1 {
+			id = open[0].ID
+		}
+	}
+	if err := c.Answer(context.Background(), id, false); err != nil {
+		t.Fatal(err)
+	}
+	err := c.Answer(context.Background(), id, true)
+	if err == nil {
+		t.Fatal("the second answer must not be accepted")
+	}
+	if !strings.Contains(err.Error(), "no longer open") {
+		t.Errorf("the refusal has to say why, got %q", err)
+	}
+}
+
+// The other way nobody answers: a terminal is watching, sees the question, and
+// says nothing. The context stays open, so only the deadline can end it — and
+// it has to end it with a no.
+func TestAQuestionNobodyAnswersInTimeIsDenied(t *testing.T) {
+	s, c, _ := listen(t, nil)
+	s.AnswerWait = 150 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := c.Events(ctx); err != nil { // watching, and silent
+		t.Fatal(err)
+	}
+
+	if s.Ask(context.Background(), "run_bash", `{"command":"rm -rf /"}`) {
+		t.Error("silence is not consent")
+	}
+	if open := s.questions.list(); len(open) != 0 {
+		t.Errorf("a question that timed out is still open: %+v", open)
+	}
+}

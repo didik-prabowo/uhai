@@ -172,3 +172,18 @@ func Running(socket string) (*Client, bool) {
 	}
 	return c, true
 }
+
+// Questions is what the daemon is waiting on. A front end that attaches
+// mid-turn asks once, so a terminal reopened while a question is open can
+// still answer it rather than leaving the turn to time out.
+func (c *Client) Questions(ctx context.Context) ([]Question, error) {
+	var out []Question
+	return out, c.get(ctx, "/v1/questions", &out)
+}
+
+// Answer decides one. An error here means the question is no longer open —
+// answered by another terminal, or timed out — which the front end should say
+// rather than pretend it decided something.
+func (c *Client) Answer(ctx context.Context, id string, allow bool) error {
+	return c.post(ctx, "/v1/questions/"+id, map[string]bool{"allow": allow}, &struct{}{})
+}

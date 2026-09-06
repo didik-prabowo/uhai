@@ -25,9 +25,20 @@ watching to answer. So it is the one part of the agent that needs no permission
 round trip — the daemon can run it without first solving how a process with no
 screen asks a human whether to write a file.
 
-**The main conversation has not moved.** The front end still owns that agent
-and still calls it through Go closures. Permission is why, and it is a piece of
-work of its own.
+**The main conversation has not moved**, but the thing that was blocking it
+has been built. `Server.Ask` is what a daemon hands the agent as its `Confirm`
+hook: the question leaves as an event, the terminal answers with a POST to
+`/v1/questions/{id}`, and `Ask` blocks in between. In one process that is a
+function call returning a bool — this is the whole reason the move is a piece
+of work rather than a move.
+
+Silence is a no, both ways: a cancelled context and an expired deadline both
+deny. The agent's own default denies everything so a caller who forgets the
+hook cannot silently write files, and a daemon nobody is watching is that same
+situation from further away. A question is dropped when it is given up on, so
+the next terminal does not trip over one nobody is waiting for — but an open
+one is visible at `GET /v1/questions`, so a terminal reopened mid-turn can
+still answer it.
 
 Both registries number from `t1`, so a task the daemon holds is shown as `d1`
 and `/stop d1` routes there. Without the prefix, `/stop t1` is ambiguous the

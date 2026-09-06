@@ -22,6 +22,10 @@ type Event struct {
 	Kind string `json:"kind"`
 	Text string `json:"text,omitempty"`
 	Task string `json:"task,omitempty"`
+
+	// Question is set when Kind is EventQuestion: the daemon needs a human to
+	// decide something before it can go on.
+	Question *Question `json:"question,omitempty"`
 }
 
 // Event kinds. Adding one is safe; changing what an old one means is not.
@@ -29,6 +33,7 @@ const (
 	EventDelta    = "delta" // a piece of the answer as it is written
 	EventNotice   = "notice"
 	EventTaskDone = "task_done"
+	EventQuestion = "question"
 )
 
 // Server is the daemon. It owns nothing yet but the socket and the fan-out —
@@ -46,6 +51,12 @@ type Server struct {
 	// started without a provider — it can still serve sessions and events,
 	// and says so when asked to run something.
 	Run Runner
+
+	// AnswerWait overrides how long a question waits for a human. Zero takes
+	// the default.
+	AnswerWait time.Duration
+
+	questions questions
 
 	mu       sync.Mutex
 	watchers map[chan Event]struct{}
@@ -82,6 +93,7 @@ func (s *Server) Listen(path string) error {
 		return err
 	}
 	s.listener = l
+	s.http = &http.Server{Handler: s.routes()}
 	return nil
 }
 
@@ -93,8 +105,23 @@ func (s *Server) Addr() string {
 	return s.listener.Addr().String()
 }
 
-// Serve answers until the listener is closed.
+// Serve answers until the listener is closed. The http.Server it serves with
+// was built by Listen, not here: building it in Serve meant a Close from
+// another goroutine could read the field while this one wrote it, which is a
+// race the detector found the moment two tests ran together.
 func (s *Server) Serve() error {
+	if s.http == nil {
+		return errors.New("Serve before Listen")
+	}
+	err := s.http.Serve(s.listener)
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+// routes builds the mux. Separate so Listen can wire it before Serve runs.
+func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.handleHealth)
 	mux.HandleFunc("GET /v1/sessions", s.handleSessions)
@@ -102,13 +129,9 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("POST /v1/tasks", s.handlePostTasks)
 	mux.HandleFunc("GET /v1/tasks", s.handleGetTasks)
 	mux.HandleFunc("POST /v1/tasks/{id}/stop", s.handleStopTask)
-
-	s.http = &http.Server{Handler: mux}
-	err := s.http.Serve(s.listener)
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+	mux.HandleFunc("GET /v1/questions", s.handleGetQuestions)
+	mux.HandleFunc("POST /v1/questions/{id}", s.handleAnswer)
+	return mux
 }
 
 // Close stops serving and takes the socket away with it, so the next daemon
