@@ -462,3 +462,134 @@ func TestSpawnedAgentInheritsTheDenials(t *testing.T) {
 		t.Error("denying one tool must not deny the rest")
 	}
 }
+
+// Compacting at 85% is a guess; the provider is the only one who counts for
+// real. When the guess was wrong the turn died with the work already paid for.
+func TestAnOverflowIsAnsweredBySummarisingAndAskingAgain(t *testing.T) {
+	var asked int
+	p := &scriptedProvider{send: func(r provider.Request) (*provider.Response, error) {
+		asked++
+		switch asked {
+		case 1:
+			return nil, errors.New("provider error (HTTP 400): prompt is too long: 210000 tokens > 200000 maximum")
+		case 2: // the summary request
+			return &provider.Response{
+				Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "ringkasan"}},
+				StopReason: provider.StopEndTurn,
+			}, nil
+		}
+		return &provider.Response{
+			Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "jawaban"}},
+			StopReason: provider.StopEndTurn,
+		}, nil
+	}}
+
+	a := New(p)
+	a.History = []provider.Message{
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "satu"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "dua"}}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "tiga"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "empat"}}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "lima"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "enam"}}},
+	}
+
+	var said string
+	a.OnText = func(s string) { said += s }
+	if err := a.Ask(context.Background(), "lanjut"); err != nil {
+		t.Fatalf("the turn should have survived: %v", err)
+	}
+	if said != "jawaban" {
+		t.Errorf("the answer has to arrive after the recovery, got %q", said)
+	}
+	if asked != 3 {
+		t.Errorf("want reject, summarise, answer — three calls, got %d", asked)
+	}
+}
+
+// Once. A second overflow means the summary itself does not fit, and asking
+// again only spends the same money to be told the same thing.
+func TestAnOverflowIsNotAnsweredTwice(t *testing.T) {
+	var asked int
+	p := &scriptedProvider{send: func(r provider.Request) (*provider.Response, error) {
+		asked++
+		if asked == 2 { // the summary
+			return &provider.Response{
+				Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "ringkasan"}},
+				StopReason: provider.StopEndTurn,
+			}, nil
+		}
+		return nil, errors.New("prompt is too long")
+	}}
+
+	a := New(p)
+	a.History = []provider.Message{
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "satu"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "dua"}}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "tiga"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "empat"}}},
+	}
+	if err := a.Ask(context.Background(), "lanjut"); err == nil {
+		t.Fatal("a second overflow has to end the turn")
+	}
+	if asked != 3 {
+		t.Errorf("want reject, summarise, reject — and stop, got %d calls", asked)
+	}
+}
+
+// A prose summary rounds off which files were changed, so the model edits them
+// again, and which instruction files were read, so it forgets the project's
+// own rules. Paths are cheap; the content deliberately is not carried.
+func TestCompactionKeepsWhatWasChangedAndRead(t *testing.T) {
+	p := &scriptedProvider{send: func(r provider.Request) (*provider.Response, error) {
+		return &provider.Response{
+			Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "ringkasan"}},
+			StopReason: provider.StopEndTurn,
+		}, nil
+	}}
+	a := New(p)
+	call := func(name, path string) provider.ContentBlock {
+		return provider.ContentBlock{
+			Type: provider.BlockToolUse, ToolName: name, ToolUseID: name + path,
+			ToolInput: json.RawMessage(`{"path":"` + path + `"}`),
+		}
+	}
+	a.History = []provider.Message{
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "kerjakan"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{
+			call("read_file", ".uhai/skills/permission/SKILL.md"),
+			call("edit_file", "internal/tools/walk.go"),
+			call("write_file", "internal/tools/walk_test.go"),
+			call("read_file", "internal/tools/glob.go"), // ordinary read: not carried
+		}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "lalu"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "sudah"}}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "lagi"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "oke"}}},
+	}
+	if err := a.Compact(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	kept := a.History[0].Content[0].Text
+	for _, want := range []string{"internal/tools/walk.go", "internal/tools/walk_test.go", "SKILL.md"} {
+		if !strings.Contains(kept, want) {
+			t.Errorf("%s did not survive the compaction:\n%s", want, kept)
+		}
+	}
+	if strings.Contains(kept, "glob.go") {
+		t.Errorf("an ordinary read is not project state:\n%s", kept)
+	}
+}
+
+// scriptedProvider answers however the test says to, which the older
+// fakeProvider cannot: it is written around one fixed exchange.
+type scriptedProvider struct {
+	send func(provider.Request) (*provider.Response, error)
+}
+
+func (s *scriptedProvider) Name() string { return "fake/scripted" }
+
+func (s *scriptedProvider) Send(_ context.Context, req provider.Request) (*provider.Response, error) {
+	return s.send(req)
+}

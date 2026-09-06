@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -202,6 +203,10 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: userPrompt}},
 	})
 
+	// Set once a rejected-for-length request has been recovered from, so the
+	// recovery cannot loop.
+	recovered := false
+
 	for i := 0; i < a.MaxIterations; i++ {
 		if a.MaxContextTokens > 0 && a.Tokens() > int(float64(a.MaxContextTokens)*compactAt) {
 			before := a.Tokens()
@@ -232,6 +237,23 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 			Reasoning: a.OnReasoning,
 		})
 		if err != nil {
+			// Compacting at 85% is a guess about how many tokens the history
+			// holds, and the provider is the only one who counts them for
+			// real. When the guess is wrong the turn used to die here with
+			// the work already done and paid for; now it summarises and asks
+			// once more. Once: a second overflow means the summary itself is
+			// too large, and asking again would only spend the same money.
+			if isOverflow(err) && !recovered {
+				recovered = true
+				a.OnNotice("the history was too long for the model — summarising and trying again")
+				if cerr := a.Compact(ctx); cerr == nil {
+					// Not i--: giving the attempt back would mean the loop
+					// can be made to spin forever by any future change that
+					// lets the recovery run twice, and one iteration out of
+					// MaxIterations is a cheaper price than that.
+					continue
+				}
+			}
 			a.closeTurn(partial.String(), err.Error())
 			// No wrapping: every client already names itself and the status
 			// it got, and "provider error: provider error (HTTP 400)" reads
@@ -267,6 +289,39 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 
 	a.closeTurn("", fmt.Sprintf("hit the %d iteration limit", a.MaxIterations))
 	return fmt.Errorf("stopped: hit the %d iteration limit without finishing", a.MaxIterations)
+}
+
+// overflowSaid are the ways the three APIs say the history did not fit. None
+// of them shares a status code with the others — Anthropic and OpenAI both
+// answer 400, which is also what a malformed request gets — so the sentence is
+// what there is to go on.
+//
+// Matched loosely on purpose: a phrase that stops matching costs one turn,
+// which is exactly what the code did before it existed.
+var overflowSaid = []string{
+	"prompt is too long",      // Anthropic
+	"maximum context length",  // OpenAI
+	"context_length_exceeded", // OpenAI, as a code
+	"exceeds the maximum number of tokens",
+	"input token count", // Gemini
+	"too many tokens",
+	"context window",
+}
+
+// isOverflow reports whether a failed request failed because the history did
+// not fit, which is the one provider error worth answering by making the
+// history smaller.
+func isOverflow(err error) bool {
+	if err == nil {
+		return false
+	}
+	said := strings.ToLower(err.Error())
+	for _, phrase := range overflowSaid {
+		if strings.Contains(said, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // closeTurn ends a turn that did not finish, so the next one can start.
@@ -352,6 +407,85 @@ func (a *Agent) tools() []provider.ToolSpec {
 	return append(specs, spawnSpec)
 }
 
+// preserved is the part of the elided history a prose summary cannot be
+// trusted with: which files were changed, and which instruction files were
+// read. Both are lists of paths, so they cost almost nothing to carry and are
+// exactly the things a paraphrase rounds off.
+//
+// Files changed, because after a compaction the model otherwise does not know
+// what it already edited and will happily do it again. Files read, because
+// the skills that hold this project's own notes arrive through read_file
+// mid-conversation — the prompt carries only their names — so a summary that
+// forgets them forgets the instructions with them.
+//
+// Content is deliberately not preserved, only paths: the point of compacting
+// is that the history was too big, and carrying the same bytes under a new
+// heading would undo it. The model can read a file again if it needs to.
+func preserved(older []provider.Message) string {
+	var changed, read []string
+	for _, m := range older {
+		for _, b := range m.Content {
+			if b.Type != provider.BlockToolUse {
+				continue
+			}
+			path := pathArg(b.ToolInput)
+			if path == "" {
+				continue
+			}
+			switch b.ToolName {
+			case tools.NameWrite, tools.NameEdit:
+				changed = appendOnce(changed, path)
+			case tools.NameRead:
+				if strings.Contains(path, "SKILL.md") || strings.Contains(path, "AGENTS.md") {
+					read = appendOnce(read, path)
+				}
+			}
+		}
+	}
+
+	var b strings.Builder
+	if len(changed) > 0 {
+		b.WriteString("\n\nFiles changed earlier in this session: " + strings.Join(changed, ", "))
+	}
+	if len(read) > 0 {
+		b.WriteString("\n\nInstruction files already read, and worth reading again if they matter: " +
+			strings.Join(read, ", "))
+	}
+	return b.String()
+}
+
+// pathArg pulls the "path" argument out of a tool call without knowing what
+// else is in it.
+func pathArg(input json.RawMessage) string {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal(input, &args) != nil {
+		return ""
+	}
+	return args.Path
+}
+
+// appendOnce keeps the order and drops the repeats: one file edited nine times
+// is one file.
+func appendOnce(list []string, s string) []string {
+	for _, have := range list {
+		if have == s {
+			return list
+		}
+	}
+	// A long editing run must not recreate the pressure the compaction just
+	// removed.
+	if len(list) >= maxPreservedPaths {
+		return list
+	}
+	return append(list, s)
+}
+
+// maxPreservedPaths caps each list so a session that touched three hundred
+// files does not put three hundred paths back into the summary.
+const maxPreservedPaths = 20
+
 // Tokens estimates how many tokens the history occupies. Four characters per
 // token is the usual rule of thumb for English and for code; it is only used
 // to decide when to compact, so being a little off costs nothing.
@@ -402,7 +536,7 @@ func (a *Agent) Compact(ctx context.Context) error {
 
 	a.History = append([]provider.Message{{
 		Role:    provider.RoleUser,
-		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "Summary of the session so far:\n\n" + summary}},
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "Summary of the session so far:\n\n" + summary + preserved(older)}},
 	}}, a.History[cut:]...)
 	a.LastUsage = provider.Usage{}
 	return nil
