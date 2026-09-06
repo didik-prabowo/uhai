@@ -268,3 +268,44 @@ func TestATimedOutSearchKeepsWhatItFound(t *testing.T) {
 		t.Errorf("a search that finished has nothing to explain, got %q", note)
 	}
 }
+
+// Asked for donut recipes, a model invented seven cookpad ids in a row — two
+// of them the same number with different titles — because fetch_url is the
+// only door to the web and nothing told it the door needs an address it
+// already has. A 404 is where it finds out, so the 404 says what to do.
+func TestA404TellsTheModelNotToGuessAgain(t *testing.T) {
+	got := statusMessage(404, "https://cookpad.com/id/recipe/13356818-donat-kentang")
+	for _, want := range []string{"does not exist", "Do not guess another", "no search tool"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the 404 has to say %q, got %q", want, got)
+		}
+	}
+
+	// Only a 404 gets the lecture: a 500 is the site's problem, and trying
+	// again is a reasonable thing to do about it.
+	if other := statusMessage(500, "https://example.com"); strings.Contains(other, "Do not guess") {
+		t.Errorf("a 500 is not a wrong address, got %q", other)
+	}
+	if !strings.Contains(statusMessage(500, "https://example.com"), "HTTP 500") {
+		t.Error("every status still says what it was")
+	}
+}
+
+// The tool description is the only place the model learns there is no search,
+// and it learns it before spending four minutes finding out.
+func TestFetchSaysItCannotSearch(t *testing.T) {
+	var fetch Tool
+	for _, tl := range all {
+		if tl.Name() == NameFetch {
+			fetch = tl
+		}
+	}
+	if fetch == nil {
+		t.Fatal("fetch_url is not registered")
+	}
+	for _, want := range []string{"not a search engine", "Never invent or guess a URL"} {
+		if !strings.Contains(fetch.Description(), want) {
+			t.Errorf("the description has to say %q", want)
+		}
+	}
+}

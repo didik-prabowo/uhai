@@ -48,7 +48,11 @@ func (fetchTool) NeedsConfirm() bool { return true }
 func (fetchTool) Description() string {
 	return "Fetch a web page or document over http(s) and return it as text. " +
 		"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
-		"Markup is stripped; only addresses on the public internet can be reached."
+		"Markup is stripped; only addresses on the public internet can be reached. " +
+		"This is not a search engine and there is no search tool here: it can only " +
+		"open an address you already have, from the user, from a file, or from a page " +
+		"already fetched. Never invent or guess a URL — if you do not have one, say so " +
+		"and ask for a link."
 }
 func (fetchTool) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -101,7 +105,7 @@ func (fetchTool) Run(ctx context.Context, input json.RawMessage) (string, bool) 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		// The status is the answer here: a 404 is a fact about the URL, and
 		// the body is usually an error page nobody needs.
-		return fmt.Sprintf("HTTP %d from %s", resp.StatusCode, target), true
+		return statusMessage(resp.StatusCode, target.String()), true
 	}
 
 	text := string(body)
@@ -112,6 +116,25 @@ func (fetchTool) Run(ctx context.Context, input json.RawMessage) (string, bool) 
 		return "the page came back empty", true
 	}
 	return text, false
+}
+
+// statusMessage is what a refused fetch tells the model. A 404 gets a
+// sentence the others do not, because a 404 is what a guessed address answers
+// and the reflex is to guess the next one: asked for donut recipes, a model
+// invented seven cookpad ids in a row — two of them the same number with
+// different titles — and spent four minutes on it. It had no other way to
+// look, and nothing had told it so. The tool result is where it finds out.
+//
+// It is a function of its own so it can be tested: the SSRF guard refuses
+// 127.0.0.1, quite correctly, which leaves no way to serve a real 404 to it
+// from a test.
+func statusMessage(status int, target string) string {
+	msg := fmt.Sprintf("HTTP %d from %s", status, target)
+	if status == http.StatusNotFound {
+		msg += ". That address does not exist. Do not guess another: there is " +
+			"no search tool here, so ask the user for a link instead."
+	}
+	return msg
 }
 
 // privateBlocks are the addresses a page is never legitimately served from and

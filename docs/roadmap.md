@@ -89,6 +89,12 @@ against servers we wrote ourselves.
 - [ ] Size `glm-5`, `glm-5.1`, `glm-5.2` and `gpt-5`, which Z.ai and OpenAI
       list but do not measure. Needs a key with credit on it: an account that
       cannot spend cannot be asked where its ceilings are.
+- [ ] A way to search the web. `fetch_url` opens an address; nothing finds
+      one, so a model asked to look something up invents URLs — seven
+      cookpad ids in a row, all 404. Every keyless source tried is blocked:
+      DuckDuckGo does not answer this machine at all and Mojeek returns a
+      captcha. A real one needs a key (Brave, Tavily, Serper) or a
+      self-hosted SearXNG, which is a decision about dependencies.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 
