@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func listen(t *testing.T, store session.Store) (*Server, *Client, string) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
 	socket := filepath.Join(dir, "d.sock")
-	s := NewServer(store, nil)
+	s := NewServer(store, nil, nil)
 	if err := s.Listen(socket); err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestAStaleSocketIsCleared(t *testing.T) {
 	if err := os.WriteFile(socket, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := NewServer(nil, nil)
+	s := NewServer(nil, nil, nil)
 	if err := s.Listen(socket); err != nil {
 		t.Fatalf("a leftover socket must not stop the next daemon: %v", err)
 	}
@@ -193,7 +194,7 @@ func TestATaskOutlivesTheClientThatStartedIt(t *testing.T) {
 			// long before the terminal even closed.
 			return "", 0, fmt.Errorf("the task was cancelled with its client: %w", ctx.Err())
 		}
-	})
+	}, nil)
 	if err := s.Listen(socket); err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +261,7 @@ func TestADaemonWithNoProviderSaysSo(t *testing.T) {
 func TestASecondDaemonRefusesInsteadOfClobbering(t *testing.T) {
 	first, _, socket := listen(t, nil)
 
-	second := NewServer(nil, nil)
+	second := NewServer(nil, nil, nil)
 	err := second.Listen(socket)
 	if err == nil {
 		second.Close()
@@ -294,7 +295,7 @@ func TestALeftoverSocketIsStillCleared(t *testing.T) {
 	}
 	l.Close()
 	if _, err := os.Stat(socket); err == nil {
-		s := NewServer(nil, nil)
+		s := NewServer(nil, nil, nil)
 		if err := s.Listen(socket); err != nil {
 			t.Fatalf("a dead socket must not stop the next daemon: %v", err)
 		}
@@ -467,5 +468,97 @@ func TestAQuestionNobodyAnswersInTimeIsDenied(t *testing.T) {
 	}
 	if open := s.questions.list(); len(open) != 0 {
 		t.Errorf("a question that timed out is still open: %+v", open)
+	}
+}
+
+// A conversation is a single history, so two turns must not write to it at
+// once: interleaved, they produce something neither caller asked for.
+func TestOneTurnAtATime(t *testing.T) {
+	var mu sync.Mutex
+	var overlapping, most int
+
+	dir, _ := os.MkdirTemp("", "u")
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "d.sock")
+
+	s := NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+		mu.Lock()
+		overlapping++
+		if overlapping > most {
+			most = overlapping
+		}
+		mu.Unlock()
+		time.Sleep(80 * time.Millisecond)
+		mu.Lock()
+		overlapping--
+		mu.Unlock()
+		return "", 0, nil
+	})
+	if err := s.Listen(socket); err != nil {
+		t.Fatal(err)
+	}
+	go s.Serve()
+	t.Cleanup(func() { s.Close() })
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			Dial(socket).Prompt(context.Background(), "halo")
+		}()
+	}
+	wg.Wait()
+
+	if most > 1 {
+		t.Errorf("%d turns ran at once — the history is one thing", most)
+	}
+}
+
+// A front end that hangs up mid-answer has left the room, not cancelled the
+// work: the conversation belongs to the daemon, and half a turn written into
+// its history is worse than a whole one nobody watched.
+func TestATurnFinishesAfterItsFrontEndHangsUp(t *testing.T) {
+	finished := make(chan error, 1)
+
+	dir, _ := os.MkdirTemp("", "u")
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "d.sock")
+
+	gone := make(chan struct{})
+	s := NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+		<-gone
+		select {
+		case <-ctx.Done():
+			finished <- fmt.Errorf("the turn was cancelled with its front end: %w", ctx.Err())
+		default:
+			finished <- nil
+		}
+		return "", 0, nil
+	})
+	if err := s.Listen(socket); err != nil {
+		t.Fatal(err)
+	}
+	go s.Serve()
+	t.Cleanup(func() { s.Close() })
+
+	asking, hangUp := context.WithCancel(context.Background())
+	go Dial(socket).Prompt(asking, "halo")
+	time.Sleep(100 * time.Millisecond) // the turn is under way
+	hangUp()
+	// The cancellation has to reach the server before the runner looks:
+	// closing gone in the same breath let the runner check a context that had
+	// not been cancelled yet, and the test passed while holding the front
+	// end's context — the exact thing it exists to forbid.
+	time.Sleep(200 * time.Millisecond)
+	close(gone)
+
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Error(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the turn never finished")
 	}
 }

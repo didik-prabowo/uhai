@@ -25,8 +25,22 @@ watching to answer. So it is the one part of the agent that needs no permission
 round trip — the daemon can run it without first solving how a process with no
 screen asks a human whether to write a file.
 
-**The main conversation has not moved**, but the thing that was blocking it
-has been built. `Server.Ask` is what a daemon hands the agent as its `Confirm`
+**The conversation is on it.** `POST /v1/prompt` runs one turn of the
+conversation the daemon holds; what the answer looked like on the way is on the
+event stream, so a front end subscribes first, posts second, and draws as it
+goes — which is what it already did when the agent was a function call in its
+own process. The TUI still runs its own agent: wiring it across is the last
+step, and the one this repository cannot test itself.
+
+One turn at a time, under a mutex. A conversation is a single history, and two
+turns writing to it at once interleave into something neither caller asked for.
+
+The turn does not hold the front end's context. A terminal that hangs up
+mid-answer has left the room, not cancelled the work: half a turn in the
+history is worse than a whole one nobody watched. Escape is a different thing
+and will need a route of its own.
+
+The permission round trip is what made it possible. `Server.Ask` is what a daemon hands the agent as its `Confirm`
 hook: the question leaves as an event, the terminal answers with a POST to
 `/v1/questions/{id}`, and `Ask` blocks in between. In one process that is a
 function call returning a bool — this is the whole reason the move is a piece

@@ -214,7 +214,48 @@ func RunDaemon() error {
 		fmt.Fprintln(os.Stderr, "uhai: no provider connected, so the daemon cannot run tasks:", perr)
 	}
 
-	srv := daemon.NewServer(store, run)
+	// The conversation the daemon holds. One agent, built once, its callbacks
+	// turned into events on the socket — which is the same job the TUI's
+	// callbacks do when the agent is in its own process.
+	var srv *daemon.Server
+	var conversation *agent.Agent
+
+	prompt := func(ctx context.Context, text string) (string, int, error) {
+		if conversation == nil {
+			a, err := newAgent()
+			if err != nil {
+				return "", 0, err
+			}
+			a.OnText = func(t string) { srv.Publish(daemon.Event{Kind: daemon.EventText, Text: t}) }
+			a.OnDelta = func(d string) { srv.Publish(daemon.Event{Kind: daemon.EventDelta, Text: d}) }
+			a.OnReasoning = func(d string) { srv.Publish(daemon.Event{Kind: daemon.EventReasoning, Text: d}) }
+			a.OnNotice = func(t string) { srv.Publish(daemon.Event{Kind: daemon.EventNotice, Text: t}) }
+			a.OnToolCall = func(name, input string) {
+				srv.Publish(daemon.Event{Kind: daemon.EventTool, Text: name})
+			}
+			a.OnUsage = func(u provider.Usage) {
+				srv.Publish(daemon.Event{Kind: daemon.EventUsage, Usage: &daemon.Usage{
+					Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite,
+				}})
+			}
+			// The question round trip, which is the whole reason this could
+			// not have been done before it existed.
+			a.Confirm = func(name, input string) bool { return srv.Ask(ctx, name, input) }
+			conversation = a
+		}
+		err := conversation.Ask(ctx, text)
+		// Saved every turn, the way the front ends do it: a daemon that is
+		// killed should lose no more than a terminal that is closed.
+		if serr := cli.SaveSession(conversation); serr != nil {
+			fmt.Fprintln(os.Stderr, "uhai: the session is not being saved:", serr)
+		}
+		return "", conversation.Tokens(), err
+	}
+	if _, perr := config.LoadProvider(); perr != nil {
+		prompt = nil
+	}
+
+	srv = daemon.NewServer(store, run, prompt)
 	if err := srv.Listen(socket); err != nil {
 		return fmt.Errorf("could not listen on %s: %w", socket, err)
 	}

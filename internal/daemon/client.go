@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -186,4 +187,20 @@ func (c *Client) Questions(ctx context.Context) ([]Question, error) {
 // rather than pretend it decided something.
 func (c *Client) Answer(ctx context.Context, id string, allow bool) error {
 	return c.post(ctx, "/v1/questions/"+id, map[string]bool{"allow": allow}, &struct{}{})
+}
+
+// Prompt runs one turn of the daemon's conversation and returns when the turn
+// is over. What it looked like on the way is on the event stream: subscribe
+// first, prompt second.
+func (c *Client) Prompt(ctx context.Context, text string) error {
+	var out struct {
+		Err string `json:"err"`
+	}
+	if err := c.post(ctx, "/v1/prompt", map[string]string{"text": text}, &out); err != nil {
+		return err
+	}
+	if out.Err != "" {
+		return errors.New(out.Err)
+	}
+	return nil
 }

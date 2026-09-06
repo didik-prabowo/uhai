@@ -26,6 +26,18 @@ type Event struct {
 	// Question is set when Kind is EventQuestion: the daemon needs a human to
 	// decide something before it can go on.
 	Question *Question `json:"question,omitempty"`
+
+	// Usage is set when Kind is EventUsage: what the last provider call cost.
+	Usage *Usage `json:"usage,omitempty"`
+}
+
+// Usage on the wire. provider.Usage would do, but a wire type that a front end
+// in another language has to match is worth spelling out where it is read.
+type Usage struct {
+	Input      int `json:"input"`
+	Output     int `json:"output"`
+	CacheRead  int `json:"cache_read"`
+	CacheWrite int `json:"cache_write"`
 }
 
 // Event kinds. Adding one is safe; changing what an old one means is not.
@@ -34,6 +46,13 @@ const (
 	EventNotice   = "notice"
 	EventTaskDone = "task_done"
 	EventQuestion = "question"
+
+	// One turn of a conversation, in the order a front end draws them.
+	EventText      = "text"      // a finished block of the answer
+	EventTool      = "tool"      // a tool was called
+	EventReasoning = "reasoning" // the working out, which is not the answer
+	EventUsage     = "usage"
+	EventDone      = "done" // Text carries the error, if any
 )
 
 // Server is the daemon. It owns nothing yet but the socket and the fan-out —
@@ -52,6 +71,15 @@ type Server struct {
 	// and says so when asked to run something.
 	Run Runner
 
+	// Prompt is one turn of the conversation the daemon holds. Injected for
+	// the same reason Run is: this package owns the socket and the lifetime,
+	// not the agent.
+	//
+	// One at a time. A conversation is a single history, and two turns writing
+	// to it at once would interleave into something neither asked for.
+	Prompt  Runner
+	turning sync.Mutex
+
 	// AnswerWait overrides how long a question waits for a human. Zero takes
 	// the default.
 	AnswerWait time.Duration
@@ -67,11 +95,12 @@ type Server struct {
 
 // NewServer builds a daemon. Sessions may be nil in a test that only speaks to
 // the socket.
-func NewServer(store session.Store, run Runner) *Server {
+func NewServer(store session.Store, run, prompt Runner) *Server {
 	return &Server{
 		Sessions: store,
 		Tasks:    &task.Registry{},
 		Run:      run,
+		Prompt:   prompt,
 		watchers: map[chan Event]struct{}{},
 	}
 }
@@ -131,6 +160,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/stop", s.handleStopTask)
 	mux.HandleFunc("GET /v1/questions", s.handleGetQuestions)
 	mux.HandleFunc("POST /v1/questions/{id}", s.handleAnswer)
+	mux.HandleFunc("POST /v1/prompt", s.handlePrompt)
 	return mux
 }
 
