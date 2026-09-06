@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,7 +80,7 @@ func TestModelLimits(t *testing.T) {
 		// Anything older or unrecognised lands on the claude- fallback, which
 		// stays at the figures that are safe everywhere.
 		"anthropic/claude-3-5-sonnet-20241022": {Context: 200_000, MaxOutput: 8_192},
-		"openai/gpt-4o-mini":                   {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
+		"openai/gpt-4o-mini":                   {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60, CacheReadUSD: 0.075},
 		"gemini/gemini-2.5-flash":              {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
 		// Anthropic reports all four itself. Haiku is the one in the family that
 		// did not move to a million, and the 4.5 releases answer shorter than
@@ -544,5 +545,26 @@ func TestEveryToolCanBeNamedInARule(t *testing.T) {
 	}
 	if _, ok := toolName("bosh"); ok {
 		t.Error("a tool nobody has is a typo, not a rule")
+	}
+}
+
+// One ratio for every vendor was Anthropic's tenth applied to everyone.
+// OpenAI's discount is not a tenth and is not even one number: half for 4o,
+// a quarter for 4.1.
+func TestCachedTokensArePricedPerModel(t *testing.T) {
+	million := provider.Usage{CacheRead: 1_000_000}
+
+	// gpt-4o-mini caches at half its input price, not a tenth.
+	if got := CostOf("openai/gpt-4o-mini", million); got != 0.075 {
+		t.Errorf("gpt-4o-mini cached million = %v, want 0.075", got)
+	}
+	// Anthropic has no figure of its own and falls back to the tenth, which
+	// is where the tenth came from.
+	if got := CostOf("anthropic/claude-sonnet-5", million); math.Abs(got-0.3) > 1e-9 {
+		t.Errorf("sonnet cached million = %v, want 0.3 (a tenth of $3)", got)
+	}
+	// Fresh input is untouched by any of this.
+	if got := CostOf("openai/gpt-4o-mini", provider.Usage{Input: 1_000_000}); got != 0.15 {
+		t.Errorf("fresh input million = %v, want 0.15", got)
 	}
 }

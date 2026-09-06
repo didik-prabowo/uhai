@@ -252,3 +252,58 @@ data: [DONE]
 		t.Errorf("the response keeps the answer only: %+v", resp.Content)
 	}
 }
+
+// Every OpenAI-style vendor caches without being asked and reports it, and
+// uhai read none of it: two identical requests to Z.ai came back with 3 cached
+// tokens and then 1395 of 1397, all of it priced as fresh input.
+//
+// prompt_tokens already includes the cached ones, unlike Anthropic where they
+// arrive beside each other, so the split has to be taken back out or the same
+// tokens are billed twice.
+func TestCachedPromptTokensAreSplitOutOfInput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "data: "+`{"choices":[{"delta":{"content":"halo"}}],"usage":{"prompt_tokens":1397,"completion_tokens":8,"prompt_tokens_details":{"cached_tokens":1395}}}`+"\n\ndata: [DONE]\n")
+	}))
+	defer server.Close()
+
+	c, err := New(Options{Label: "zai", BaseURL: server.URL, APIKey: "k", Model: "glm-4.7-flash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Send(context.Background(), provider.Request{
+		Messages: []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "hi"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.CacheRead != 1395 {
+		t.Errorf("cached tokens = %d, want 1395", resp.Usage.CacheRead)
+	}
+	// 1397 total, 1395 of them cached: two were fresh.
+	if resp.Usage.Input != 2 {
+		t.Errorf("fresh input = %d, want 2 — cached tokens must not be billed twice", resp.Usage.Input)
+	}
+	if resp.Usage.Input+resp.Usage.CacheRead != 1397 {
+		t.Errorf("the split has to add back up to prompt_tokens, got %d", resp.Usage.Input+resp.Usage.CacheRead)
+	}
+}
+
+// A vendor that reports no details at all is the old behaviour: everything
+// fresh, nothing cached, no negative numbers.
+func TestNoCacheDetailsMeansEverythingIsFresh(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "data: "+`{"choices":[{"delta":{"content":"halo"}}],"usage":{"prompt_tokens":900,"completion_tokens":4}}`+"\n\ndata: [DONE]\n")
+	}))
+	defer server.Close()
+
+	c, _ := New(Options{Label: "openai", BaseURL: server.URL, APIKey: "k", Model: "gpt-4o-mini"})
+	resp, err := c.Send(context.Background(), provider.Request{
+		Messages: []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "hi"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.Input != 900 || resp.Usage.CacheRead != 0 {
+		t.Errorf("want 900 fresh and 0 cached, got %d and %d", resp.Usage.Input, resp.Usage.CacheRead)
+	}
+}

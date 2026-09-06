@@ -138,7 +138,21 @@ type wireChunk struct {
 		} `json:"delta"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
+		PromptTokens int `json:"prompt_tokens"`
+
+		// PromptDetails carries what the vendor served from its own cache.
+		// Unlike Anthropic, which reports cached tokens beside the fresh
+		// ones, an OpenAI-style prompt_tokens already includes them — so it
+		// is a split of one number, not a second number, and Input has to
+		// have it taken back out or the same tokens are billed twice.
+		//
+		// Every OpenAI-style vendor here does this without being asked: two
+		// identical requests to Z.ai reported 3 cached tokens and then 1395
+		// of 1397. uhai read neither, and priced the whole prefix as fresh
+		// input on every turn.
+		PromptDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
 	Error *struct {
@@ -396,7 +410,12 @@ func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.R
 		}
 		// The usage chunk carries no choices, so it is read before that check.
 		if chunk.Usage != nil {
-			usage = provider.Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens}
+			cached := chunk.Usage.PromptDetails.CachedTokens
+			fresh := chunk.Usage.PromptTokens - cached
+			if fresh < 0 {
+				fresh = 0 // a vendor that reports more cached than prompt
+			}
+			usage = provider.Usage{Input: fresh, CacheRead: cached, Output: chunk.Usage.CompletionTokens}
 		}
 		if len(chunk.Choices) == 0 {
 			continue

@@ -22,8 +22,18 @@ It is matched by prefix against the last segment of the name, so a family is
 one entry — `claude-`, not one line per release — and
 `openrouter/meta-llama/llama-3.3-70b-instruct` finds `llama-3.3` all the same.
 Anything unlisted falls back to figures small enough to be safe anywhere: being
-wrong low costs an early compaction, being wrong high costs the turn. Add a
+wrong low costs an early compaction, being wrong high costs one wasted
+request — the agent now answers a rejected-for-length reply by summarising
+and asking again, once. Add a
 family when a model behaves oddly, not because the table looks short.
+
+`CacheReadUSD` is its own figure rather than a ratio, because the discount is
+not one ratio: Anthropic charges a tenth, OpenAI a quarter for gpt-4.1 and a
+half for gpt-4o. Zero falls back to `cacheReadRate`, which is Anthropic's
+tenth and a guess anywhere else. It started to matter the day the OpenAI-style
+client began reading `prompt_tokens_details.cached_tokens`: every vendor there
+caches unasked — two identical requests to Z.ai reported 42 cached tokens and
+then 5,295 of 5,297 — and all of it used to be priced as fresh input.
 
 The picker shows six models per provider, and chooses the six by the table.
 What the vendor cannot chat with is dropped first — pictures, speech,

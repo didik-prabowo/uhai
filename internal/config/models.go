@@ -29,6 +29,13 @@ type modelInfo struct {
 	InputUSD  float64 // per million tokens, 0 when it depends on the host
 	OutputUSD float64
 
+	// CacheReadUSD is what a token served from the vendor's cache costs, per
+	// million. Its own figure because the discount is not one ratio: Anthropic
+	// charges a tenth, OpenAI charges a quarter for gpt-4.1 and a half for
+	// gpt-4o. Zero falls back to cacheReadRate, which is Anthropic's tenth and
+	// a guess anywhere else.
+	CacheReadUSD float64
+
 	// NoTools marks the rare model that cannot be given tools, so the zero
 	// value is the common case: it can.
 	NoTools bool
@@ -87,8 +94,12 @@ var models = map[string]modelInfo{
 
 	"claude-": {Context: 200_000, MaxOutput: 8_192},
 
-	"gpt-4o-mini": {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60},
-	"gpt-4o":      {Context: 128_000, MaxOutput: 16_384, InputUSD: 2.50, OutputUSD: 10},
+	// The cached figures are second-hand — read off Gitlawb/zero's catalog,
+	// which cites platform.openai.com/docs/pricing — and they are here rather
+	// than left to the fallback because they disagree with it and with each
+	// other: half for 4o, a quarter for 4.1, against Anthropic's tenth.
+	"gpt-4o-mini": {Context: 128_000, MaxOutput: 16_384, InputUSD: 0.15, OutputUSD: 0.60, CacheReadUSD: 0.075},
+	"gpt-4o":      {Context: 128_000, MaxOutput: 16_384, InputUSD: 2.50, OutputUSD: 10, CacheReadUSD: 1.25},
 	"gpt-4.1":     {Context: 128_000, MaxOutput: 16_384},
 
 	// The only figures here that were not read off a pricing page: Gemini's
@@ -213,6 +224,8 @@ func SupportsTools(modelSetting string) bool { return !infoFor(modelSetting).NoT
 // input would overstate a cached turn by roughly the whole system prompt,
 // which is the larger half of every request here.
 const (
+	// Anthropic's ratios, and the fallback for a model with no figure of its
+	// own. Wrong for OpenAI, which is why CacheReadUSD exists.
 	cacheReadRate  = 0.1
 	cacheWriteRate = 1.25
 )
@@ -229,8 +242,12 @@ func CostOf(modelSetting string, u provider.Usage) float64 {
 	if info.InputUSD == 0 && info.OutputUSD == 0 {
 		return 0
 	}
+	cacheRead := info.CacheReadUSD
+	if cacheRead == 0 {
+		cacheRead = info.InputUSD * cacheReadRate
+	}
 	inputUSD := float64(u.Input)*info.InputUSD +
-		float64(u.CacheRead)*info.InputUSD*cacheReadRate +
+		float64(u.CacheRead)*cacheRead +
 		float64(u.CacheWrite)*info.InputUSD*cacheWriteRate
 	return (inputUSD + float64(u.Output)*info.OutputUSD) / 1_000_000
 }
