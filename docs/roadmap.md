@@ -98,8 +98,6 @@ against servers we wrote ourselves.
 - [ ] Point the TUI at the daemon's conversation. The daemon holds one and
       runs turns on it — proved across processes, history and all — but the
       TUI still runs its own agent, so nothing uses it yet.
-- [ ] A route for Escape. A turn deliberately outlives the front end that
-      asked for it, which leaves no way to stop one on purpose.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 

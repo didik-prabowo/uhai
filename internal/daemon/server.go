@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +80,11 @@ type Server struct {
 	// to it at once would interleave into something neither asked for.
 	Prompt  Runner
 	turning sync.Mutex
+
+	// stopTurn cancels the turn under way, and is nil when none is. Guarded
+	// by mu, like the watcher set: both are read from a request handler while
+	// another goroutine writes them.
+	stopTurn context.CancelFunc
 
 	// AnswerWait overrides how long a question waits for a human. Zero takes
 	// the default.
@@ -161,6 +167,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/questions", s.handleGetQuestions)
 	mux.HandleFunc("POST /v1/questions/{id}", s.handleAnswer)
 	mux.HandleFunc("POST /v1/prompt", s.handlePrompt)
+	mux.HandleFunc("POST /v1/prompt/stop", s.handleStopTurn)
 	return mux
 }
 

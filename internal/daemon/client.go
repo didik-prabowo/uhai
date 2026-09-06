@@ -204,3 +204,9 @@ func (c *Client) Prompt(ctx context.Context, text string) error {
 	}
 	return nil
 }
+
+// StopTurn is Escape: it cancels the turn under way. It is not an error to
+// press it when nothing is running.
+func (c *Client) StopTurn(ctx context.Context) error {
+	return c.post(ctx, "/v1/prompt/stop", nil, &struct{}{})
+}

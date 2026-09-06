@@ -35,11 +35,53 @@ func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request) {
 	s.turning.Lock()
 	defer s.turning.Unlock()
 
-	_, _, err := s.Prompt(context.WithoutCancel(r.Context()), body.Text)
+	// Detached from the request and cancellable on purpose. A front end that
+	// hangs up has left the room; a front end that presses Escape has decided
+	// something, and those are different enough to need different routes.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	s.holdTurn(cancel)
+	defer s.releaseTurn()
+
+	_, _, err := s.Prompt(ctx, body.Text)
 	said := ""
 	if err != nil {
 		said = err.Error()
 	}
 	s.Publish(Event{Kind: EventDone, Text: said})
 	writeJSON(w, map[string]any{"done": true, "err": said})
+}
+
+// holdTurn remembers how to stop the turn now under way.
+func (s *Server) holdTurn(cancel context.CancelFunc) {
+	s.mu.Lock()
+	s.stopTurn = cancel
+	s.mu.Unlock()
+}
+
+func (s *Server) releaseTurn() {
+	s.mu.Lock()
+	stop := s.stopTurn
+	s.stopTurn = nil
+	s.mu.Unlock()
+	if stop != nil {
+		stop() // releases the context, which is not the same as cancelling the work
+	}
+}
+
+// handleStopTurn is Escape. It cancels the turn under way, which reaches the
+// provider mid-stream and any question still waiting for an answer — a
+// question whose turn has been abandoned should not go on holding a terminal
+// hostage until its deadline.
+//
+// Answering 200 when there was nothing to stop: a front end pressing Escape
+// twice, or pressing it as the answer lands, has not made a mistake.
+func (s *Server) handleStopTurn(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	stop := s.stopTurn
+	s.mu.Unlock()
+
+	if stop != nil {
+		stop()
+	}
+	writeJSON(w, map[string]any{"stopped": stop != nil})
 }

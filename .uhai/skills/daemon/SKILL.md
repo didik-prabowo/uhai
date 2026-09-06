@@ -37,8 +37,15 @@ turns writing to it at once interleave into something neither caller asked for.
 
 The turn does not hold the front end's context. A terminal that hangs up
 mid-answer has left the room, not cancelled the work: half a turn in the
-history is worse than a whole one nobody watched. Escape is a different thing
-and will need a route of its own.
+history is worse than a whole one nobody watched.
+
+Escape is the other decision and has its own route, `POST /v1/prompt/stop`.
+Hanging up and pressing Escape look identical over a socket unless they are
+told apart deliberately, and one of them means "I have gone" while the other
+means "stop". It also releases a question still waiting for an answer: one
+whose turn has been abandoned should not hold a terminal until its deadline.
+Pressing it with nothing running answers 200 — a front end that pressed twice,
+or pressed as the answer landed, has not made a mistake.
 
 The permission round trip is what made it possible. `Server.Ask` is what a daemon hands the agent as its `Confirm`
 hook: the question leaves as an event, the terminal answers with a POST to

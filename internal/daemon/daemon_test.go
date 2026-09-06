@@ -562,3 +562,92 @@ func TestATurnFinishesAfterItsFrontEndHangsUp(t *testing.T) {
 		t.Fatal("the turn never finished")
 	}
 }
+
+// A turn deliberately outlives the front end that asked for it, which left no
+// way to stop one on purpose. Hanging up and pressing Escape are different
+// decisions and need different routes.
+func TestEscapeStopsTheTurnThatHangingUpDoesNot(t *testing.T) {
+	reached := make(chan struct{})
+	ended := make(chan error, 1)
+
+	dir, _ := os.MkdirTemp("", "u")
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "d.sock")
+
+	s := NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+		close(reached)
+		<-ctx.Done() // a turn that would otherwise run forever
+		ended <- ctx.Err()
+		return "", 0, ctx.Err()
+	})
+	if err := s.Listen(socket); err != nil {
+		t.Fatal(err)
+	}
+	go s.Serve()
+	t.Cleanup(func() { s.Close() })
+
+	c := Dial(socket)
+	go c.Prompt(context.Background(), "sesuatu yang panjang")
+	<-reached
+
+	if err := c.StopTurn(context.Background()); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	select {
+	case err := <-ended:
+		if err == nil {
+			t.Error("the turn ended without being cancelled")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Escape did not reach the turn")
+	}
+}
+
+// Pressing Escape when nothing is running is not a mistake, and must not read
+// as one.
+func TestEscapeWithNothingRunningIsFine(t *testing.T) {
+	_, c, _ := listen(t, nil)
+	if err := c.StopTurn(context.Background()); err != nil {
+		t.Errorf("Escape on an idle daemon must not be an error: %v", err)
+	}
+}
+
+// A question whose turn was abandoned must not hold a terminal hostage until
+// its deadline: cancelling the turn cancels what it was waiting for.
+func TestEscapeReleasesAQuestionWaitingForAnAnswer(t *testing.T) {
+	dir, _ := os.MkdirTemp("", "u")
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "d.sock")
+
+	answered := make(chan bool, 1)
+	asking := make(chan struct{})
+
+	var s *Server
+	s = NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+		close(asking)
+		answered <- s.Ask(ctx, "write_file", `{"path":"main.go"}`)
+		return "", 0, nil
+	})
+	s.AnswerWait = time.Hour // only Escape can end this
+	if err := s.Listen(socket); err != nil {
+		t.Fatal(err)
+	}
+	go s.Serve()
+	t.Cleanup(func() { s.Close() })
+
+	c := Dial(socket)
+	go c.Prompt(context.Background(), "tulis berkas")
+	<-asking
+
+	if err := c.StopTurn(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case allowed := <-answered:
+		if allowed {
+			t.Error("an abandoned question must not come back as yes")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the question was left waiting after its turn was abandoned")
+	}
+}
