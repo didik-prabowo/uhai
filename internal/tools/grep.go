@@ -46,6 +46,9 @@ func (grepTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 		return fmt.Sprintf("bad regular expression: %v", err), true
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
+	defer cancel()
+
 	var hits []string
 	include := func(string) bool { return true }
 	if args.Include != "" {
@@ -70,10 +73,13 @@ func (grepTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 		}
 		return true
 	})
-	if err != nil {
-		if ctx.Err() != nil {
-			return "the user interrupted this search", true
+	if note, isErr := searchNote(err, len(hits)); note != "" {
+		if isErr {
+			return note, true
 		}
+		return strings.Join(hits, "\n") + "\n\n" + note, false
+	}
+	if err != nil {
 		return fmt.Sprintf("could not search: %v", err), true
 	}
 	if len(hits) == 0 {

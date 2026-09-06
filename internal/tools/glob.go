@@ -40,6 +40,9 @@ func (globTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 		return "pattern must not be empty", true
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
+	defer cancel()
+
 	var found []string
 	match := matcher(args.Pattern)
 	err := walk(ctx, args.Path, func(path string) bool {
@@ -48,10 +51,13 @@ func (globTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 		}
 		return len(found) < maxMatches
 	})
-	if err != nil {
-		if ctx.Err() != nil {
-			return "the user interrupted this search", true
+	if note, isErr := searchNote(err, len(found)); note != "" {
+		if isErr {
+			return note, true
 		}
+		return strings.Join(found, "\n") + "\n\n" + note, false
+	}
+	if err != nil {
 		return fmt.Sprintf("could not search: %v", err), true
 	}
 	if len(found) == 0 {

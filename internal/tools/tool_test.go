@@ -227,3 +227,44 @@ func TestWalkAbandonsATreePartway(t *testing.T) {
 		t.Errorf("the walk read %d of 50 files after being cancelled at 5", seen)
 	}
 }
+
+// maxMatches bounds a search that finds too much. Nothing bounded one that
+// finds too little in a tree too large, and grep reads the contents of every
+// file it walks — so a turn was hostage to it, with nothing to do but wait or
+// throw the whole turn away.
+func TestSearchGivesUpRatherThanHoldingTheTurn(t *testing.T) {
+	was := searchTimeout
+	searchTimeout = time.Nanosecond
+	t.Cleanup(func() { searchTimeout = was })
+
+	for _, c := range []struct{ name, input string }{
+		{NameGlob, `{"pattern":"**/*.go"}`},
+		{NameGrep, `{"pattern":"func "}`},
+	} {
+		out, isErr := Execute(context.Background(), c.name, json.RawMessage(c.input))
+		if !isErr {
+			t.Errorf("%s: a search that found nothing in time is an error, got %q", c.name, out)
+		}
+		if !strings.Contains(out, "narrow it") {
+			t.Errorf("%s: the model has to be told what to do next, got %q", c.name, out)
+		}
+		if strings.Contains(out, "interrupted") {
+			t.Errorf("%s: running out of time is not the user pressing a key: %q", c.name, out)
+		}
+	}
+}
+
+// Whatever was found before the budget ran out comes back: half a large tree
+// is usually already past where the answer was, and throwing it away means
+// paying for the walk twice.
+func TestATimedOutSearchKeepsWhatItFound(t *testing.T) {
+	if note, isErr := searchNote(context.DeadlineExceeded, 12); isErr || !strings.Contains(note, "partial") {
+		t.Errorf("found results survive the deadline: isErr=%v note=%q", isErr, note)
+	}
+	if note, isErr := searchNote(context.Canceled, 12); !isErr || !strings.Contains(note, "interrupted") {
+		t.Errorf("a keypress is still a keypress: isErr=%v note=%q", isErr, note)
+	}
+	if note, _ := searchNote(nil, 12); note != "" {
+		t.Errorf("a search that finished has nothing to explain, got %q", note)
+	}
+}

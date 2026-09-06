@@ -60,7 +60,12 @@ holding a tool's schema, description, permission and implementation together —
 per entry: it is the one tool loop that can run for a long time without
 touching the network or a subprocess, and cancellation used to stop at its
 edge — a grep that finds nothing in a large tree read every file to the end
-whatever the user pressed. It also holds the pattern matcher, which
+whatever the user pressed. It also holds `searchTimeout`, fifteen seconds,
+which is the bound `maxMatches` never was: that one stops a search finding
+too much, and nothing stopped one finding too little in a tree too large.
+What was found by then comes back with a note rather than as an error,
+because half a large tree is usually already past where the answer was.
+And it holds the pattern matcher, which
 builds a regexp rather than calling `filepath.Match`, because `filepath.Match`
 reads `**` as two stars that neither cross a separator and so matched exactly
 one folder deep before going quiet — and `permission.go` — five lines saying which tools escape this process. In

@@ -4,16 +4,48 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // skipDirs are never worth walking into: huge, generated, or not the user's code.
 var skipDirs = map[string]bool{".git": true, "node_modules": true, "vendor": true}
 
 const maxMatches = 200
+
+// searchTimeout bounds one search, the way bashTimeout bounds one command.
+// maxMatches already stops a search that finds too much; nothing stopped one
+// that finds too little in a tree too large, and a grep reads the contents of
+// every file it walks. A turn was hostage to it: the model asks, and the only
+// choices were to wait or to throw the whole turn away.
+//
+// Fifteen seconds rather than bash's two minutes because a search is meant to
+// be the cheap way to look. What was found by then comes back rather than an
+// error — half a monorepo is usually already past where the answer was.
+//
+// A var so a test can shrink it. Nothing else writes to it.
+var searchTimeout = 15 * time.Second
+
+// searchNote explains a result that stopped early, and is empty for one that
+// ran to the end. Shared so glob and grep say the same thing about the same
+// situation.
+func searchNote(err error, found int) (string, bool) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		if found == 0 {
+			return fmt.Sprintf("nothing found in the first %s of searching — narrow it with \"path\", or a more specific pattern", searchTimeout), true
+		}
+		return fmt.Sprintf("(partial: still searching after %s, so there may be more)", searchTimeout), false
+	case errors.Is(err, context.Canceled):
+		return "the user interrupted this search", true
+	}
+	return "", false
+}
 
 // walk visits every file under root, skipping the noise directories. The
 // callback stops the walk by returning false.
