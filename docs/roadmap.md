@@ -95,6 +95,10 @@ against servers we wrote ourselves.
       DuckDuckGo does not answer this machine at all and Mojeek returns a
       captcha. A real one needs a key (Brave, Tavily, Serper) or a
       self-hosted SearXNG, which is a decision about dependencies.
+- [ ] Move the agent behind the daemon. The socket, the event stream and
+      the client exist and are tested; the front end still owns the agent
+      and does not speak to them. Until it does, a /bg task still dies
+      with the terminal, which is the whole reason the daemon was started.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 

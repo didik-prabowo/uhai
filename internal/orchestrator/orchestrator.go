@@ -10,8 +10,10 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"github.com/didik-prabowo/uhai/internal/daemon"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/cli"
@@ -163,4 +165,46 @@ func newAgent() (*agent.Agent, error) {
 		a.System += "\n\n# Skills\nThis project keeps instructions for particular jobs. When one of these covers what you are asked to do, read its file before starting.\n\n" + skills
 	}
 	return a, err
+}
+
+// RunDaemon runs the agent as a process the terminal can outlive, until it is
+// interrupted. It is in the foreground on purpose for now: a daemon that
+// forks itself before it is trusted is a daemon nobody can watch, and the one
+// thing worth knowing about this one is what it does while it runs.
+//
+// It owns nothing yet but the socket. Moving the agent behind it is the next
+// step and a larger one — this is the transport, proved on its own.
+func RunDaemon() error {
+	socket, err := daemon.SocketPath()
+	if err != nil {
+		return err
+	}
+	if _, err := config.Dir(); err != nil {
+		return err
+	}
+	if dir, derr := config.Dir(); derr == nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	}
+
+	srv := daemon.NewServer(store)
+	if err := srv.Listen(socket); err != nil {
+		return fmt.Errorf("could not listen on %s: %w", socket, err)
+	}
+	fmt.Fprintln(os.Stderr, "uhai: daemon listening on", socket)
+
+	// The socket is a file. A daemon killed without clearing it leaves the
+	// next one to do it, which works, but only because removeStale exists —
+	// tidying up after ourselves is cheaper than relying on that.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		fmt.Fprintln(os.Stderr, "uhai: daemon stopping")
+		srv.Close()
+		os.Remove(socket)
+	}()
+
+	return srv.Serve()
 }

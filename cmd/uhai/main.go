@@ -15,8 +15,16 @@ func main() {
 	allowTools := flag.Bool("y", false, "with -p, let tools write files and run commands without asking")
 	resume := flag.Bool("resume", false, "carry on from a saved conversation: the newest, or -resume <id>")
 	list := flag.Bool("sessions", false, "list the saved conversations and exit")
+	daemon := flag.Bool("daemon", false, "run the agent as a process the terminal can outlive")
 	flag.Parse()
 
+	if *daemon {
+		if err := orchestrator.RunDaemon(); err != nil {
+			fmt.Fprintln(os.Stderr, "uhai:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *list {
 		if err := orchestrator.ListSessions(); err != nil {
 			fmt.Fprintln(os.Stderr, "uhai:", err)
