@@ -16,8 +16,18 @@ import (
 	"github.com/didik-prabowo/uhai/internal/session/filestore"
 )
 
-// listen starts a daemon on a socket of its own and hands back the client.
+// listen starts a daemon and hands back a client for one project. The project
+// is a directory of its own so two of them in one test are genuinely two
+// projects, the way they are on a real machine.
 func listen(t *testing.T, store session.Store) (*Server, *Client, string) {
+	t.Helper()
+	s, dir := serve(t, store, nil)
+	return s, s.clientFor(t, dir, "proyek"), s.Addr()
+}
+
+// serve starts a daemon and returns it with the directory its projects live
+// under.
+func serve(t *testing.T, store session.Store, build Builder) (*Server, string) {
 	t.Helper()
 	// Not t.TempDir(): a macOS temp path is long enough to pass the 104-byte
 	// limit a unix socket address has, and the failure is a bind error that
@@ -28,14 +38,34 @@ func listen(t *testing.T, store session.Store) (*Server, *Client, string) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	socket := filepath.Join(dir, "d.sock")
-	s := NewServer(store, nil, nil)
-	if err := s.Listen(socket); err != nil {
+	s := NewServer(store, build)
+	if err := s.Listen(filepath.Join(dir, "d.sock")); err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 	go s.Serve()
 	t.Cleanup(func() { s.Close() })
-	return s, Dial(socket), socket
+	return s, dir
+}
+
+// clientFor is a client talking about one project under dir.
+func (s *Server) clientFor(t *testing.T, dir, project string) *Client {
+	t.Helper()
+	root := filepath.Join(dir, project)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return DialFor(s.Addr(), root)
+}
+
+// rootOf is the resolved path the daemon keys a project by, which is what
+// Publish and Ask take.
+func rootOf(t *testing.T, dir, project string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(filepath.Join(dir, project))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
 }
 
 func TestDaemonAnswersOnItsSocket(t *testing.T) {
@@ -61,7 +91,14 @@ func TestDaemonAnswersOnItsSocket(t *testing.T) {
 }
 
 func TestEventsReachAClientAsTheyHappen(t *testing.T) {
-	s, c, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
+	// The workspace has to exist before anything can be published into it,
+	// which is what the first request does.
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -73,9 +110,9 @@ func TestEventsReachAClientAsTheyHappen(t *testing.T) {
 	// Published after the subscription, and read before the turn would have
 	// ended: the point of a stream is that it arrives while it is written.
 	go func() {
-		s.Publish(Event{Kind: EventDelta, Text: "ha"})
-		s.Publish(Event{Kind: EventDelta, Text: "lo"})
-		s.Publish(Event{Kind: EventTaskDone, Task: "t1"})
+		s.Publish(root, Event{Kind: EventDelta, Text: "ha"})
+		s.Publish(root, Event{Kind: EventDelta, Text: "lo"})
+		s.Publish(root, Event{Kind: EventTaskDone, Task: "t1"})
 	}()
 
 	var got string
@@ -98,7 +135,9 @@ func TestEventsReachAClientAsTheyHappen(t *testing.T) {
 // A front end that stops reading must not stop the agent: the daemon exists to
 // keep working when a terminal goes away.
 func TestASlowClientDoesNotHoldTheDaemonUp(t *testing.T) {
-	s, c, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if _, err := c.Events(ctx); err != nil {
@@ -109,7 +148,7 @@ func TestASlowClientDoesNotHoldTheDaemonUp(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 1000; i++ {
-			s.Publish(Event{Kind: EventDelta, Text: "x"})
+			s.Publish(root, Event{Kind: EventDelta, Text: "x"})
 		}
 		close(done)
 	}()
@@ -130,6 +169,8 @@ func TestSessionsComeBackOverTheSocket(t *testing.T) {
 	store := filestore.New(filepath.Join(dir, "sessions"))
 	s := session.New()
 	s.Model = "zai/glm-4.7"
+	// The listing is this project's, so the fixture has to be in it.
+	s.Root = filepath.Join(dir, "proyek")
 	s.Messages = []provider.Message{{
 		Role:    provider.RoleUser,
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
@@ -138,7 +179,9 @@ func TestSessionsComeBackOverTheSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, c, _ := listen(t, store)
+	srv, sdir := serve(t, store, nil)
+	_ = sdir
+	c := DialFor(srv.Addr(), filepath.Join(dir, "proyek"))
 	var out []session.Session
 	if err := c.get(context.Background(), "/v1/sessions", &out); err != nil {
 		t.Fatalf("sessions: %v", err)
@@ -161,7 +204,7 @@ func TestAStaleSocketIsCleared(t *testing.T) {
 	if err := os.WriteFile(socket, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := NewServer(nil, nil, nil)
+	s := NewServer(nil, nil)
 	if err := s.Listen(socket); err != nil {
 		t.Fatalf("a leftover socket must not stop the next daemon: %v", err)
 	}
@@ -182,7 +225,7 @@ func TestATaskOutlivesTheClientThatStartedIt(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	socket := filepath.Join(dir, "d.sock")
 
-	s := NewServer(nil, func(ctx context.Context, prompt string) (string, int, error) {
+	s := NewServer(nil, taskBuilder(func(ctx context.Context, prompt string) (string, int, error) {
 		close(running)
 		select {
 		case <-finish:
@@ -194,7 +237,7 @@ func TestATaskOutlivesTheClientThatStartedIt(t *testing.T) {
 			// long before the terminal even closed.
 			return "", 0, fmt.Errorf("the task was cancelled with its client: %w", ctx.Err())
 		}
-	}, nil)
+	}))
 	if err := s.Listen(socket); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +304,7 @@ func TestADaemonWithNoProviderSaysSo(t *testing.T) {
 func TestASecondDaemonRefusesInsteadOfClobbering(t *testing.T) {
 	first, _, socket := listen(t, nil)
 
-	second := NewServer(nil, nil, nil)
+	second := NewServer(nil, nil)
 	err := second.Listen(socket)
 	if err == nil {
 		second.Close()
@@ -295,7 +338,7 @@ func TestALeftoverSocketIsStillCleared(t *testing.T) {
 	}
 	l.Close()
 	if _, err := os.Stat(socket); err == nil {
-		s := NewServer(nil, nil, nil)
+		s := NewServer(nil, nil)
 		if err := s.Listen(socket); err != nil {
 			t.Fatalf("a dead socket must not stop the next daemon: %v", err)
 		}
@@ -349,7 +392,12 @@ func TestEnsureUsesTheDaemonThatIsAlreadyThere(t *testing.T) {
 // reason moving the conversation into the daemon is a piece of work rather
 // than a move.
 func TestAQuestionGoesOutAndTheAnswerComesBack(t *testing.T) {
-	s, c, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err) // opens the workspace
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -359,7 +407,7 @@ func TestAQuestionGoesOutAndTheAnswerComesBack(t *testing.T) {
 	}
 
 	allowed := make(chan bool, 1)
-	go func() { allowed <- s.Ask(context.Background(), "write_file", `{"path":"main.go"}`) }()
+	go func() { allowed <- s.Ask(context.Background(), root, "write_file", `{"path":"main.go"}`) }()
 
 	// The question reaches the terminal as it is asked, not when the turn ends.
 	var asked Question
@@ -390,15 +438,20 @@ func TestAQuestionGoesOutAndTheAnswerComesBack(t *testing.T) {
 // cannot silently write files. A daemon nobody is watching is that situation
 // from further away, and answers the same way.
 func TestAQuestionNobodyAnswersIsDenied(t *testing.T) {
-	s, _, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	if s.Ask(ctx, "run_bash", `{"command":"rm -rf /"}`) {
+	if s.Ask(ctx, root, "run_bash", `{"command":"rm -rf /"}`) {
 		t.Error("a question with nobody to answer it must not be allowed")
 	}
 	// And it is not left open for the next terminal to trip over.
-	if open := s.questions.list(); len(open) != 0 {
+	if open := s.workspace(root).questions.list(); len(open) != 0 {
 		t.Errorf("a question that was given up on is still open: %+v", open)
 	}
 }
@@ -406,9 +459,14 @@ func TestAQuestionNobodyAnswersIsDenied(t *testing.T) {
 // A terminal that attaches mid-turn can still find the question, rather than
 // leaving the agent to wait out the timeout for nothing.
 func TestAQuestionIsVisibleToATerminalThatArrivesLate(t *testing.T) {
-	s, c, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
-	go s.Ask(context.Background(), "edit_file", `{"path":"go.mod"}`)
+	go s.Ask(context.Background(), root, "edit_file", `{"path":"go.mod"}`)
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		open, err := c.Questions(context.Background())
@@ -430,9 +488,14 @@ func TestAQuestionIsVisibleToATerminalThatArrivesLate(t *testing.T) {
 // Answering twice must not look like it worked twice: the second terminal has
 // to be told the decision was already made.
 func TestAnAlreadyAnsweredQuestionSaysSo(t *testing.T) {
-	s, c, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
-	go s.Ask(context.Background(), "write_file", "{}")
+	go s.Ask(context.Background(), root, "write_file", "{}")
 	var id string
 	for id == "" {
 		if open, _ := c.Questions(context.Background()); len(open) == 1 {
@@ -455,18 +518,23 @@ func TestAnAlreadyAnsweredQuestionSaysSo(t *testing.T) {
 // says nothing. The context stays open, so only the deadline can end it — and
 // it has to end it with a no.
 func TestAQuestionNobodyAnswersInTimeIsDenied(t *testing.T) {
-	s, c, _ := listen(t, nil)
+	s, dir := serve(t, nil, nil)
 	s.AnswerWait = 150 * time.Millisecond
+	c := s.clientFor(t, dir, "proyek")
+	root := rootOf(t, dir, "proyek")
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if _, err := c.Events(ctx); err != nil { // watching, and silent
 		t.Fatal(err)
 	}
 
-	if s.Ask(context.Background(), "run_bash", `{"command":"rm -rf /"}`) {
+	if s.Ask(context.Background(), root, "run_bash", `{"command":"rm -rf /"}`) {
 		t.Error("silence is not consent")
 	}
-	if open := s.questions.list(); len(open) != 0 {
+	if open := s.workspace(root).questions.list(); len(open) != 0 {
 		t.Errorf("a question that timed out is still open: %+v", open)
 	}
 }
@@ -481,7 +549,7 @@ func TestOneTurnAtATime(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	socket := filepath.Join(dir, "d.sock")
 
-	s := NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+	s := NewServer(nil, promptBuilder(func(ctx context.Context, text string) (string, int, error) {
 		mu.Lock()
 		overlapping++
 		if overlapping > most {
@@ -493,7 +561,7 @@ func TestOneTurnAtATime(t *testing.T) {
 		overlapping--
 		mu.Unlock()
 		return "", 0, nil
-	})
+	}))
 	if err := s.Listen(socket); err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +594,7 @@ func TestATurnFinishesAfterItsFrontEndHangsUp(t *testing.T) {
 	socket := filepath.Join(dir, "d.sock")
 
 	gone := make(chan struct{})
-	s := NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+	s := NewServer(nil, promptBuilder(func(ctx context.Context, text string) (string, int, error) {
 		<-gone
 		select {
 		case <-ctx.Done():
@@ -535,7 +603,7 @@ func TestATurnFinishesAfterItsFrontEndHangsUp(t *testing.T) {
 			finished <- nil
 		}
 		return "", 0, nil
-	})
+	}))
 	if err := s.Listen(socket); err != nil {
 		t.Fatal(err)
 	}
@@ -574,12 +642,12 @@ func TestEscapeStopsTheTurnThatHangingUpDoesNot(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	socket := filepath.Join(dir, "d.sock")
 
-	s := NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
+	s := NewServer(nil, promptBuilder(func(ctx context.Context, text string) (string, int, error) {
 		close(reached)
 		<-ctx.Done() // a turn that would otherwise run forever
 		ended <- ctx.Err()
 		return "", 0, ctx.Err()
-	})
+	}))
 	if err := s.Listen(socket); err != nil {
 		t.Fatal(err)
 	}
@@ -622,11 +690,15 @@ func TestEscapeReleasesAQuestionWaitingForAnAnswer(t *testing.T) {
 	answered := make(chan bool, 1)
 	asking := make(chan struct{})
 
+	// The builder is told which project it is for, which is exactly what Ask
+	// needs — no test-only wiring to carry the root around.
 	var s *Server
-	s = NewServer(nil, nil, func(ctx context.Context, text string) (string, int, error) {
-		close(asking)
-		answered <- s.Ask(ctx, "write_file", `{"path":"main.go"}`)
-		return "", 0, nil
+	s = NewServer(nil, func(root string) (Runner, Runner, error) {
+		return nil, func(ctx context.Context, text string) (string, int, error) {
+			close(asking)
+			answered <- s.Ask(ctx, root, "write_file", `{"path":"main.go"}`)
+			return "", 0, nil
+		}, nil
 	})
 	s.AnswerWait = time.Hour // only Escape can end this
 	if err := s.Listen(socket); err != nil {
@@ -652,92 +724,130 @@ func TestEscapeReleasesAQuestionWaitingForAnAnswer(t *testing.T) {
 	}
 }
 
-// A daemon builds its agent from the directory it was started in — AGENTS.md,
-// where the tools think the tree begins, the project's permission lists — so
-// one daemon shared across projects answers with the wrong project's
-// instructions and says nothing. Measured before this existed: a task started
-// in project B came back "PROYEK A."
-func TestEachProjectGetsItsOwnDaemon(t *testing.T) {
-	home, err := os.MkdirTemp("", "u")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(home)
-	t.Setenv("HOME", home)
+// taskBuilder and promptBuilder turn one runner into a Builder, so a test that
+// cares about tasks does not have to say anything about conversations, and the
+// other way round.
+func taskBuilder(run Runner) Builder {
+	return func(string) (Runner, Runner, error) { return run, nil, nil }
+}
 
-	a, err := SocketPath(filepath.Join(home, "proyek-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := SocketPath(filepath.Join(home, "proyek-b"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b {
-		t.Fatalf("two projects share one daemon: %s", a)
-	}
+func promptBuilder(prompt Runner) Builder {
+	return func(string) (Runner, Runner, error) { return nil, prompt, nil }
+}
 
-	// Stable, or a front end would lose track of its own daemon between runs.
-	again, _ := SocketPath(filepath.Join(home, "proyek-a"))
-	if again != a {
-		t.Errorf("the same project got two sockets: %s then %s", a, again)
-	}
+// One daemon now serves every project, which is the trade crush and zero both
+// make: one process and one log, against isolation that has to be built rather
+// than being free. These are the tests that pay for it.
+//
+// A request that does not name its project is refused. Defaulting to anything
+// is how the per-user daemon answered project B with project A's instructions,
+// and it did it silently.
+func TestARequestWithoutAProjectIsRefused(t *testing.T) {
+	s, _ := serve(t, nil, nil)
 
-	// Short enough to be a socket address. A unix path is capped at about 104
-	// bytes, which a real project path passes on its own — which is why it is
-	// hashed rather than spelled out.
-	if len(a) > 100 {
-		t.Errorf("socket path is %d bytes, too long to bind: %s", len(a), a)
+	// A client that sends no header at all, which no real one does — the
+	// point is what the daemon does when one is written that way.
+	bare := DialFor(s.Addr(), "")
+	_, err := bare.Health(context.Background())
+	if err == nil {
+		t.Fatal("a request with no project must be refused, not guessed at")
+	}
+	if !strings.Contains(err.Error(), "which project") {
+		t.Errorf("the refusal has to say what is missing, got %q", err)
 	}
 }
 
-// The same project reached by a symlink is the same project: /tmp and
-// /private/tmp must not be two daemons that cannot see each other's work.
-func TestASymlinkedProjectIsTheSameProject(t *testing.T) {
-	home, err := os.MkdirTemp("", "u")
+// The characteristic failure of one shared daemon: a terminal watching one
+// project seeing another's answer being written.
+func TestEventsDoNotLeakBetweenProjects(t *testing.T) {
+	s, dir := serve(t, nil, nil)
+	a := s.clientFor(t, dir, "proyek-a")
+	b := s.clientFor(t, dir, "proyek-b")
+	for _, c := range []*Client{a, b} {
+		if _, err := c.Health(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watchingB, err := b.Events(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(home)
-	t.Setenv("HOME", home)
 
-	real := filepath.Join(home, "proyek")
-	if err := os.MkdirAll(real, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(home, "pintasan")
-	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("no symlinks here: %v", err)
-	}
+	s.Publish(rootOf(t, dir, "proyek-a"), Event{Kind: EventDelta, Text: "rahasia proyek a"})
+	s.Publish(rootOf(t, dir, "proyek-b"), Event{Kind: EventDelta, Text: "milik b"})
 
-	direct, _ := SocketPath(real)
-	viaLink, _ := SocketPath(link)
-	if direct != viaLink {
-		t.Errorf("a symlink made a second daemon:\n  %s\n  %s", direct, viaLink)
+	// B's watcher must see B's event, and it must be the first thing it sees:
+	// anything of A's arriving before it is the leak.
+	select {
+	case e := <-watchingB:
+		if e.Text != "milik b" {
+			t.Errorf("a terminal watching b saw %q", e.Text)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("b never saw its own event")
 	}
 }
 
-// Daemons are per project, so their logs are too: one shared file interleaves
-// two of them into something nobody can read at the moment they need to.
-func TestEachDaemonWritesItsOwnLog(t *testing.T) {
-	home, err := os.MkdirTemp("", "u")
-	if err != nil {
+// Task ids are per project and both registries number from t1, so one
+// project's terminal must not be able to stop another's t1.
+func TestTasksDoNotLeakBetweenProjects(t *testing.T) {
+	release := make(chan struct{})
+	s, dir := serve(t, nil, func(root string) (Runner, Runner, error) {
+		return func(ctx context.Context, prompt string) (string, int, error) {
+			<-release
+			return "selesai di " + filepath.Base(root), 0, nil
+		}, nil, nil
+	})
+	a := s.clientFor(t, dir, "proyek-a")
+	b := s.clientFor(t, dir, "proyek-b")
+
+	if _, err := a.StartTask(context.Background(), "kerja a"); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(home)
-	t.Setenv("HOME", home)
+	// B sees none of it.
+	if list, err := b.Tasks(context.Background()); err != nil || len(list) != 0 {
+		t.Fatalf("b can see a's tasks: %+v (%v)", list, err)
+	}
+	// And cannot stop it, though the id is the same t1 in both.
+	if err := b.StopTask(context.Background(), "t1"); err == nil {
+		t.Error("b stopped a task belonging to a")
+	}
+	close(release)
+}
 
-	a, _ := SocketPath(filepath.Join(home, "proyek-a"))
-	b, _ := SocketPath(filepath.Join(home, "proyek-b"))
-	if LogPath(a) == LogPath(b) {
-		t.Fatalf("two projects share one log: %s", LogPath(a))
+// A question is answered by the project it was asked in. Ids start at q1 in
+// both, so without the split a terminal in one could decide the other's.
+func TestQuestionsDoNotLeakBetweenProjects(t *testing.T) {
+	s, dir := serve(t, nil, nil)
+	a := s.clientFor(t, dir, "proyek-a")
+	b := s.clientFor(t, dir, "proyek-b")
+	for _, c := range []*Client{a, b} {
+		if _, err := c.Health(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// Named after its own socket, so the pair can be found together by
-	// someone reading the directory.
-	if LogPath(a) != strings.TrimSuffix(a, ".sock")+".log" {
-		t.Errorf("the log does not match its socket: %s beside %s", LogPath(a), a)
+	s.AnswerWait = 2 * time.Second
+
+	answered := make(chan bool, 1)
+	go func() { answered <- s.Ask(context.Background(), rootOf(t, dir, "proyek-a"), "write_file", "{}") }()
+
+	// B sees no question, and answering "q1" there decides nothing of a's.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if open, _ := b.Questions(context.Background()); len(open) != 0 {
+			t.Fatalf("b can see a's question: %+v", open)
+		}
+		if open, _ := a.Questions(context.Background()); len(open) == 1 {
+			break
+		}
 	}
-	if strings.HasSuffix(LogPath(a), ".sock") {
-		t.Errorf("the log is still named like a socket: %s", LogPath(a))
+	if err := b.Answer(context.Background(), "q1", true); err == nil {
+		t.Error("b answered a question belonging to a")
+	}
+	if allowed := <-answered; allowed {
+		t.Error("a's question came back allowed after only b was asked")
 	}
 }

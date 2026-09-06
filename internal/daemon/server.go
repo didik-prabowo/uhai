@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/session"
-	"github.com/didik-prabowo/uhai/internal/task"
 )
 
 // Event is one thing the daemon has to tell its front ends. It is deliberately
@@ -62,38 +60,22 @@ const (
 type Server struct {
 	Sessions session.Store
 
-	// Tasks is the work the daemon is holding for its front ends. It lives
-	// here rather than in the front end because that is the whole point: a
-	// task in the front end's process dies when the terminal closes.
-	Tasks *task.Registry
-
-	// Run is what a task does with its prompt, and is nil in a daemon that
-	// started without a provider — it can still serve sessions and events,
-	// and says so when asked to run something.
-	Run Runner
-
-	// Prompt is one turn of the conversation the daemon holds. Injected for
-	// the same reason Run is: this package owns the socket and the lifetime,
-	// not the agent.
-	//
-	// One at a time. A conversation is a single history, and two turns writing
-	// to it at once would interleave into something neither asked for.
-	Prompt  Runner
-	turning sync.Mutex
-
-	// stopTurn cancels the turn under way, and is nil when none is. Guarded
-	// by mu, like the watcher set: both are read from a request handler while
-	// another goroutine writes them.
-	stopTurn context.CancelFunc
+	// New builds the runners for a project the first time it is heard from.
+	// Nil in a daemon that started without a provider: it can still serve
+	// sessions and events, and says so when asked to run something.
+	New Builder
 
 	// AnswerWait overrides how long a question waits for a human. Zero takes
 	// the default.
 	AnswerWait time.Duration
 
-	questions questions
-
+	// projects is one workspace per project, created on demand. Everything a
+	// conversation needs lives in there rather than here — an agent, its
+	// tasks, its questions, its watchers — because one daemon now serves every
+	// project on the machine and a field on Server would be a field two
+	// projects share.
 	mu       sync.Mutex
-	watchers map[chan Event]struct{}
+	projects map[string]*workspace
 
 	listener net.Listener
 	http     *http.Server
@@ -101,13 +83,11 @@ type Server struct {
 
 // NewServer builds a daemon. Sessions may be nil in a test that only speaks to
 // the socket.
-func NewServer(store session.Store, run, prompt Runner) *Server {
+func NewServer(store session.Store, build Builder) *Server {
 	return &Server{
 		Sessions: store,
-		Tasks:    &task.Registry{},
-		Run:      run,
-		Prompt:   prompt,
-		watchers: map[chan Event]struct{}{},
+		New:      build,
+		projects: map[string]*workspace{},
 	}
 }
 
@@ -183,32 +163,16 @@ func (s *Server) Close() error {
 	return nil
 }
 
-// Publish hands one event to every front end currently watching. It never
-// blocks on a slow reader: a front end that has stopped draining is a front
-// end that has gone away, and holding the agent up for it would stop the work
-// the daemon exists to keep running.
-func (s *Server) Publish(e Event) {
+// Publish hands one event to the front ends watching one project. The root is
+// required rather than defaulted: an event sent to "the daemon" would reach
+// every terminal on the machine, which is the leak this design has to prevent
+// and the socket-per-project one could not express.
+func (s *Server) Publish(root string, e Event) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for ch := range s.watchers {
-		select {
-		case ch <- e:
-		default:
-		}
-	}
-}
-
-func (s *Server) watch() (<-chan Event, func()) {
-	ch := make(chan Event, 64)
-	s.mu.Lock()
-	s.watchers[ch] = struct{}{}
+	ws := s.projects[root]
 	s.mu.Unlock()
-
-	return ch, func() {
-		s.mu.Lock()
-		delete(s.watchers, ch)
-		close(ch)
-		s.mu.Unlock()
+	if ws != nil {
+		ws.publish(e)
 	}
 }
 
@@ -217,11 +181,21 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// started without a provider serves sessions and events and nothing else,
 	// and a front end deciding where to send a prompt needs to know which it
 	// is before it sends one.
-	writeJSON(w, map[string]any{
-		"ok":           true,
-		"pid":          os.Getpid(),
-		"conversation": s.Prompt != nil,
-	})
+	// Whether it can hold a conversation for the project asked about, not
+	// only whether it is alive: a front end deciding where to send a prompt
+	// needs to know before it sends one.
+	// Health refuses a nameless request like every other route. It was the
+	// one that swallowed the error and answered 200 anyway, which made the
+	// guard look total while leaving a door open — and a front end probing
+	// with health would have been told a daemon was ready for a project it
+	// had never named.
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	holds := ws.prompt != nil
+	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid(), "conversation": holds})
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -229,25 +203,43 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, []session.Session{})
 		return
 	}
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	all, err := s.Sessions.All()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, all)
+	// This project's, the way -sessions does it. One daemon holding every
+	// project must not become the one place they get mixed again.
+	mine := []session.Session{}
+	for _, c := range all {
+		if c.Root != "" && session.SameRoot(c.Root, ws.root) {
+			mine = append(mine, c)
+		}
+	}
+	writeJSON(w, mine)
 }
 
 // handleEvents is the second stream in uhai, and the first one that exists
 // only because there are two processes. The provider already streams the
 // answer to the agent; this carries it the rest of the way.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
-	events, stop := s.watch()
+	events, stop := ws.watch()
 	defer stop()
 
 	w.Header().Set("Content-Type", "text/event-stream")

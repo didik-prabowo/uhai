@@ -39,8 +39,14 @@ func view(t task.Task) TaskView {
 type Runner func(ctx context.Context, prompt string) (report string, tokens int, err error)
 
 func (s *Server) handlePostTasks(w http.ResponseWriter, r *http.Request) {
-	if s.Run == nil {
-		http.Error(w, "this daemon cannot run tasks: no provider was connected when it started", http.StatusServiceUnavailable)
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if ws.run == nil {
+		http.Error(w, "this daemon cannot run tasks for "+ws.root+
+			": no provider was connected, or the project could not be opened", http.StatusServiceUnavailable)
 		return
 	}
 	var body struct {
@@ -57,11 +63,11 @@ func (s *Server) handlePostTasks(w http.ResponseWriter, r *http.Request) {
 	started := make(chan task.Task, 1)
 	go func() {
 		//nolint:errcheck // the task records its own failure; nobody is here to tell
-		s.Tasks.Run(context.WithoutCancel(r.Context()), short(body.Prompt),
+		ws.tasks.Run(context.WithoutCancel(r.Context()), short(body.Prompt),
 			func(ctx context.Context, t task.Task) (string, int, error) {
 				started <- t
-				report, tokens, err := s.Run(ctx, body.Prompt)
-				s.Publish(Event{Kind: EventTaskDone, Task: t.ID})
+				report, tokens, err := ws.run(ctx, body.Prompt)
+				ws.publish(Event{Kind: EventTaskDone, Task: t.ID})
 				return report, tokens, err
 			})
 	}()
@@ -70,22 +76,32 @@ func (s *Server) handlePostTasks(w http.ResponseWriter, r *http.Request) {
 	case t := <-started:
 		writeJSON(w, view(t))
 	case <-time.After(5 * time.Second):
-		// Queued behind other work rather than running. It exists and has an
-		// id, but this request has nothing to hand back yet.
 		http.Error(w, "the task was accepted but is still queued", http.StatusAccepted)
 	}
 }
 
 func (s *Server) handleGetTasks(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	out := []TaskView{}
-	for _, t := range s.Tasks.Snapshot() {
+	for _, t := range ws.tasks.Snapshot() {
 		out = append(out, view(t))
 	}
 	writeJSON(w, out)
 }
 
 func (s *Server) handleStopTask(w http.ResponseWriter, r *http.Request) {
-	if !s.Tasks.Stop(r.PathValue("id")) {
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// This project's registry only. Both number from t1, so a terminal in one
+	// project stopping another's t1 is exactly the collision to prevent.
+	if !ws.tasks.Stop(r.PathValue("id")) {
 		http.Error(w, "no such task, or it had already finished", http.StatusNotFound)
 		return
 	}

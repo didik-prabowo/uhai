@@ -66,28 +66,48 @@ and `/stop d1` routes there. Without the prefix, `/stop t1` is ambiguous the
 moment a session has one of each — which happens as soon as the model calls
 spawn_task while a daemon is running.
 
-## One daemon per project
+## One daemon, every project
 
-A daemon builds its agent from the directory it was started in: `AGENTS.md`,
-where the tools think the tree begins, the project's own permission lists. One
-daemon shared across projects therefore answers with the wrong project's
-instructions and says nothing about it — measured before the socket was split,
-a task started in project B came back "PROYEK A."
+`uhai -daemon` listens on `~/.uhai/daemon.sock` — one per user, serving every
+project on the machine. It was one socket per project for a while, which made a
+cross-project mix-up impossible by construction. This is the other trade, and
+the one crush and zero both make: one process, one log, and no daemon left
+behind for every checkout ever opened.
 
-So the socket carries a hash of the project's absolute path. Hashed because a
-unix socket address is a filename with a hard length cap — about 104 bytes,
-which a real project path passes on its own. Symlinks are resolved first, so
-`/tmp` and `/private/tmp` are one project rather than two daemons that cannot
-see each other's work.
+What that gives up has to be paid back deliberately.
 
-The log sits beside its socket — `daemon-<hash>.log` next to
-`daemon-<hash>.sock` — for the same reason: one shared file interleaves two
-projects' daemons into something nobody can read at the moment they need to.
+**Every request names its project**, in an `X-Uhai-Project` header. A header
+rather than a path segment or a body field: it applies to GET and POST alike,
+and a route that forgot it would have to forget it somewhere visible.
 
-crush solves the same problem with workspaces inside one daemon, routing every
-request through `/v1/workspaces/{id}/...`. A socket per project is the smaller
-answer: no routing, no ids, and no single process holding two conversations
-that must never see each other.
+**A request that does not name one is refused.** Defaulting to anything — the
+daemon's own directory, the last project seen — is exactly how the per-user
+version answered project B with project A's instructions, silently. Health
+refuses too; it was the one route that swallowed the error and answered 200
+anyway, which made the guard look total while leaving a door open.
+
+**Nothing a conversation needs lives on the Server.** The agent, its tasks, its
+questions, its watchers and its turn lock are all fields of a `workspace`, one
+per project, created the first time that project is heard from. Isolation
+per-object rather than per-lookup: a leak would have to be written on purpose
+rather than by forgetting a filter.
+
+Task ids and question ids both start at `t1` and `q1` in every project, so the
+tests name the collision directly — one project stopping another's `t1`, or
+answering another's `q1`.
+
+Measured against a live model, one daemon on one socket:
+
+```
+tugas latar   proyek A → "PROYEK A"      proyek B → "PROYEK B"
+percakapan    terminal A melihat "PROYEK A", terminal B "PROYEK B"
+              bocor lintas proyek: tidak ada
+tanpa header  400 no X-Uhai-Project header
+```
+
+crush routes the same thing through `/v1/workspaces/{id}/...` and registers
+workspaces up front; here a project is remembered the first time it speaks, so
+a machine with ten checkouts pays for the ones actually used.
 
 ## Attaching
 

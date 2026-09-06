@@ -333,13 +333,21 @@ func ContinueSession(s session.Session) {
 // recoverable the same way. Exported because -p answers from orchestrator,
 // which is outside this package and was the one door that saved nothing.
 func SaveSession(a *agent.Agent) error {
+	here, _ := os.Getwd()
+	return saveSession(a, here)
+}
+
+// SaveSessionIn is SaveSession for a named project, which a daemon serving
+// several needs: its own working directory says nothing about whose turn just
+// finished.
+func SaveSessionIn(a *agent.Agent, root string) error { return saveSession(a, root) }
+
+func saveSession(a *agent.Agent, root string) error {
 	current.Messages = a.History
 	current.Spend = spent
 	// Stamped on every save rather than at the start: a session resumed in a
 	// different tree belongs to the tree it is being worked in now.
-	if here, err := os.Getwd(); err == nil {
-		current.Root = here
-	}
+	current.Root = root
 	if a.Provider != nil {
 		current.Model = a.Provider.Name()
 	}

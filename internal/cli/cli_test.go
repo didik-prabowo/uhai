@@ -716,6 +716,12 @@ func (stubProvider) Send(ctx context.Context, req provider.Request) (*provider.R
 // A background task runs the same model as the session, so it has to inherit
 // what is known about that model — not the defaults for a model nobody named.
 func TestBackgroundTaskInheritsTheModelsLimits(t *testing.T) {
+	// Isolated from whatever daemon the machine happens to be running. /bg
+	// prefers one when it is there, so without this the test's result depends
+	// on the developer's own processes — and it did: a stray daemon took the
+	// task, ran it, and left this registry empty.
+	t.Setenv("HOME", t.TempDir())
+
 	a := agent.New(stubProvider{})
 	a.MaxContextTokens, a.UseTools = 200_000, false
 

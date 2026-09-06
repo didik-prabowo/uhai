@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -22,6 +23,12 @@ const dialHost = "http://uhai.local"
 // Client talks to a running daemon.
 type Client struct {
 	http *http.Client
+
+	// root is the project every request from this client is about. Held on
+	// the client rather than passed to each call: a caller that had to
+	// remember it on every call is a caller that will forget once, and
+	// forgetting is how the wrong project gets answered.
+	root string
 }
 
 // Dial returns a client for the daemon on the given socket. It does not
@@ -29,7 +36,14 @@ type Client struct {
 // the caller can act on, rather than by a constructor that can fail for two
 // different reasons.
 func Dial(socket string) *Client {
-	return &Client{http: &http.Client{
+	root, _ := os.Getwd()
+	return DialFor(socket, root)
+}
+
+// DialFor is Dial for a named project, which is what a test needs and what a
+// front end working somewhere other than its own directory would need.
+func DialFor(socket, root string) *Client {
+	return &Client{root: root, http: &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return (&net.Dialer{}).DialContext(ctx, "unix", socket)
@@ -67,12 +81,21 @@ func (c *Client) get(ctx context.Context, path string, into any) error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set(projectHeader, c.root)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		// The daemon's own words, the way post already did it. A status code
+		// alone tells a user nothing they can act on, and this route's most
+		// likely refusal — a request that did not name its project — is
+		// exactly the kind that needs saying.
+		said, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		if trimmed := strings.TrimSpace(string(said)); trimmed != "" {
+			return errors.New(trimmed)
+		}
 		return fmt.Errorf("daemon answered %s to %s", resp.Status, path)
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
@@ -88,6 +111,7 @@ func (c *Client) Events(ctx context.Context) (<-chan Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set(projectHeader, c.root)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -158,6 +182,7 @@ func (c *Client) post(ctx context.Context, path string, body, into any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(projectHeader, c.root)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

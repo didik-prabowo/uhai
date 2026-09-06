@@ -15,7 +15,6 @@
 package daemon
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -33,37 +32,22 @@ import (
 // and never world-readable: a socket that grants a shell is a credential.
 const socketPerm fs.FileMode = 0o600
 
-// SocketPath is where the daemon for one project listens.
+// SocketPath is where the daemon listens: one per user, serving every project
+// on the machine.
 //
-// Per project, not per user. A daemon builds its agent from the directory it
-// was started in — AGENTS.md, the tools' idea of where the tree begins, the
-// project's own permission lists — so one daemon shared across projects
-// answers with the wrong project's instructions and says nothing about it. A
-// task started in project B came back "PROYEK A."; that is the failure this
-// path prevents, and it is silent, which is the worst kind.
-//
-// crush solves the same problem with workspaces inside one daemon. A socket
-// per project is the smaller answer: no routing, no ids, no shared process
-// holding two conversations that must not see each other.
-func SocketPath(root string) (string, error) {
+// It was one socket per project for a while, which made a cross-project mix-up
+// impossible by construction. This is the other trade, and the one crush and
+// zero both make: one process, one log, one lock, and no daemon left behind
+// for every checkout ever opened. The isolation it gives up by construction is
+// paid back deliberately — every request names its project, a request that
+// does not is refused, and nothing a conversation needs is stored anywhere but
+// in that project's own workspace.
+func SocketPath() (string, error) {
 	dir, err := config.Dir()
 	if err != nil {
 		return "", err
 	}
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	// Symlinks resolved, so /tmp and /private/tmp are one project rather than
-	// two daemons that cannot see each other's work.
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = real
-	}
-	// Hashed rather than spelled out: a path has slashes and spaces in it, and
-	// a socket address is a filename with a hard length limit — 104 bytes on
-	// this platform, which a real project path can pass on its own.
-	sum := sha256.Sum256([]byte(abs))
-	return filepath.Join(dir, fmt.Sprintf("daemon-%x.sock", sum[:6])), nil
+	return filepath.Join(dir, "daemon.sock"), nil
 }
 
 // removeStale clears a socket left behind by a daemon that did not shut down,
@@ -94,16 +78,10 @@ func removeStale(path string) error {
 // answers at once or is not there.
 const dialProbe = 250 * time.Millisecond
 
-// SocketHere is the daemon for the project the caller is working in. Every
-// front end wants this one; SocketPath takes a root only so a test can name a
-// different project without changing directory.
-func SocketHere() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return SocketPath(cwd)
-}
+// SocketHere is the daemon, whichever project the caller is in. Kept as a
+// name of its own so the front ends read as asking for the daemon rather than
+// building a path.
+func SocketHere() (string, error) { return SocketPath() }
 
 // LogPath is where the daemon on one socket writes. Derived from the socket
 // rather than fixed, so a project's log is its own: daemons are per project

@@ -81,25 +81,35 @@ func (q *questions) list() []Question {
 	return out
 }
 
-// Ask puts a question to whoever is watching and waits for the answer. It is
-// what a daemon hands the agent as its Confirm hook.
+// Ask puts a question to whoever is watching this project and waits for the
+// answer. It is what a daemon hands one project's agent as its Confirm hook.
 //
 // Nothing watching means nothing to ask, and the answer is no. A front end
 // that attaches later can still find the question through GET /v1/questions —
 // a terminal reopened mid-turn should be able to answer it — but a question
 // with nobody to see it is not held open on the chance that someone arrives.
-func (s *Server) Ask(ctx context.Context, tool, input string) bool {
-	p := s.questions.add(tool, input)
-	s.Publish(Event{Kind: EventQuestion, Question: &p.Question})
+func (s *Server) Ask(ctx context.Context, root, tool, input string) bool {
+	s.mu.Lock()
+	ws := s.projects[root]
+	s.mu.Unlock()
+	if ws == nil {
+		return false // a project nobody has opened has nobody to ask
+	}
+	return ws.ask(ctx, s.answerWait(), tool, input)
+}
+
+func (w *workspace) ask(ctx context.Context, wait time.Duration, tool, input string) bool {
+	p := w.questions.add(tool, input)
+	w.publish(Event{Kind: EventQuestion, Question: &p.Question})
 
 	select {
 	case allowed := <-p.answer:
 		return allowed
 	case <-ctx.Done():
-		s.questions.drop(p.ID)
+		w.questions.drop(p.ID)
 		return false
-	case <-time.After(s.answerWait()):
-		s.questions.drop(p.ID)
+	case <-time.After(wait):
+		w.questions.drop(p.ID)
 		return false
 	}
 }
@@ -115,10 +125,20 @@ func (s *Server) answerWait() time.Duration {
 }
 
 func (s *Server) handleGetQuestions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.questions.list())
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, ws.questions.list())
 }
 
 func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	var body struct {
 		Allow bool `json:"allow"`
 	}
@@ -126,10 +146,11 @@ func (s *Server) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "an answer is required", http.StatusBadRequest)
 		return
 	}
-	p := s.questions.take(r.PathValue("id"))
+	// Taken from this project's questions only, so a terminal in one project
+	// cannot answer another's — the ids are per project and would otherwise
+	// collide at q1.
+	p := ws.questions.take(r.PathValue("id"))
 	if p == nil {
-		// Already answered, or timed out. Not an error the front end can do
-		// anything about, but it should not think it decided something.
 		http.Error(w, "that question is no longer open", http.StatusGone)
 		return
 	}

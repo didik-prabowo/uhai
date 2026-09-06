@@ -219,79 +219,78 @@ func RunDaemon() error {
 		}
 	}
 
-	// The daemon builds its own agent from the same config the front end
-	// reads, and hands the sub-agent the read-only rules /bg already used:
-	// nobody is watching to answer a confirmation, so anything that writes or
-	// runs commands is refused and the model is told why. That is exactly why
-	// background work is the first thing worth moving here — it never needed
-	// the permission round trip that the main conversation does.
-	run := func(ctx context.Context, prompt string) (string, int, error) {
-		a, err := newAgent()
-		if err != nil {
-			return "", 0, err
-		}
-		a.Confirm = func(string, string) bool { return false }
-
-		var report string
-		a.OnText = func(text string) { report = text }
-		a.OnNotice = func(string) {}
-		a.OnToolCall = func(string, string) {}
-
-		err = a.Ask(ctx, prompt)
-		return report, a.Tokens(), err
-	}
-	if _, perr := config.LoadProvider(); perr != nil {
-		run = nil // it can still serve sessions and events, and says so
-		fmt.Fprintln(os.Stderr, "uhai: no provider connected, so the daemon cannot run tasks:", perr)
-	}
-
-	// The conversation the daemon holds. One agent, built once, its callbacks
-	// turned into events on the socket — which is the same job the TUI's
-	// callbacks do when the agent is in its own process.
+	// One builder, called the first time each project is heard from. The
+	// agent is built in that project's directory, so AGENTS.md, the tools'
+	// idea of where the tree begins and the project's permission lists all
+	// come from the right place — which is the whole reason a request has to
+	// name its project.
 	var srv *daemon.Server
-	var conversation *agent.Agent
+	build := func(root string) (daemon.Runner, daemon.Runner, error) {
+		newFor := func() (*agent.Agent, error) {
+			back, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			if err := os.Chdir(root); err != nil {
+				return nil, err
+			}
+			defer os.Chdir(back)
+			return newAgent()
+		}
 
-	prompt := func(ctx context.Context, text string) (string, int, error) {
-		if conversation == nil {
-			a, err := newAgent()
+		// A background task: a fresh sub-agent each time, read-only, because
+		// nobody is watching to answer a confirmation.
+		run := func(ctx context.Context, prompt string) (string, int, error) {
+			a, err := newFor()
 			if err != nil {
 				return "", 0, err
 			}
-			a.OnText = func(t string) { srv.Publish(daemon.Event{Kind: daemon.EventText, Text: t}) }
-			a.OnDelta = func(d string) { srv.Publish(daemon.Event{Kind: daemon.EventDelta, Text: d}) }
-			a.OnReasoning = func(d string) { srv.Publish(daemon.Event{Kind: daemon.EventReasoning, Text: d}) }
-			a.OnNotice = func(t string) { srv.Publish(daemon.Event{Kind: daemon.EventNotice, Text: t}) }
-			a.OnToolCall = func(name, input string) {
-				srv.Publish(daemon.Event{Kind: daemon.EventTool, Text: name})
-			}
-			a.OnUsage = func(u provider.Usage) {
-				srv.Publish(daemon.Event{Kind: daemon.EventUsage, Usage: &daemon.Usage{
-					Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite,
-				}})
-			}
-			// The question round trip, which is the whole reason this could
-			// not have been done before it existed.
-			a.Confirm = func(name, input string) bool { return srv.Ask(ctx, name, input) }
-			conversation = a
+			a.Confirm = func(string, string) bool { return false }
+			var report string
+			a.OnText = func(t string) { report = t }
+			a.OnNotice = func(string) {}
+			a.OnToolCall = func(string, string) {}
+			err = a.Ask(ctx, prompt)
+			return report, a.Tokens(), err
 		}
-		err := conversation.Ask(ctx, text)
-		// Saved every turn, the way the front ends do it: a daemon that is
-		// killed should lose no more than a terminal that is closed.
-		if serr := cli.SaveSession(conversation); serr != nil {
-			fmt.Fprintln(os.Stderr, "uhai: the session is not being saved:", serr)
+
+		// The conversation: one agent, kept, its callbacks published to the
+		// front ends watching this project and no other.
+		conv, err := newFor()
+		if err != nil {
+			return nil, nil, err
 		}
-		return "", conversation.Tokens(), err
-	}
-	if _, perr := config.LoadProvider(); perr != nil {
-		prompt = nil
+		conv.OnText = func(t string) { srv.Publish(root, daemon.Event{Kind: daemon.EventText, Text: t}) }
+		conv.OnDelta = func(d string) { srv.Publish(root, daemon.Event{Kind: daemon.EventDelta, Text: d}) }
+		conv.OnReasoning = func(d string) { srv.Publish(root, daemon.Event{Kind: daemon.EventReasoning, Text: d}) }
+		conv.OnNotice = func(t string) { srv.Publish(root, daemon.Event{Kind: daemon.EventNotice, Text: t}) }
+		conv.OnToolCall = func(name, input string) {
+			srv.Publish(root, daemon.Event{Kind: daemon.EventTool, Text: name})
+		}
+		conv.OnUsage = func(u provider.Usage) {
+			srv.Publish(root, daemon.Event{Kind: daemon.EventUsage, Usage: &daemon.Usage{
+				Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite,
+			}})
+		}
+
+		prompt := func(ctx context.Context, text string) (string, int, error) {
+			conv.Confirm = func(name, input string) bool { return srv.Ask(ctx, root, name, input) }
+			err := conv.Ask(ctx, text)
+			if serr := cli.SaveSessionIn(conv, root); serr != nil {
+				fmt.Fprintln(os.Stderr, "uhai: the session is not being saved:", serr)
+			}
+			return "", conv.Tokens(), err
+		}
+		return run, prompt, nil
 	}
 
-	srv = daemon.NewServer(store, run, prompt)
+	srv = daemon.NewServer(store, build)
 	if err := srv.Listen(socket); err != nil {
 		return fmt.Errorf("could not listen on %s: %w", socket, err)
 	}
-	here, _ := os.Getwd()
-	fmt.Fprintln(os.Stderr, "uhai: daemon for", here, "listening on", socket)
+	// Not "daemon for <cwd>" any more: it serves every project, and each
+	// request says which. Where it was started from means nothing.
+	fmt.Fprintln(os.Stderr, "uhai: daemon listening on", socket)
 
 	// The socket is a file. A daemon killed without clearing it leaves the
 	// next one to do it, which works, but only because removeStale exists —
