@@ -48,7 +48,15 @@ func Run(resume bool, id string) {
 // Failing to find the session at all is an error: starting empty would look
 // like the history was lost.
 func restore(a *agent.Agent, id string) (string, error) {
-	s, err := session.Latest(store)
+	// With no id, this project's newest — not the newest anywhere. A
+	// conversation about files in another tree, carried on with the agent
+	// working here, acts on names that are missing or, worse, on different
+	// files with the same names.
+	//
+	// With an id, any project: naming one is saying you know which it is, and
+	// refusing then would only make the id useless.
+	here, _ := os.Getwd()
+	s, err := session.LatestIn(store, here)
 	if id != "" {
 		s, err = store.Load(id)
 	}
@@ -88,7 +96,20 @@ func ListSessions() error {
 	if err != nil {
 		return err
 	}
+	here, _ := os.Getwd()
+	var elsewhere, unplaced int
+
 	for _, s := range all {
+		// Another project's conversation is not this project's business, and
+		// the count is printed at the end so nothing simply vanishes.
+		switch {
+		case s.Root == "":
+			unplaced++
+			continue
+		case !session.SameRoot(s.Root, here):
+			elsewhere++
+			continue
+		}
 		// A session saved before the pid was recorded has none, and "pid 0"
 		// is a worse answer than a blank.
 		held := fmt.Sprintf("pid %-7d", s.PID)
@@ -100,6 +121,16 @@ func ListSessions() error {
 			fmt.Printf("  %s", prompt)
 		}
 		fmt.Println()
+	}
+
+	// Said rather than silently dropped: 117 conversations disappearing from a
+	// listing is a worse surprise than a line explaining where they went.
+	if unplaced > 0 {
+		fmt.Printf("\n%d older conversation(s) saved before uhai recorded the project — "+
+			"resume one by id if you know it\n", unplaced)
+	}
+	if elsewhere > 0 {
+		fmt.Printf("%d conversation(s) belong to other projects\n", elsewhere)
 	}
 	return nil
 }

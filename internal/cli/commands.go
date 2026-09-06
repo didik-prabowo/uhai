@@ -335,6 +335,11 @@ func ContinueSession(s session.Session) {
 func SaveSession(a *agent.Agent) error {
 	current.Messages = a.History
 	current.Spend = spent
+	// Stamped on every save rather than at the start: a session resumed in a
+	// different tree belongs to the tree it is being worked in now.
+	if here, err := os.Getwd(); err == nil {
+		current.Root = here
+	}
 	if a.Provider != nil {
 		current.Model = a.Provider.Name()
 	}

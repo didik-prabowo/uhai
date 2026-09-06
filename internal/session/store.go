@@ -4,6 +4,7 @@ package session
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -36,6 +37,42 @@ func Latest(st Store) (Session, error) {
 		return Session{}, err
 	}
 	return all[0], nil
+}
+
+// LatestIn is the newest conversation held in one project, which is what
+// -resume with no id should carry on: the newest anywhere is how a session
+// about another tree gets resumed against this one, with the agent then
+// working on files those messages never meant.
+//
+// Sessions with no root are not candidates. They were saved before the field
+// existed and could belong to any project; guessing they belong to this one is
+// the mistake this exists to stop.
+func LatestIn(st Store, root string) (Session, error) {
+	all, err := st.All()
+	if err != nil {
+		return Session{}, err
+	}
+	for _, s := range all {
+		if s.Root != "" && SameRoot(s.Root, root) {
+			return s, nil
+		}
+	}
+	return Session{}, fmt.Errorf("no saved conversation for %s yet", root)
+}
+
+// SameRoot compares two project paths the way the daemon's socket does:
+// symlinks resolved, so /tmp and /private/tmp are one project.
+func SameRoot(a, b string) bool { return resolve(a) == resolve(b) }
+
+func resolve(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return real
+	}
+	return abs
 }
 
 // Pick is the matching rule behind Load, kept apart from the storage so every

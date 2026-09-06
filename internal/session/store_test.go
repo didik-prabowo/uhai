@@ -7,6 +7,7 @@ package session_test
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -128,4 +129,93 @@ func TestStoreContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+// -resume with no id used to take the newest conversation anywhere, so one
+// about files in project A carried on with the agent working in project B —
+// acting on names that are missing there, or on different files with the same
+// names.
+func TestResumeTakesThisProjectsNewest(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "proyek-a"), filepath.Join(dir, "proyek-b")
+	for _, d := range []string{a, b} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st := filestore.New(filepath.Join(dir, "sessions"))
+
+	older := session.New()
+	older.Root, older.Model, older.Messages = a, "zai/x", oneMessage("di proyek a")
+	older.Updated = time.Now().Add(-time.Hour)
+	newer := session.New()
+	newer.Root, newer.Model, newer.Messages = b, "zai/y", oneMessage("di proyek b")
+	newer.Updated = time.Now()
+	for _, s := range []session.Session{older, newer} {
+		if err := st.Save(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The newest anywhere is b's. Asking from a must still get a's.
+	got, err := session.LatestIn(st, a)
+	if err != nil {
+		t.Fatalf("resume in project a: %v", err)
+	}
+	if got.Model != "zai/x" {
+		t.Errorf("resumed another project's conversation: %+v", got.Model)
+	}
+
+	// A project with nothing saved starts fresh rather than borrowing.
+	if _, err := session.LatestIn(st, filepath.Join(dir, "proyek-c")); err == nil {
+		t.Error("a project with no history must not inherit another's")
+	}
+}
+
+// Anything saved before the field existed could belong to any project, so it
+// is never picked by guesswork — but it is still reachable by id.
+func TestASessionWithNoProjectIsNeverGuessedAt(t *testing.T) {
+	dir := t.TempDir()
+	st := filestore.New(filepath.Join(dir, "sessions"))
+
+	old := session.New()
+	old.Model, old.Messages = "zai/lama", oneMessage("dari sebelum root ada")
+	if err := st.Save(old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.LatestIn(st, dir); err == nil {
+		t.Error("a rootless session must not be assumed to be this project's")
+	}
+	// Named by id, it still loads: knowing the id is saying you know which.
+	if got, err := st.Load(old.ID); err != nil || got.Model != "zai/lama" {
+		t.Errorf("an old session must stay reachable by id: %v", err)
+	}
+}
+
+// The same project reached through a symlink is the same project.
+func TestSameRootSeesThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "proyek")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "pintasan")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if !session.SameRoot(real, link) {
+		t.Error("a symlink made one project look like two")
+	}
+	if session.SameRoot(real, dir) {
+		t.Error("two different directories are not one project")
+	}
+}
+
+// oneMessage is a conversation of one line. The msg helper the older tests use
+// is a closure inside them, not something this file can reach.
+func oneMessage(text string) []provider.Message {
+	return []provider.Message{{
+		Role:    provider.RoleUser,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}},
+	}}
 }

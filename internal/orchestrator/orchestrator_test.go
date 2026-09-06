@@ -32,6 +32,9 @@ func TestResumeBringsBackTheModel(t *testing.T) {
 			Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "where were we"}},
 		}},
 	}
+	// -resume with no id takes this project's newest, so the fixture has to
+	// say which project it is — the point of the field.
+	saved.Root, _ = os.Getwd()
 	if err := store.Save(saved); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +80,8 @@ func TestResumeByID(t *testing.T) {
 	older, newer := session.New(), session.New()
 	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "openai/older", []provider.Message{msg}
 	newer.Started, newer.Model, newer.Messages = time.Now(), "openai/newer", []provider.Message{msg}
+	here, _ := os.Getwd()
+	older.Root, newer.Root = here, here
 	for _, s := range []session.Session{older, newer} {
 		if err := store.Save(s); err != nil {
 			t.Fatal(err)
@@ -212,6 +217,11 @@ func TestListSessionsIsReadableEnoughToCopyFrom(t *testing.T) {
 	older, newer := session.New(), session.New()
 	older.Started, older.Model, older.Messages = time.Now().Add(-2*time.Hour), "openai/gpt-4o-mini", msg("yang lama")
 	newer.Started, newer.Model, newer.Messages = time.Now(), "zai/glm-4.6", msg("yang baru")
+	// The listing shows this project's conversations, so the fixtures have to
+	// be in it: without a root they are counted as older-and-unplaceable, and
+	// that count is the only thing printed.
+	here, _ := os.Getwd()
+	older.Root, newer.Root = here, here
 	for _, s := range []session.Session{older, newer} {
 		if err := store.Save(s); err != nil {
 			t.Fatal(err)
@@ -283,4 +293,43 @@ func captureStdout(t *testing.T, fn func()) string {
 	w.Close()
 	os.Stdout = old
 	return <-done
+}
+
+// The listing is this project's, and says where the rest went rather than
+// letting a hundred conversations vanish without explanation.
+func TestListSessionsKeepsToThisProjectAndSaysSo(t *testing.T) {
+	workIn(t)
+	here, _ := os.Getwd()
+
+	msg := func(text string) []provider.Message {
+		return []provider.Message{{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
+	}
+	mine, theirs, old := session.New(), session.New(), session.New()
+	mine.Root, mine.Model, mine.Messages = here, "zai/punya-sini", msg("di sini")
+	theirs.Root, theirs.Model, theirs.Messages = filepath.Join(here, "..", "lain"), "zai/punya-sana", msg("di sana")
+	old.Model, old.Messages = "zai/lama", msg("sebelum root ada")
+	for _, s := range []session.Session{mine, theirs, old} {
+		if err := store.Save(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := captureStdout(t, func() {
+		if err := ListSessions(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "punya-sini") {
+		t.Errorf("this project's conversation is missing:\n%s", out)
+	}
+	if strings.Contains(out, "punya-sana") {
+		t.Errorf("another project's conversation was listed:\n%s", out)
+	}
+	// Neither is silently dropped.
+	if !strings.Contains(out, "1 older conversation") {
+		t.Errorf("the unplaceable one has to be accounted for:\n%s", out)
+	}
+	if !strings.Contains(out, "1 conversation(s) belong to other projects") {
+		t.Errorf("the other project's has to be accounted for:\n%s", out)
+	}
 }

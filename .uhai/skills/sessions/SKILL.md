@@ -23,6 +23,21 @@ So when, and who holds it, are fields — `started`, `updated`, `pid` — and
 conversation is held by the process resuming it, not by the one that opened it
 in August. Sessions written before it existed show a blank rather than `pid 0`.
 
+`root` is the project the conversation was held in, and it is the field that
+stops one project's history being resumed against another's tree. Without it
+every project shared one pool: `-sessions` in one tree listed another's, and
+`-resume` with no id took the newest anywhere — so a conversation about files
+in project A carried on with the agent working in project B, acting on names
+that are missing there or, worse, on different files with the same names.
+
+Naming an id still crosses projects. Knowing the id is saying you know which
+conversation it is, and refusing then would only make ids useless.
+
+Sessions saved before the field existed have none. They are never picked by
+guesswork — a rootless session could belong to anywhere — but they are counted
+in the listing rather than hidden, because a hundred conversations vanishing
+without explanation is a worse answer than a line saying where they went.
+
 `spend` is the other field the file carries, and it is a list rather than one
 total: what the conversation cost, split by the model that cost it. A single
 stored total would have to be priced later at whatever model was loaded then,

@@ -32,11 +32,23 @@ type Session struct {
 	// purpose: a name that encodes when or where a thing was made is a fact
 	// duplicated in two places, and the copy in the name is the one that goes
 	// stale. When and what are fields, and the listing prints them.
-	ID       string             `json:"id"`
-	Started  time.Time          `json:"started"`
-	Updated  time.Time          `json:"updated"` // moves every turn, so a listing shows what was worked on last
-	PID      int                `json:"pid"`     // the process that held it, for telling two live sessions apart
-	Model    string             `json:"model"`
+	ID      string    `json:"id"`
+	Started time.Time `json:"started"`
+	Updated time.Time `json:"updated"` // moves every turn, so a listing shows what was worked on last
+	PID     int       `json:"pid"`     // the process that held it, for telling two live sessions apart
+	Model   string    `json:"model"`
+
+	// Root is the project the conversation was held in. Without it every
+	// project shares one pool: -sessions in one tree lists another's, and
+	// -resume with no id takes the newest anywhere — so a conversation about
+	// files in project A carries on with the agent working in project B,
+	// where those names are missing or, worse, are different files.
+	//
+	// Empty in anything saved before it existed, which is most of them. Those
+	// are listed with a mark rather than hidden: a listing that suddenly lost
+	// its history is a worse answer than one that says which entries it can no
+	// longer place.
+	Root     string             `json:"root,omitempty"`
 	Messages []provider.Message `json:"messages"`
 
 	// Spend is what the conversation has cost, kept per model rather than as
