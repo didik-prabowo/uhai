@@ -105,6 +105,16 @@ percakapan    terminal A melihat "PROYEK A", terminal B "PROYEK B"
 tanpa header  400 no X-Uhai-Project header
 ```
 
+One daemon serving everything also means one crash costs everything. A task
+runs in a goroutine of its own, where an unrecovered panic takes the process
+down — which used to cost one project and now would cost every project on the
+machine at once. It is recovered into a failed task that says it crashed.
+
+zero does not have that problem: its daemon supervises worker *processes*, so a
+worker can die alone and be restarted by policy. That is the more robust shape
+and a much larger one; recovering is the cheaper answer for a daemon that runs
+the work itself.
+
 crush routes the same thing through `/v1/workspaces/{id}/...` and registers
 workspaces up front; here a project is remembered the first time it speaks, so
 a machine with ten checkouts pays for the ones actually used.

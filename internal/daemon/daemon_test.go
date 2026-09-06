@@ -851,3 +851,49 @@ func TestQuestionsDoNotLeakBetweenProjects(t *testing.T) {
 		t.Error("a's question came back allowed after only b was asked")
 	}
 }
+
+// One daemon serving every project means one panic can cost every project. A
+// task runs in a goroutine of its own, where an unrecovered panic takes the
+// process down — and it did, until this: the daemon died and every other
+// project's terminal lost it with no idea why.
+//
+// zero avoids this by supervising worker processes, so a worker can die alone.
+// Recovering is the cheaper answer for a daemon that runs the work itself.
+func TestAPanicInOneProjectDoesNotTakeTheDaemon(t *testing.T) {
+	s, dir := serve(t, nil, func(root string) (Runner, Runner, error) {
+		return func(ctx context.Context, prompt string) (string, int, error) {
+			panic("the model did something unexpected")
+		}, nil, nil
+	})
+	a := s.clientFor(t, dir, "proyek-a")
+	b := s.clientFor(t, dir, "proyek-b")
+	if _, err := b.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.StartTask(context.Background(), "sesuatu"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The other project is still served.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := b.Health(context.Background()); err != nil {
+			t.Fatalf("project B lost its daemon because project A's task panicked: %v", err)
+		}
+		list, err := a.Tasks(context.Background())
+		if err != nil {
+			t.Fatalf("project A lost its daemon: %v", err)
+		}
+		if len(list) == 1 && list[0].Status == "failed" {
+			// And it says what happened rather than ending as a silent nothing.
+			if !strings.Contains(list[0].Err, "crashed") {
+				t.Errorf("a crashed task has to say so, got %q", list[0].Err)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the crashed task never ended: %+v", list)
+		}
+	}
+}

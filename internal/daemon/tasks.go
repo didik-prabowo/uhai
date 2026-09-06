@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -64,10 +65,25 @@ func (s *Server) handlePostTasks(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		//nolint:errcheck // the task records its own failure; nobody is here to tell
 		ws.tasks.Run(context.WithoutCancel(r.Context()), short(body.Prompt),
-			func(ctx context.Context, t task.Task) (string, int, error) {
+			func(ctx context.Context, t task.Task) (report string, tokens int, err error) {
 				started <- t
-				report, tokens, err := ws.run(ctx, body.Prompt)
-				ws.publish(Event{Kind: EventTaskDone, Task: t.ID})
+				// A task runs in a goroutine of its own, and an unrecovered
+				// panic there takes the process down. That used to cost one
+				// project, when a daemon served one; now it would cost every
+				// project on the machine at once.
+				//
+				// zero does not have this problem because its daemon
+				// supervises worker processes and a worker can die alone.
+				// This is the cheaper answer for a daemon that runs the work
+				// itself: the task fails, with what went wrong, and the
+				// daemon and every other project carry on.
+				defer func() {
+					if panicked := recover(); panicked != nil {
+						err = fmt.Errorf("the task crashed: %v", panicked)
+					}
+					ws.publish(Event{Kind: EventTaskDone, Task: t.ID})
+				}()
+				report, tokens, err = ws.run(ctx, body.Prompt)
 				return report, tokens, err
 			})
 	}()
