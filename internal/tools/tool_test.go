@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -307,5 +308,92 @@ func TestFetchSaysItCannotSearch(t *testing.T) {
 		if !strings.Contains(fetch.Description(), want) {
 			t.Errorf("the description has to say %q", want)
 		}
+	}
+}
+
+// A search used to walk into dist/, target/ and .venv/ — slow, and answering
+// with files nobody wrote. The project already says what not to look at.
+func TestTheProjectsOwnIgnoresAreObeyed(t *testing.T) {
+	dir := t.TempDir()
+	write := func(path, body string) {
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".gitignore", "# a comment\n\n/uhai\ndist/\n*.log\n!penting.log\n")
+	write("main.go", "package main")
+	write("uhai", "binary")              // anchored at the root
+	write("dist/bundle.js", "generated") // a whole directory
+	write("internal/debug.log", "noise") // by extension, at any depth
+	write("internal/keep.go", "package x")
+	// The negation is not honoured, and the comment above readIgnore says so:
+	// a rule read but half-obeyed is worse than one never read.
+	write("penting.log", "wanted")
+
+	var seen []string
+	if err := walk(context.Background(), dir, func(path string) bool {
+		seen = append(seen, strings.TrimPrefix(path, dir+"/"))
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(seen, " ")
+
+	for _, want := range []string{"main.go", "internal/keep.go", ".gitignore"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s should still be walked, got %v", want, seen)
+		}
+	}
+	for _, gone := range []string{"uhai", "dist/bundle.js", "internal/debug.log"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("%s is ignored by the project and was walked anyway: %v", gone, seen)
+		}
+	}
+}
+
+// An anchored rule means the root and nowhere else: /uhai is the built binary,
+// not every file called uhai in the tree.
+func TestAnAnchoredIgnoreStaysAtTheRoot(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("/uhai\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "uhai"), []byte("binary"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "cmd", "uhai"), 0o755)
+	os.WriteFile(filepath.Join(dir, "cmd", "uhai", "main.go"), []byte("package main"), 0o644)
+
+	var seen []string
+	walk(context.Background(), dir, func(path string) bool {
+		seen = append(seen, strings.TrimPrefix(path, dir+"/"))
+		return true
+	})
+	// Compared as entries, not as a joined string: "uhai" at the end of one
+	// has no trailing space, so a substring check missed it — and a mutation
+	// that stopped making paths relative slipped past because of that.
+	if slices.Contains(seen, "uhai") {
+		t.Errorf("the root binary should be ignored: %v", seen)
+	}
+	if !slices.Contains(seen, "cmd/uhai/main.go") {
+		t.Errorf("cmd/uhai is a different thing and must be walked: %v", seen)
+	}
+}
+
+// A project with no .gitignore still gets the baseline: .git, node_modules and
+// vendor are never worth walking whatever the project says.
+func TestTheBaselineHoldsWithoutAGitignore(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "node_modules", "x"), 0o755)
+	os.WriteFile(filepath.Join(dir, "node_modules", "x", "a.go"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644)
+
+	var seen []string
+	walk(context.Background(), dir, func(path string) bool {
+		seen = append(seen, path)
+		return true
+	})
+	if len(seen) != 1 || !strings.HasSuffix(seen[0], "main.go") {
+		t.Errorf("want only main.go, got %v", seen)
 	}
 }

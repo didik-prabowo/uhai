@@ -56,11 +56,25 @@ The code is split the way the concerns are: `internal/tools` has `tool.go` (the
 contract, the registry and dispatch), one file per tool — `read.go`,
 `write.go`, `edit.go`, `glob.go`, `grep.go`, `bash.go`, `fetch.go`, each
 holding a tool's schema, description, permission and implementation together —
-`walk.go` for what glob and grep share. It takes a context and checks it once
+`walk.go` for what glob and grep share, with `ignore.go` beside it for what the
+project itself says not to look at. It takes a context and checks it once
 per entry: it is the one tool loop that can run for a long time without
 touching the network or a subprocess, and cancellation used to stop at its
 edge — a grep that finds nothing in a large tree read every file to the end
-whatever the user pressed. It also holds `searchTimeout`, fifteen seconds,
+whatever the user pressed. The `.gitignore` at the search root is read once per walk: bare names,
+`dir/`, `/anchored`, and the globs the matcher already understands. Not
+negation, not one file per subdirectory, not the precedence between them —
+that is a real implementation of a real specification. Being wrong about a
+negation means a file is searched anyway, which is the direction to be wrong
+in. `.git`, `node_modules` and `vendor` are skipped whatever the project
+says, because a repository that tracks its vendor directory still does not
+want grep reading it.
+
+Rules are matched against the path relative to the search, not the absolute
+one: `/uhai` is the built binary, and while they were matched absolutely it
+also swallowed `cmd/uhai/`.
+
+It also holds `searchTimeout`, fifteen seconds,
 which is the bound `maxMatches` never was: that one stops a search finding
 too much, and nothing stopped one finding too little in a tree too large.
 What was found by then comes back with a note rather than as an error,

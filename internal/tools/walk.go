@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-// skipDirs are never worth walking into: huge, generated, or not the user's code.
-var skipDirs = map[string]bool{".git": true, "node_modules": true, "vendor": true}
-
 const maxMatches = 200
 
 // searchTimeout bounds one search, the way bashTimeout bounds one command.
@@ -60,6 +57,10 @@ func walk(ctx context.Context, root string, visit func(path string) bool) error 
 	if root == "" {
 		root = "."
 	}
+	// What the project itself says not to look at, read once for the walk
+	// rather than per entry.
+	ignore := readIgnore(root)
+
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		// Checked per entry rather than per directory: one huge folder is
 		// exactly the case where waiting for the next directory is waiting.
@@ -70,9 +71,12 @@ func walk(ctx context.Context, root string, visit func(path string) bool) error 
 			return nil // an unreadable corner is not a reason to fail the search
 		}
 		if d.IsDir() {
-			if skipDirs[d.Name()] {
+			if skipDirs[d.Name()] || ignore.dirs[d.Name()] || ignore.ignores(path) {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if ignore.ignores(path) {
 			return nil
 		}
 		if !visit(path) {
