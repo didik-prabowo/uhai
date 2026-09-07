@@ -25,8 +25,12 @@ again.
 
 `uhai -attach` talks to a conversation running in a background daemon rather
 than starting one in the terminal, so the work survives the window closing.
-`/bg` starts that daemon on its own. `uhai -daemon-stop` stops it,
-which is what to do after an upgrade leaves an older one still running. If an API key is
+`/bg` starts that daemon on its own; `uhai -daemon` runs one in the foreground
+to watch what it does, and `uhai -daemon-stop` stops it — which is what to do
+after an upgrade leaves an older one still running.
+
+One daemon serves every project, and every request names which. It stops on its
+own after half an hour with nothing running and nobody attached. If an API key is
 already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
 used as it is, and there is nothing to connect.

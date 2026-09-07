@@ -72,6 +72,7 @@ that usually needed none of them.
 - `model-registry` — the model registry
 - `tasks` — tasks
 - `drawing` — drawing
+- `daemon` — the daemon: the socket, workspaces, and what it cost to have one
 
 ## When a turn does not finish
 

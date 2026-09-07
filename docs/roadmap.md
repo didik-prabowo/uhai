@@ -98,8 +98,27 @@ against servers we wrote ourselves.
 - [ ] Let an attached terminal change the model. /model and /connect reach
       this process, not the daemon's agent, so an attached session cannot
       switch models — which is why attaching is a mode rather than a default.
+- [ ] A tool that lists a directory. Reading a folder is as harmless as
+      `glob`, but the only way to do it is `run_bash ls`, which asks
+      permission. crush has `ls`, zero has `list_directory`.
+- [ ] A plan or todo tool, so multi-step work does not lose its thread.
+      All three references have one.
+- [ ] Worker processes for the daemon, the way zero does it: a crash cannot
+      corrupt what it cannot reach, and the `recover` in place only pretends
+      otherwise. Its supervisor architecture, not an afternoon — and the
+      cheaper half of the benefit is already had.
+- [ ] Windows. Not one file: `net.Listen("unix")` is the daemon's foundation
+      and Windows wants a named pipe with a different permission model, plus
+      `Setpgid`/`Setsid`/`SIGKILL` in bash.go and the launcher. Nobody has
+      asked for it, and an untested second transport breaks quietly.
+- [ ] Reload the conversation when a daemon restarts. Turns are saved every
+      time, but a new daemon does not read them back — so an attached terminal
+      after an idle exit begins a fresh conversation without saying so.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
+
+What was read from crush, zot and zero — what was taken, what was refused, and
+what the daemon still lacks against them — is in [references.md](references.md).
 
 **Done when** a working day goes by without dropping back to another tool.
 Everything below waits for what this phase teaches: a roadmap written before
