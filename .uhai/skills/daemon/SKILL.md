@@ -374,3 +374,38 @@ One case this cannot make safe: a daemon too old to know the query stops
 anyway, because an unknown query string is not an error. The question is newer
 than the daemons that most need to be asked it, and there is no version of this
 that reaches back before it existed.
+
+## Windows
+
+It compiles and vets — `make windows` — and nothing here has ever run it. Read
+the rest of this section as "what should happen", not "what was seen".
+
+The reason written down for skipping it was wrong: *"`net.Listen("unix")` is
+the daemon's foundation and Windows wants a named pipe."* Windows 10 1803 and
+later have AF_UNIX, and Go speaks it, so the socket, the client, the version
+handshake and the whole HTTP-over-a-socket transport crossed without a line
+changing. What actually failed a `GOOS=windows` build was four symbols, none of
+them the transport: `syscall.Kill` and `Setpgid` in the bash tool, `Flock` and
+`Setsid` here.
+
+They are split into `proc_unix.go`/`proc_windows.go` and
+`spawn_unix.go`/`spawn_windows.go` — a file each, because the two systems
+disagree about what a process group is and not about what the code is for.
+
+Three things are honestly worse there, each marked where it lives:
+
+- **`killGroup` ends the shell, not the tree.** Windows has no `kill(-pid)`.
+  Doing it properly wants a Job Object. A `go test` started by a cancelled
+  command keeps compiling.
+- **No spawn lock.** `tryLock` returns false, so two front ends starting a
+  daemon together both spawn — which they already survived before the lock
+  existed, since the loser cannot bind and finds the winner on its next poll.
+  Guessing at `LockFileEx` on a platform nothing here can run is how you ship a
+  deadlock instead of a lock.
+- **`run_bash` needs a bash.** The tool runs `bash -c`, and every command a
+  model writes for it is a unix one. Git for Windows or WSL supplies that;
+  `cmd.exe` would compile and then fail on the first pipe.
+
+`make check` runs the Windows vet, so the split cannot rot silently. That is
+the only guarantee on offer: it builds. Whether the daemon runs on Windows is
+unknown, and will stay unknown until somebody runs it.

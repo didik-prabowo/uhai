@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -20,20 +19,6 @@ import (
 // input dies instead of hanging the turn; /check is the way to run something
 // that takes longer than this.
 const bashTimeout = 2 * time.Minute
-
-// killGroup kills the command's whole process group when ctx ends, and
-// returns the function that stops watching once the command is over.
-func killGroup(ctx context.Context, cmd *exec.Cmd) func() {
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		case <-done:
-		}
-	}()
-	return func() { close(done) }
-}
 
 // bashTool is the run_bash tool: what the model is told about it, and the
 // thing that runs.
@@ -90,7 +75,7 @@ func Shell(ctx context.Context, command string, onLine func(string)) (string, er
 	// Its own process group, so cancelling kills what the command started as
 	// well as the command. Killing the shell alone leaves "go test" compiling
 	// happily in the background, which is not what stopping means.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	ownGroup(cmd)
 
 	if onLine == nil {
 		var out bytes.Buffer

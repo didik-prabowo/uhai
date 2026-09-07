@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -55,9 +54,9 @@ func lockSpawn(ctx context.Context, socket string) (release func(), ok bool) {
 	}
 	deadline := time.Now().Add(lockWait)
 	for {
-		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+		if unlock, ok := tryLock(f); ok {
 			return func() {
-				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				unlock()
 				f.Close()
 			}, true
 		}
@@ -152,7 +151,7 @@ func Ensure(ctx context.Context, socket string) (*Client, error) {
 	// Nothing to read: a daemon that inherits the terminal's stdin competes
 	// with the front end for keystrokes.
 	cmd.Stdin = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("could not start a daemon: %w", err)
 	}
