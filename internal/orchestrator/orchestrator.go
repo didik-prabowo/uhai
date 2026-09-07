@@ -9,10 +9,13 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/didik-prabowo/uhai/internal/daemon"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
@@ -139,6 +142,56 @@ func ListSessions() error {
 // stdout so it can be piped; progress goes to stderr so it does not pollute
 // that. Tools that write files or run commands are refused unless allowTools
 // is set, because there is nobody here to ask.
+// RunTask answers one prompt and prints a report the daemon can read back. It
+// is the worker half of a background task: the daemon spawns this, so a task
+// that crashes takes a process with it that the daemon does not need.
+//
+// Not RunOnce with a flag. The two differ in every way that matters here: this
+// one never saves a session — a file per /bg would bury the conversations —
+// never confirms anything, and answers on stdout in a shape meant for a
+// program rather than for a person.
+//
+// The report is the last thing the model said, which is what a task is: it
+// ran, it reports. Notices and tool calls go to stderr, where the daemon's log
+// keeps them for when a task did something surprising.
+func RunTask(prompt string) error {
+	a, err := newAgent()
+	if err != nil {
+		return err
+	}
+
+	var report string
+	a.OnText = func(text string) { report = text }
+	a.OnNotice = func(text string) { fmt.Fprintln(os.Stderr, text) }
+	a.OnToolCall = func(name, input string) { fmt.Fprintf(os.Stderr, "⎿ %s\n", name) }
+	// Read-only, and by construction rather than by instruction: nobody is
+	// here to answer a confirmation, so everything that would ask is refused.
+	a.Confirm = func(string, string) bool { return false }
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	askErr := a.Ask(ctx, prompt)
+
+	// Printed whether or not the turn worked: a task that failed halfway has
+	// still said something, and the tokens were still paid for. The exit code
+	// carries the failure.
+	out, err := json.Marshal(taskResult{Report: report, Tokens: a.Tokens()})
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return askErr
+}
+
+// taskResult is the one line a worker prints. JSON rather than the bare text
+// because the token count travels with it, and a count parsed out of prose is
+// a count that breaks the first time the prose changes.
+type taskResult struct {
+	Report string `json:"report"`
+	Tokens int    `json:"tokens"`
+}
+
 func RunOnce(prompt string, allowTools bool) error {
 	a, err := newAgent()
 	if err != nil {
@@ -244,20 +297,46 @@ func RunDaemon() error {
 			return newAgent()
 		}
 
-		// A background task: a fresh sub-agent each time, read-only, because
-		// nobody is watching to answer a confirmation.
+		// A background task runs in a process of its own, not a goroutine.
+		//
+		// It was a goroutine with a recover around it, and the comment there
+		// admitted what that is worth: a recovered panic leaves whatever it
+		// corrupted corrupted. Worse, the failures most worth surviving are
+		// the ones recover cannot catch at all — a concurrent map write is a
+		// fatal runtime error, not a panic, and it would take the daemon and
+		// every project's conversation with it.
+		//
+		// A process cannot do that. It also needs no supervisor: the task is
+		// one-shot, so stdout is the report, the exit code is the status, and
+		// killing it is how /stop already worked. That is the whole of zero's
+		// crash containment for the part of uhai that runs arbitrary work,
+		// without zero's worker pool.
 		run := func(ctx context.Context, prompt string) (string, int, error) {
-			a, err := newFor()
+			self, err := os.Executable()
 			if err != nil {
 				return "", 0, err
 			}
-			a.Confirm = func(string, string) bool { return false }
-			var report string
-			a.OnText = func(t string) { report = t }
-			a.OnNotice = func(string) {}
-			a.OnToolCall = func(string, string) {}
-			err = a.Ask(ctx, prompt)
-			return report, a.Tokens(), err
+			cmd := exec.CommandContext(ctx, self, "-task", prompt)
+			// In the project, which is what makes AGENTS.md, the tools' idea
+			// of the tree, and the permission lists that project's own.
+			cmd.Dir = root
+			// The worker's own notices and tool calls, kept where a task that
+			// did something surprising can be looked up afterwards.
+			cmd.Stderr = os.Stderr
+			out, err := cmd.Output()
+
+			// The last line is the result; anything before it is the model's
+			// own printing, which is not this program's to interpret.
+			var res taskResult
+			if line := lastLine(out); line != "" {
+				_ = json.Unmarshal([]byte(line), &res)
+			}
+			if err != nil {
+				// A worker that died says so through its exit code, and what
+				// it managed to say first is still worth handing back.
+				return res.Report, res.Tokens, fmt.Errorf("the task did not finish: %w", err)
+			}
+			return res.Report, res.Tokens, nil
 		}
 
 		// The conversation: one agent, kept, its callbacks published to the
@@ -382,4 +461,16 @@ func StopDaemon() error {
 	}
 	fmt.Fprintln(os.Stderr, "uhai: daemon stopped")
 	return nil
+}
+
+// lastLine is the final non-empty line of a worker's output. The result is
+// printed last so that a model or a tool writing to stdout cannot displace it.
+func lastLine(b []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
 }

@@ -18,7 +18,20 @@ func main() {
 	daemon := flag.Bool("daemon", false, "run the agent as a process the terminal can outlive")
 	attach := flag.Bool("attach", false, "talk to the conversation the daemon holds, not a new one here")
 	stop := flag.Bool("daemon-stop", false, "stop the running daemon, ending every project's background work")
+	taskPrompt := flag.String("task", "", "answer one prompt as a background worker, reporting on stdout")
 	flag.Parse()
+
+	if *taskPrompt != "" {
+		// The daemon spawns this; a person has no reason to. It is here
+		// rather than hidden because a flag nobody can see is a flag nobody
+		// can debug, and running it by hand is exactly how its output was
+		// first read.
+		if err := orchestrator.RunTask(*taskPrompt); err != nil {
+			fmt.Fprintln(os.Stderr, "uhai:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if *stop {
 		if err := orchestrator.StopDaemon(); err != nil {

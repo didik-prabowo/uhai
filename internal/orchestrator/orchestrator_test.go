@@ -333,3 +333,19 @@ func TestListSessionsKeepsToThisProjectAndSaysSo(t *testing.T) {
 		t.Errorf("the other project's has to be accounted for:\n%s", out)
 	}
 }
+
+// lastLine is what tells a worker's result from whatever the model printed on
+// its way there, so it has to survive both.
+func TestLastLineIsTheResult(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"{\"report\":\"a\"}", `{"report":"a"}`},
+		{"noise\n{\"report\":\"a\"}\n", `{"report":"a"}`},
+		{"{\"report\":\"a\"}\n\n\n", `{"report":"a"}`},
+		{"", ""},
+		{"   \n  \n", ""},
+	} {
+		if got := lastLine([]byte(c.in)); got != c.want {
+			t.Errorf("lastLine(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

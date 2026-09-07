@@ -105,15 +105,40 @@ percakapan    terminal A melihat "PROYEK A", terminal B "PROYEK B"
 tanpa header  400 no X-Uhai-Project header
 ```
 
-One daemon serving everything also means one crash costs everything. A task
-runs in a goroutine of its own, where an unrecovered panic takes the process
-down — which used to cost one project and now would cost every project on the
-machine at once. It is recovered into a failed task that says it crashed.
+One daemon serving everything also means one crash costs everything, so a
+background task runs in a **process** of its own — `uhai -task <prompt>`, spawned
+with the project as its working directory.
 
-zero does not have that problem: its daemon supervises worker *processes*, so a
-worker can die alone and be restarted by policy. That is the more robust shape
-and a much larger one; recovering is the cheaper answer for a daemon that runs
-the work itself.
+It was a goroutine with a `recover` around it, and the comment there admitted
+what that is worth: a recovered panic leaves whatever it corrupted corrupted.
+The failures most worth surviving are the ones `recover` cannot catch at all. A
+concurrent map write is a fatal runtime error rather than a panic, and it would
+take the daemon and every project's conversation with it.
+
+zero's answer is a supervisor over a worker pool. This is the cheap two thirds
+of it, and the seam that made it cheap is `ws.run` — the `Runner` the
+orchestrator hands the daemon. Nothing in `internal/daemon` changed. Nor was a
+protocol needed: a task is one-shot, so stdout is the report, the exit code is
+the status, and killing the process is how `/stop` already worked.
+
+`RunTask` is not `RunOnce` with a flag. It never saves a session — a file per
+`/bg` would bury the conversations — never confirms anything, and answers in a
+shape meant for a program: one JSON line, last, so a model or a tool printing
+to stdout cannot displace it. The token count travels in that line rather than
+being parsed out of prose, which would break the first time the prose changed.
+
+Measured, against a stub endpoint so no quota was spent:
+
+```
+task selesai   status done, tokens 549, report "dua warna: merah, biru"
+worker mati    status failed, daemon answers health, pid unchanged
+```
+
+What is still zero's and not ours: a pool, restart policy, and workers for the
+*conversation* as well as for tasks. The conversation is the stateful thing the
+daemon exists to hold, and moving it out is a different feature — one that
+needs the protocol this deliberately avoided. *Build it when a conversation
+needs to survive the daemon rather than the terminal.*
 
 crush routes the same thing through `/v1/workspaces/{id}/...` and registers
 workspaces up front; here a project is remembered the first time it speaks, so
