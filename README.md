@@ -3,9 +3,11 @@
 A coding agent that lives in the terminal. It reads and writes files, runs
 commands, and asks before doing anything it cannot take back.
 
-It talks to whichever model you point it at — Anthropic, Gemini, OpenAI, Z.ai,
-OpenRouter, or Ollama on your own machine — and the whole of it is about 4,800
-lines of Go, small enough to read in an afternoon.
+It talks to whichever model you point it at. Two providers ship with an
+endpoint — Anthropic and OpenAI — and anything else speaking either format is
+one `/connect` away: a gateway, a company endpoint, Gemini, Z.ai, OpenRouter,
+Ollama on your own machine. The whole of it is about 4,800 lines of Go, small
+enough to read in an afternoon.
 
 ## Getting started
 
@@ -25,29 +27,49 @@ again.
 
 `uhai -attach` talks to a conversation running in a background daemon rather
 than starting one in the terminal, so the work survives the window closing.
-`/bg` starts that daemon on its own; `uhai -daemon` runs one in the foreground
-to watch what it does, and `uhai -daemon-stop` stops it — which is what to do
-after an upgrade leaves an older one still running.
+Nothing has to be started by hand: both `-attach` and `/bg` start a daemon if
+none is running, and after an upgrade a front end asks the older one to stand
+down — unless it is busy, in which case it is left alone and told about. `uhai
+-daemon` runs one in the foreground to watch what it does, and `uhai
+-daemon-stop` stops it whatever it is doing.
 
 One daemon serves every project, and every request names which. It stops on its
-own after half an hour with nothing running and nobody attached. If an API key is
-already in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `ZAI_API_KEY` — it is
-used as it is, and there is nothing to connect.
+own after half an hour with nothing running and nobody attached. A background
+task runs in a process of its own, so one that crashes cannot take the daemon —
+and every other project's conversation — down with it. If an API key is already
+in your environment — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` — it is used as it
+is, and there is nothing to connect.
 
-Ollama needs no key at all: `/connect ollama`, once it is running locally.
+### Anything else that speaks the format
 
-Z.ai's GLM models are `/connect zai`, then `/model zai/glm-4.7`. Pay-as-you-go
-needs credit on the account; the subscription "coding plan" is the same API and
-key at another address, and is reached by pointing that one provider at it:
+`/connect` ends with **`+ custom endpoint`**: a name, a base URL, a key, and
+then the models it turns out to serve. That reaches every OpenAI-compatible
+endpoint there is — a gateway, your company's, one on localhost — and needs no
+code, because the client that talks to OpenAI does not care who answers.
 
-```json
-{ "baseUrls": { "zai": "https://api.z.ai/api/coding/paas/v4" } }
+```
+name      acme
+endpoint  https://acme.example.com/v1
+key       ••••••••
 ```
 
-The free `-flash` models work without any balance but are missing from the
-list the API returns, so the picker cannot show them. Name one directly:
-`/model zai/glm-4.7-flash`. They call tools like the paid ones do.
+The model is then written `acme/sonnet-4.5`, and `/model` lists what the
+endpoint reports. A model it forgets to list can still be typed by name.
+
+Gemini, Z.ai, OpenRouter and Ollama shipped with the binary once and do not any
+more: all four speak the OpenAI format, so a table entry bought them a default
+URL and a price bracket and cost a line that had to stay true. They are added
+the same way as anything else. Their endpoints, for pasting:
+
+| | endpoint | key from |
+|---|---|---|
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | aistudio.google.com/apikey |
+| Z.ai | `https://api.z.ai/api/paas/v4` | z.ai/manage-apikey/apikey-list |
+| OpenRouter | `https://openrouter.ai/api/v1` | openrouter.ai/keys |
+| Ollama | `http://localhost:11434/v1` | any string; it wants none |
+
+A custom endpoint is sized but not priced: nobody here knows what a gateway
+charges, and the status row says nothing rather than a confident wrong figure.
 
 When a key stops working — expired, revoked, out of credit — `/connect <name>`
 again and paste a new one; escape keeps the one already saved. If the key comes
@@ -90,7 +112,7 @@ uhai
 |                            |                                                                     |
 | -------------------------- | ------------------------------------------------------------------- |
 | `/connect`                 | connect a provider and save the key                                 |
-| `/model`                   | pick a model — the list shows context size, images, price           |
+| `/model`                   | pick a model — `/` searches, `/model refresh` looks for new ones     |
 | `/compact`                 | summarize the history to free up context                            |
 | `/check`                   | run the project's tests as a background task, or `/check <command>` |
 | `/bg`                      | run a prompt in the background, read-only                           |

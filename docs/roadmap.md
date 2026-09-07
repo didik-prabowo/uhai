@@ -45,7 +45,8 @@ instead, so the agent loop is exercised rather than replaced.
   `openai` (Chat Completions: OpenAI, Gemini and any gateway) and `anthropic`
   (Messages). There was a third for Gemini's
   generateContent; it went once the compat endpoint proved it could carry a
-  thought signature.
+  thought signature. Two providers ship with an endpoint; anything else is a
+  base URL and a key, which is what `/connect` → `+ custom endpoint` writes.
 - A shared `provider.Post` with backoff, because two copies of a retry loop is
   one too many.
 - `config/models.go`: context window, max output, tool support, price per

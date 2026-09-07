@@ -48,6 +48,15 @@ takes one glance to spot.
   works, the rest are refused by name. Sending one as a question spent a turn
   to be told it was not a question.
 
+Two providers ship with an endpoint, `anthropic` and `openai`, and everything
+else is `/connect` → `+ custom endpoint`: a name, a base URL, a key. Gemini,
+Z.ai, OpenRouter and Ollama were in that table and are not any more — they all
+speak the OpenAI format, so a table entry bought a default URL and a price
+bracket and cost a line that had to stay true. `Known` means "uhai ships an
+endpoint for this" and gates whether a price may be quoted; `Configured` means
+"Known, or a baseUrl says where it lives" and gates the pickers. A gateway must
+never become `Known`.
+
 `commands.go` holds what both do — the command list, the providers, the session
 on disk, the background tasks — with no printing in it, so neither front end
 has to know how the other says things. `text.go` measures and cuts text for
@@ -72,7 +81,8 @@ that usually needed none of them.
 - `model-registry` — the model registry
 - `tasks` — tasks
 - `drawing` — drawing
-- `daemon` — the daemon: the socket, workspaces, and what it cost to have one
+- `daemon` — the daemon: the socket, workspaces, worker processes, and what it
+  cost to have one
 
 ## When a turn does not finish
 
@@ -237,9 +247,11 @@ looks short.
 - **Continuing a task** (sending it another message, keeping its context).
   Tasks are one-shot: they run, they report. *Build it when a task becomes a
   conversation of its own.*
-- **A model per task.** Everything runs the session's model. *Build it when the
-  cost of background work is worth splitting — the status row now prices each
-  turn, so the moment will be visible.*
+- **A model per task.** Everything runs the session's model. Cheaper than it
+  was: a task is its own process now, so this is an argument to `uhai -task`
+  rather than a change to the agent. *Build it when the cost of background work
+  is worth splitting — the status row prices each turn, so the moment will be
+  visible.*
 
 ## Conventions
 
