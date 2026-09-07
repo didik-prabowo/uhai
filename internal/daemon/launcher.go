@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"strings"
@@ -88,14 +89,27 @@ func Ensure(ctx context.Context, socket string) (*Client, error) {
 	if c, ok := Running(socket); ok {
 		return c, nil
 	}
-	// A daemon that is there but speaks another version is not a daemon to
-	// replace: it still holds the socket, so a second one could not bind, and
-	// it may be holding another project's work. Say which it is and stop.
+	// A daemon that is there and speaks another version holds the socket, so
+	// a second one could not bind — it has to go before this one can start.
+	// It is asked to stand down rather than told to: one daemon serves every
+	// project on the machine, and a build mismatch in this terminal is not a
+	// reason to end another project's running task.
+	//
+	// Refusing leaves the old daemon running and this front end without one,
+	// which is what it did before it could ask at all. The sentence names the
+	// mismatch either way, since that is the thing nothing else reports.
 	probe := Dial(socket)
 	if _, err := probe.status(ctx); err != nil {
 		var wrong ErrWrongVersion
 		if errors.As(err, &wrong) {
-			return nil, wrong
+			if err := probe.ShutdownIfIdle(ctx); err != nil {
+				return nil, fmt.Errorf("%w (it would not stand down: %v)", wrong, err)
+			}
+			// The socket goes with the daemon, and until it does a new one
+			// cannot bind. Waiting for it beats racing it.
+			if err := awaitSocketGone(ctx, socket); err != nil {
+				return nil, fmt.Errorf("%w (it agreed to stop and did not: %v)", wrong, err)
+			}
 		}
 	}
 	// A binary that does not understand -daemon runs its front end again,
@@ -157,6 +171,25 @@ func Ensure(ctx context.Context, socket string) (*Client, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// awaitSocketGone waits for a stopping daemon to take its socket with it. The
+// file is the lock on being the daemon: while it is there, Listen fails.
+func awaitSocketGone(ctx context.Context, socket string) error {
+	deadline := time.Now().Add(startWait)
+	for {
+		if _, err := os.Stat(socket); errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("its socket is still there after %s", startWait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(50 * time.Millisecond):
 		}
 	}

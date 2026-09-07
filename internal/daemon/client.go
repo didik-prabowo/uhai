@@ -335,11 +335,49 @@ func (c *Client) StopTurn(ctx context.Context) error {
 	return c.post(ctx, "/v1/prompt/stop", nil, &struct{}{})
 }
 
-// Shutdown asks the daemon to stop. Separate from anything automatic: it takes
-// every project's running work down with it, so it is a thing a person does
-// rather than something a front end decides on their behalf after an upgrade.
+// Shutdown asks the daemon to stop, whatever it is doing. A person's command:
+// it takes every project's running work down with it.
 func (c *Client) Shutdown(ctx context.Context) error {
 	return c.post(ctx, "/v1/shutdown", nil, &struct{}{})
+}
+
+// ErrBusy is a daemon that was asked to stand down and had work to do. Its own
+// type because the caller has something to say about it — "it is still holding
+// something, so this terminal keeps the old build" — which is different from
+// the request having failed.
+var ErrBusy = errors.New("the daemon has work in flight")
+
+// ShutdownIfIdle asks the daemon to stop only if nothing would be lost. It is
+// what a front end may do on its own behalf after an upgrade, where Shutdown
+// is not: one daemon serves every project, and a build mismatch in this
+// terminal is not a reason to end another project's task.
+//
+// A daemon too old to know the query answers by stopping anyway, which is the
+// one case this cannot make safe — the question is newer than the daemons that
+// most need to be asked it. The caller checks idleness itself first for that
+// reason.
+func (c *Client) ShutdownIfIdle(ctx context.Context) error {
+	// Its own request rather than post's: post returns the daemon's words and
+	// drops the status, and "busy" has to be told from "failed" by something
+	// sturdier than matching a sentence.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.host()+"/v1/shutdown?if_idle=1", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set(projectHeader, c.root)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusConflict:
+		return ErrBusy
+	}
+	said, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	return fmt.Errorf("%s", strings.TrimSpace(string(said)))
 }
 
 func (c *Client) host() string {

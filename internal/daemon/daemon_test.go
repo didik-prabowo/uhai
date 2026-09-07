@@ -1167,3 +1167,84 @@ func TestSpawnLockIsNotTheSocket(t *testing.T) {
 		t.Errorf("taking the lock created something at the socket path: %v", err)
 	}
 }
+
+// After a go install the daemon holding the socket is the old build, and the
+// front end that finds it wants it gone. Wanting is not enough: one daemon
+// serves every project, so it stands down only when nothing would be lost.
+func TestShutdownIfIdleRefusesWhileBusy(t *testing.T) {
+	release := make(chan struct{})
+	run := func(ctx context.Context, prompt string) (string, int, error) {
+		<-release
+		return "sudah", 1, nil
+	}
+	s, dir := serve(t, nil, func(string) (Runner, Runner, error) { return run, run, nil })
+	c := s.clientFor(t, dir, "proyek")
+
+	if _, err := c.StartTask(context.Background(), "kerja"); err != nil {
+		t.Fatal(err)
+	}
+	// The task has to be picked up before the daemon counts as busy.
+	deadline := time.Now().Add(2 * time.Second)
+	for !s.busy() {
+		if time.Now().After(deadline) {
+			t.Fatal("the task never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := c.ShutdownIfIdle(context.Background()); !errors.Is(err, ErrBusy) {
+		t.Fatalf("a daemon with a task running must refuse, got %v", err)
+	}
+	// And it is still there, which is the whole point of refusing.
+	if _, err := c.Health(context.Background()); err != nil {
+		t.Errorf("it stopped anyway: %v", err)
+	}
+
+	// Idle again, it goes.
+	close(release)
+	for s.busy() {
+		if time.Now().After(deadline.Add(2 * time.Second)) {
+			t.Fatal("the task never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := c.ShutdownIfIdle(context.Background()); err != nil {
+		t.Fatalf("an idle daemon must stand down, got %v", err)
+	}
+	gone := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := c.Health(context.Background()); err != nil {
+			return
+		}
+		if time.Now().After(gone) {
+			t.Fatal("it agreed to stop and kept answering")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// Shutdown without the query is a person's command and does not ask.
+func TestShutdownDoesNotAskWhetherItIsBusy(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	run := func(ctx context.Context, prompt string) (string, int, error) {
+		<-release
+		return "", 0, nil
+	}
+	s, dir := serve(t, nil, func(string) (Runner, Runner, error) { return run, run, nil })
+	c := s.clientFor(t, dir, "proyek")
+
+	if _, err := c.StartTask(context.Background(), "kerja"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !s.busy() {
+		if time.Now().After(deadline) {
+			t.Fatal("the task never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := c.Shutdown(context.Background()); err != nil {
+		t.Fatalf("a person's stop takes the work with it, got %v", err)
+	}
+}

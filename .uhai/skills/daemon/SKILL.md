@@ -324,9 +324,28 @@ Three decisions inside it, each with a cheaper alternative that is worse:
   this always did; being unable to create a file is a reason to be careful, not
   a reason to refuse to work. crush makes the same call.
 
-Still not taken from crush, deliberately: **restarting a stale-version daemon**
-(`restartIfStale` asks it to `shutdown_if_idle`, waits for the socket to go,
-and spawns a new one). uhai refuses and names the mismatch instead, because one
-daemon serves every project — standing it down to fix this terminal could
-discard another project's running work. *Build it when the daemon can stand
-down one workspace without stopping.*
+### Standing down a stale one
+
+After a `go install` the daemon holding the socket is last week's build, and it
+holds the socket, so nothing newer can bind. `Ensure` asks it to stand down —
+`POST /v1/shutdown?if_idle=1` — waits for the socket to go, then spawns.
+
+Asked, not told. The trigger written here was "build it when the daemon can
+stand down one workspace without stopping", and that turned out to be the wrong
+shape: what protects another project's work is not per-workspace shutdown but
+refusing to stop at all while any project has any. `busy()` already answered
+exactly that question for `ReapWhenIdle`, so the whole feature is that call and
+a 409.
+
+A refusal is `ErrBusy` and leaves the old daemon running and this terminal
+without one — which is what it did before it could ask. The wrapped error names
+the mismatch either way, since nothing else reports it.
+
+`Shutdown` without the query stays what it was: a person's command, which takes
+every project's work with it. That is why it is `uhai -daemon-stop` and not
+something a front end does on anyone's behalf.
+
+One case this cannot make safe: a daemon too old to know the query stops
+anyway, because an unknown query string is not an error. The question is newer
+than the daemons that most need to be asked it, and there is no version of this
+that reaches back before it existed.

@@ -284,7 +284,21 @@ func writeJSON(w http.ResponseWriter, v any) {
 // handleShutdown stops the daemon. It answers first and closes after, so the
 // caller is told rather than seeing its connection cut and having to guess
 // whether it worked.
+//
+// With ?if_idle it stands down only when nothing would be lost — the same
+// question ReapWhenIdle asks, and the reason it is asked here too: after a
+// `go install` the daemon holding the socket is the old build, and the front
+// end that finds it wants it gone. Wanting is not enough. One daemon serves
+// every project on the machine, so "this terminal is on a newer build" must
+// never cost another project a running task.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("if_idle") && s.busy() {
+		// 409 rather than 200-with-a-field: the caller asked for something
+		// that did not happen, and a status it can branch on beats a body it
+		// has to read.
+		http.Error(w, "the daemon is busy", http.StatusConflict)
+		return
+	}
 	writeJSON(w, map[string]any{"stopping": true, "pid": os.Getpid()})
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
