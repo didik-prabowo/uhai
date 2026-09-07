@@ -450,9 +450,9 @@ func TestAQuestionNobodyAnswersIsDenied(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	if s.Ask(ctx, root, "run_bash", `{"command":"rm -rf /"}`) {
+	// The grace, not a deadline: nothing is watching, so it never restarts.
+	s.AnswerWait = 150 * time.Millisecond
+	if s.Ask(context.Background(), root, "run_bash", `{"command":"rm -rf /"}`) {
 		t.Error("a question with nobody to answer it must not be allowed")
 	}
 	// And it is not left open for the next terminal to trip over.
@@ -520,27 +520,45 @@ func TestAnAlreadyAnsweredQuestionSaysSo(t *testing.T) {
 }
 
 // The other way nobody answers: a terminal is watching, sees the question, and
-// says nothing. The context stays open, so only the deadline can end it — and
-// it has to end it with a no.
-func TestAQuestionNobodyAnswersInTimeIsDenied(t *testing.T) {
+// says nothing. It gets as long as it likes — a deadline here denied the tool
+// out from under somebody still reading the diff, and the turn carried on as
+// if they had said no. What ends the wait is the terminal going away, and then
+// it ends with a no.
+func TestAQuestionWaitsWhileSomebodyIsWatching(t *testing.T) {
 	s, dir := serve(t, nil, nil)
-	s.AnswerWait = 150 * time.Millisecond
+	s.AnswerWait = 150 * time.Millisecond // the grace after the last one leaves
 	c := s.clientFor(t, dir, "proyek")
 	root := rootOf(t, dir, "proyek")
 	if _, err := c.Health(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if _, err := c.Events(ctx); err != nil { // watching, and silent
+	watching, leave := context.WithCancel(context.Background())
+	defer leave()
+	if _, err := c.Events(watching); err != nil { // watching, and silent
 		t.Fatal(err)
 	}
 
-	if s.Ask(context.Background(), root, "run_bash", `{"command":"rm -rf /"}`) {
-		t.Error("silence is not consent")
+	answered := make(chan bool, 1)
+	go func() { answered <- s.Ask(context.Background(), root, "run_bash", `{"command":"rm -rf /"}`) }()
+
+	// Many times the grace, and still open, because somebody is still there.
+	select {
+	case <-answered:
+		t.Fatal("a question was denied while somebody was there to answer it")
+	case <-time.After(time.Second):
+	}
+
+	leave()
+	select {
+	case allowed := <-answered:
+		if allowed {
+			t.Error("silence is not consent")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a question nobody can answer any more must not be held open")
 	}
 	if open := s.workspace(root).questions.list(); len(open) != 0 {
-		t.Errorf("a question that timed out is still open: %+v", open)
+		t.Errorf("a question that was given up on is still open: %+v", open)
 	}
 }
 

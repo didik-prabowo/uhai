@@ -106,6 +106,14 @@ func (w *workspace) publish(e Event) {
 	}
 }
 
+// watched says whether any front end is still attached to this project. A
+// question is held open for exactly as long as this is true.
+func (w *workspace) watched() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.watchers) > 0
+}
+
 func (w *workspace) watch() (<-chan Event, func()) {
 	ch := make(chan Event, 64)
 	w.mu.Lock()

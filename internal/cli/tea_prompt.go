@@ -154,9 +154,9 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 		})
 	case strings.HasPrefix(value, "/cost"):
 		if report := spentReport(m.agent.Provider); report != "" {
-			m.addHistory(teaDim.Render("  " + report))
+			m.addHistory(teaDim.Render(report))
 		} else {
-			m.addHistory(teaDim.Render("  nothing asked yet this session"))
+			m.addHistory(teaDim.Render("nothing asked yet this session"))
 		}
 		return nil
 	case strings.HasPrefix(value, "/skills"):

@@ -99,7 +99,7 @@ func useTheme(isDark bool) {
 	teaTitle = lipgloss.NewStyle().Bold(true).Foreground(accent)
 	teaUser = lipgloss.NewStyle().Bold(true).Foreground(accent)
 	teaDim = lipgloss.NewStyle().Foreground(muted)
-	teaAsk = lipgloss.NewStyle().Foreground(text).Background(band).Padding(0, 1)
+	teaAsk = lipgloss.NewStyle().Foreground(text).Background(band).Padding(0, len(chatGutter))
 	teaForm = lipgloss.NewStyle().
 		Border(lipgloss.Border{Top: "─", Bottom: "─"}).
 		BorderLeft(false).

@@ -16,7 +16,6 @@ import (
 	"charm.land/glamour/v2"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
-	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
@@ -138,6 +137,12 @@ type chatEntry struct {
 	text     string
 	rendered string
 }
+
+// chatGutter is the left margin every line of the chat shares — the same two
+// columns glamour indents an answer by, so a note and the answer above it
+// start in the same place. The band and the welcome box are the exceptions:
+// both are drawn to the full width on purpose.
+const chatGutter = "  "
 
 type entryKind int
 
@@ -278,8 +283,23 @@ func (m *teaModel) refresh() {
 		// Wrapped here, not left to the terminal: the viewport counts lines,
 		// so a line the terminal draws as two would push the bottom of the
 		// chat under the prompt and keep it there.
+		//
+		// Everything but the band and the box sits in the same gutter. A note
+		// written at column 0 next to an answer glamour indents by two reads
+		// as a different column of the screen rather than as the same
+		// conversation.
+		pad, width := chatGutter, m.cols()-len(chatGutter)
+		if e.kind == entryAsk || e.kind == entryBanner || e.kind == entryAnswer {
+			pad, width = "", m.cols()
+		}
 		for _, line := range strings.Split(m.lines[i].rendered, "\n") {
-			rows = append(rows, wrapHanging(line, m.cols())...)
+			for _, row := range wrapHanging(line, width) {
+				if row == "" {
+					rows = append(rows, "")
+					continue
+				}
+				rows = append(rows, pad+row)
+			}
 		}
 	}
 	rows = append(rows, m.streamRows()...)
@@ -417,7 +437,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// as the thing itself.
 		// What is left after the marker (4), the hanging indent the wrap
 		// reserves (2), and the ellipsis truncate adds (1).
-		m.addHistory(teaDim.Render("  ⎿ " + truncate(string(msg), max(20, m.cols()-7))))
+		m.addHistory(teaDim.Render("⎿ " + truncate(string(msg), max(20, m.cols()-7))))
 	case teaConfirmMsg:
 		// The question takes over the block below the chat, so what is about
 		// to happen is on screen while it is being decided rather than
@@ -610,14 +630,8 @@ func runTea(a *agent.Agent, startupErr error) error {
 	a.OnDelta = func(delta string) { p.Send(teaDeltaMsg(delta)) }
 	a.OnReasoning = func(delta string) { p.Send(teaThinkMsg(delta)) }
 	a.Confirm = func(name, input string) bool {
-		switch m.decide(name, input) {
-		case config.PermAllow:
-			return true
-		case config.PermDeny:
-			// Refused by the project, so nobody is asked and the model is
-			// told plainly rather than left to guess at a silent failure.
-			p.Send(teaTextMsg(teaDim.Render("refused by this project's settings: " + name)))
-			return false
+		if allow, decided := m.settled(name, input); decided {
+			return allow
 		}
 		reply := make(chan bool, 1)
 		p.Send(teaConfirmMsg{request: teaConfirm{name: name, input: input, reply: reply}})

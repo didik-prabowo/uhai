@@ -65,8 +65,9 @@ type Server struct {
 	// sessions and events, and says so when asked to run something.
 	New Builder
 
-	// AnswerWait overrides how long a question waits for a human. Zero takes
-	// the default.
+	// AnswerWait overrides how long a question outlives the last terminal
+	// watching it — while one is attached it waits as long as that takes.
+	// Zero takes the default.
 	AnswerWait time.Duration
 
 	// projects is one workspace per project, created on demand. Everything a

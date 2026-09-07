@@ -53,7 +53,18 @@ hook: the question leaves as an event, the terminal answers with a POST to
 function call returning a bool — this is the whole reason the move is a piece
 of work rather than a move.
 
-Silence is a no, both ways: a cancelled context and an expired deadline both
+A question is held open for exactly as long as somebody could answer it. It
+used to have a deadline of a minute, and that was the wrong shape: a minute is
+what it takes to read a diff properly, so the tool was denied out from under
+someone still deciding and the turn carried on as if they had said no.
+`workspace.watched` is what the wait watches now, polled rather than
+signalled — `watch()` would have to broadcast on unwatch and every open
+question listen for it, which is machinery for a case where nothing needs the
+answer within a second of the terminal closing. `answerWait` survives as the
+grace *after* the last watcher goes, because an SSE connection that drops and
+reconnects is not somebody leaving.
+
+Silence is still a no, both ways: a cancelled context and a run-out grace both
 deny. The agent's own default denies everything so a caller who forgets the
 hook cannot silently write files, and a daemon nobody is watching is that same
 situation from further away. A question is dropped when it is given up on, so
@@ -259,6 +270,13 @@ A question is the one event that is not a translation: it needs a reply channel
 and a POST back, so it goes through the same confirmation the local agent uses
 and the answer is posted in a goroutine. The pump has to keep draining, or a
 second question would wait behind a human.
+
+The *same* confirmation, which it was not: `askOnBehalfOfTheDaemon` went
+straight to the panel and skipped `decide` entirely, so attaching quietly threw
+away the project's permission rules and made "always" a button that remembered
+nothing — the same tool was asked about on every single call. `settled` is that
+decision, in `permission.go`, and both front ends go through it. Attaching
+moved where the agent runs, not who decides.
 
 ## Starting it
 

@@ -2439,3 +2439,55 @@ func TestEachProjectKeepsItsOwnSpend(t *testing.T) {
 		t.Errorf("the saved bill is %v", saved.Spend)
 	}
 }
+
+// Everything in the chat starts in the same column. A note written at column 0
+// beside an answer glamour indents by two reads as a different pane, which is
+// what it looked like: the permission line sat left of the tool call it was
+// about.
+func TestChatLinesShareOneGutter(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+
+	m.input.SetValue("halo")
+	m.submit()
+	m.add(chatEntry{kind: entryAnswer, text: "Sebuah jawaban."})
+	m.Update(teaToolMsg(toolLine("run_bash", `{"command":"ls"}`)))
+	m.addHistory(teaDim.Render("run_bash is allowed for the rest of this session"))
+
+	for _, row := range strings.Split(m.chat.View(), "\n") {
+		row = plain(row)
+		if strings.TrimSpace(row) == "" || strings.HasPrefix(row, "╭") ||
+			strings.HasPrefix(row, "│") || strings.HasPrefix(row, "╰") {
+			continue // the welcome box is drawn to the full width on purpose
+		}
+		if !strings.HasPrefix(row, chatGutter) || strings.HasPrefix(row, chatGutter+" ") {
+			t.Errorf("every chat row starts in the gutter, got %q", row)
+		}
+	}
+}
+
+// Attached, the question comes over a socket, but the answer is decided here.
+// It used to skip both rules — the project's and this session's "always" — so
+// a daemon asked about run_bash again every single call.
+func TestSettledHonoursAlwaysAndProjectRules(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rules := `{"permissions":{"deny":["Bash(git push:*)"]}}`
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	if _, decided := m.settled("run_bash", `{"command":"ls"}`); decided {
+		t.Fatal("nothing has been said about ls, so somebody has to be asked")
+	}
+	m.allowed.add("run_bash")
+	if allow, decided := m.settled("run_bash", `{"command":"ls"}`); !allow || !decided {
+		t.Fatal(`"always" must settle the next one without asking`)
+	}
+}

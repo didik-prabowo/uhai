@@ -104,17 +104,31 @@ func (m *teaModel) askOnBehalfOfTheDaemon(q *daemon.Question) {
 	if q == nil {
 		return
 	}
+	// Through the same rules the local agent uses. Without this the daemon
+	// asked about every call, whatever the project allowed and however many
+	// times "always" had been answered — the question travelled over a socket,
+	// but the decision was never anyone else's.
+	if allow, decided := m.settled(q.Tool, q.Input); decided {
+		go m.answerDaemon(q.ID, allow)
+		return
+	}
 	reply := make(chan bool, 1)
 	m.program.Send(teaConfirmMsg{request: teaConfirm{name: q.Tool, input: q.Input, reply: reply}})
-	go func() {
-		allowed := <-reply
-		if err := attached.Answer(context.Background(), q.ID, allowed); err != nil {
-			// Already answered elsewhere, or the turn was abandoned. Said
-			// rather than swallowed: the user pressed a key and deserves to
-			// know it decided nothing.
-			m.program.Send(teaTextMsg(teaDim.Render("that question was already settled: " + err.Error())))
-		}
-	}()
+	// The receive is inside the goroutine, not an argument to it: an argument
+	// is evaluated here, which would block the pump on a human.
+	go func() { m.answerDaemon(q.ID, <-reply) }()
+}
+
+// answerDaemon posts one answer back. In a goroutine because the pump has to
+// keep draining: a second question, or the answer arriving, would otherwise
+// wait behind a human.
+func (m *teaModel) answerDaemon(id string, allowed bool) {
+	if err := attached.Answer(context.Background(), id, allowed); err != nil {
+		// Already answered elsewhere, or the turn was abandoned. Said rather
+		// than swallowed: the user pressed a key and deserves to know it
+		// decided nothing.
+		m.program.Send(teaTextMsg(teaDim.Render("that question was already settled: " + err.Error())))
+	}
 }
 
 // askDaemon runs one turn on the daemon and returns when it is over.

@@ -58,6 +58,24 @@ func (m *teaModel) decide(name, input string) string {
 	return config.PermAsk
 }
 
+// settled is the half of a confirmation nobody has to be asked about: what the
+// project's settings say, and what this session already waved through. It
+// lives here rather than in each front end because attaching moved where the
+// agent runs, not who decides — the daemon's question used to skip all of it,
+// so a project rule was ignored and "always" remembered nothing.
+func (m *teaModel) settled(name, input string) (allow, decided bool) {
+	switch m.decide(name, input) {
+	case config.PermAllow:
+		return true, true
+	case config.PermDeny:
+		// Refused by the project, so nobody is asked and the model is told
+		// plainly rather than left to guess at a silent failure.
+		m.program.Send(teaTextMsg(teaDim.Render("refused by this project's settings: " + name)))
+		return false, true
+	}
+	return false, false
+}
+
 // allowSet is what the user has waved through for the rest of the session.
 type allowSet struct {
 	mu    sync.Mutex

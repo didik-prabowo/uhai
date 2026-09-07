@@ -9,14 +9,27 @@ import (
 	"time"
 )
 
-// answerWait is how long a question waits for a human before it is denied.
+// answerWait is how long a question outlives the last terminal watching it.
 //
-// Denied, not allowed: the agent's own default denies everything so that a
-// caller who forgets to wire a hook can never silently write files, and a
-// daemon nobody is watching is the same situation from further away. A minute
-// is long enough to read a prompt and short enough that a forgotten terminal
-// does not hold a turn open all afternoon.
+// It used to be the whole deadline, and that was wrong: a minute is what it
+// takes to read a diff properly, so the tool was denied out from under someone
+// who was still deciding, and the turn carried on as if they had said no. What
+// actually ends the wait is nobody being there to answer — so that is what is
+// waited for, and this is only the grace after the last watcher goes, since an
+// SSE connection that drops and comes back is not somebody leaving.
+//
+// Denied when it does run out, not allowed: the agent's own default denies
+// everything so that a caller who forgets to wire a hook can never silently
+// write files, and a daemon nobody is watching is the same situation from
+// further away.
 const answerWait = time.Minute
+
+// watchPoll is how often the wait looks up to see whether anyone is still
+// there. Bounded to a quarter of the grace so a test can shorten both with one
+// field, and to a second at the top because nothing here is in a hurry.
+func watchPoll(grace time.Duration) time.Duration {
+	return min(max(grace/4, 10*time.Millisecond), time.Second)
+}
 
 // Question is one thing the daemon needs a human to decide. It leaves as an
 // event and comes back as a POST, which is the whole reason moving the
@@ -88,6 +101,8 @@ func (q *questions) list() []Question {
 // that attaches later can still find the question through GET /v1/questions —
 // a terminal reopened mid-turn should be able to answer it — but a question
 // with nobody to see it is not held open on the chance that someone arrives.
+//
+// While somebody is watching, it waits as long as they take.
 func (s *Server) Ask(ctx context.Context, root, tool, input string) bool {
 	s.mu.Lock()
 	ws := s.projects[root]
@@ -98,25 +113,45 @@ func (s *Server) Ask(ctx context.Context, root, tool, input string) bool {
 	return ws.ask(ctx, s.answerWait(), tool, input)
 }
 
-func (w *workspace) ask(ctx context.Context, wait time.Duration, tool, input string) bool {
+func (w *workspace) ask(ctx context.Context, grace time.Duration, tool, input string) bool {
 	p := w.questions.add(tool, input)
 	w.publish(Event{Kind: EventQuestion, Question: &p.Question})
 
-	select {
-	case allowed := <-p.answer:
-		return allowed
-	case <-ctx.Done():
-		w.questions.drop(p.ID)
-		return false
-	case <-time.After(wait):
-		w.questions.drop(p.ID)
-		return false
+	tick := time.NewTicker(watchPoll(grace))
+	defer tick.Stop()
+
+	// When the watchers last ran out, zero while somebody is there. Polled
+	// rather than signalled: watch() would have to broadcast on unwatch and
+	// every question would need to be listening, which is machinery for a
+	// question that has to be answered within a second of the terminal
+	// closing — and nothing is waiting on that second.
+	var alone time.Time
+	for {
+		select {
+		case allowed := <-p.answer:
+			return allowed
+		case <-ctx.Done():
+			w.questions.drop(p.ID)
+			return false
+		case <-tick.C:
+			if w.watched() {
+				alone = time.Time{}
+				continue
+			}
+			if alone.IsZero() {
+				alone = time.Now()
+			}
+			if time.Since(alone) >= grace {
+				w.questions.drop(p.ID)
+				return false
+			}
+		}
 	}
 }
 
-// answerWait is this daemon's deadline, so a test can shorten it without
-// writing to a package variable — which raced against an Ask still running in
-// another test, and the detector said so.
+// answerWait is this daemon's grace, so a test can shorten it without writing
+// to a package variable — which raced against an Ask still running in another
+// test, and the detector said so.
 func (s *Server) answerWait() time.Duration {
 	if s.AnswerWait > 0 {
 		return s.AnswerWait

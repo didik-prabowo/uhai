@@ -97,10 +97,14 @@ func (m *teaModel) streamRows() []string {
 	// The working out sits above the answer and is dimmed: it is worth
 	// watching while it is all there is, and worth nothing once the answer
 	// starts.
+	// In the chat's gutter, like everything else: the streamed answer is
+	// replaced by the rendered one when the call ends, and a jump of two
+	// columns at that moment reads as the text moving.
+	width := m.cols() - len(chatGutter)
 	if m.thinking != "" {
 		for _, line := range strings.Split(m.thinking, "\n") {
-			for _, row := range wrapHanging(line, m.cols()) {
-				rows = append(rows, teaDim.Render(row))
+			for _, row := range wrapHanging(line, width) {
+				rows = append(rows, teaDim.Render(chatGutter+row))
 			}
 		}
 	}
@@ -108,7 +112,9 @@ func (m *teaModel) streamRows() []string {
 		return rows
 	}
 	for _, line := range strings.Split(m.stream, "\n") {
-		rows = append(rows, wrapHanging(line, m.cols())...)
+		for _, row := range wrapHanging(line, width) {
+			rows = append(rows, chatGutter+row)
+		}
 	}
 	return rows
 }
