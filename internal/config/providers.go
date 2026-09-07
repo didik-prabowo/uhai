@@ -38,46 +38,43 @@ var providers = map[string]providerInfo{
 		KeyURL:       "https://platform.openai.com/api-keys",
 		Cost:         "paid API",
 	},
-	"gemini": {
-		API:          "gemini",
-		BaseURL:      "https://generativelanguage.googleapis.com/v1beta",
-		DefaultModel: "gemini-3.5-flash",
-		KeyURL:       "https://aistudio.google.com/apikey",
-		Cost:         "free tier",
-	},
-	// Z.ai sells the GLM models it makes, so these carry prices. The endpoint
-	// speaks the OpenAI format; the subscription "coding plan" is the same API
-	// at a different base URL, which settings.json can point at.
-	"zai": {
-		BaseURL:      "https://api.z.ai/api/paas/v4",
-		DefaultModel: "glm-4.7",
-		KeyURL:       "https://z.ai/manage-apikey/apikey-list",
-		Cost:         "cheap paid",
-	},
-	"openrouter": {
-		BaseURL:      "https://openrouter.ai/api/v1",
-		DefaultModel: "meta-llama/llama-3.3-70b-instruct",
-		KeyURL:       "https://openrouter.ai/keys",
-		Cost:         "free or paid",
-	},
-	"ollama": {
-		BaseURL:      "http://localhost:11434/v1",
-		DefaultModel: "qwen2.5-coder",
-		KeyURL:       "https://ollama.com/download",
-		Cost:         "free/local",
-		Local:        true,
-	},
 }
 
-// Providers returns the names of providers with a known endpoint, sorted so
-// the display stays stable.
+// Providers returns every provider that can be chosen: the ones settings
+// define with nothing but a baseUrl, then the ones with a table entry. Each
+// half sorted.
+//
+// Custom first, and that order was the other way round to begin with — the
+// argument being that a gateway added last week should not push the vendors
+// about. It was wrong for the case that actually happens: going to the trouble
+// of registering an endpoint is a statement that it is the one being used, and
+// the model picker shows six rows per provider, so three built-ins put a
+// gateway's models on row nineteen. The reason it exists is the reason it goes
+// on top.
+//
+// Custom ones are here rather than in a list of their own because the pickers
+// and /disconnect all read this: a provider that can be connected and cannot
+// be found again is half a feature.
 func Providers() []string {
-	out := make([]string, 0, len(providers))
+	built := make([]string, 0, len(providers))
 	for name := range providers {
-		out = append(out, name)
+		built = append(built, name)
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(built)
+	return append(CustomProviders(), built...)
+}
+
+// Configured reports whether a provider can be loaded at all — a table entry,
+// or a baseUrl someone wrote for it. Distinct from Known on purpose: Known
+// means "uhai ships an endpoint for this", which is what the model table asks
+// when deciding whether it may quote a price. A gateway is Configured and not
+// Known, and both answers are the true ones.
+func Configured(provider string) bool {
+	if Known(provider) {
+		return true
+	}
+	s, err := LoadSettings()
+	return err == nil && s.BaseURLs[provider] != ""
 }
 
 // ConnectedProviders returns known providers that have credentials available

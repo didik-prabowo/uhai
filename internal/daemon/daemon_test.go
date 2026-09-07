@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1118,5 +1119,51 @@ func TestABusyDaemonStaysUp(t *testing.T) {
 	case <-gone:
 		t.Fatal("the daemon stopped with a terminal attached")
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// Two front ends reaching Ensure at once used to both spawn: the loser failed
+// to bind, wrote "a daemon is already listening" to the log and exited, and
+// its client found the winner on the next poll. It worked, and it taught
+// anyone reading the log that something was wrong when nothing was.
+func TestSpawnLockIsExclusive(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "daemon.sock")
+
+	release, ok := lockSpawn(context.Background(), socket)
+	if !ok {
+		t.Fatal("could not take the lock at all")
+	}
+
+	// A second attempt gives up rather than queueing forever, and the ctx is
+	// what stops it — a front end starting a daemon stays interruptible.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if _, ok := lockSpawn(ctx, socket); ok {
+		t.Error("two spawns held the lock at the same time")
+	}
+
+	// And it is a lock, not a one-shot: released, the next one gets it.
+	release()
+	second, ok := lockSpawn(context.Background(), socket)
+	if !ok {
+		t.Error("the lock stayed held after being released")
+	}
+	second()
+}
+
+// The lock lives beside the socket, not on it. Locking the socket would tie
+// the right to start a daemon to a file the daemon deletes when it stops.
+func TestSpawnLockIsNotTheSocket(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "daemon.sock")
+	if got := lockPath(socket); got == socket {
+		t.Fatalf("the lock is the socket: %q", got)
+	}
+	release, ok := lockSpawn(context.Background(), socket)
+	if !ok {
+		t.Fatal("could not take the lock")
+	}
+	defer release()
+	if _, err := os.Stat(socket); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("taking the lock created something at the socket path: %v", err)
 	}
 }

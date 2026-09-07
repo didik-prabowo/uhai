@@ -368,9 +368,36 @@ func (m *teaModel) screen() string {
 		m.setChatHeight(m.height - len(panel))
 		return lipgloss.JoinVertical(lipgloss.Left, append([]string{m.chat.View()}, panel...)...)
 	}
-	if m.mode == teaProviderPicker || m.mode == teaModelPicker ||
-		m.mode == teaSkillPicker || m.mode == teaDisconnectPicker {
-		return lipgloss.JoinVertical(lipgloss.Left, m.picker.View(), teaDim.Render("enter select · esc cancel"))
+	if m.pickerOpen() {
+		return lipgloss.JoinVertical(lipgloss.Left, m.picker.View(), teaDim.Render("enter select · / search · esc cancel"))
+	}
+	if m.mode == teaCustomForm {
+		rows := []string{
+			teaTitle.Render("add an endpoint"),
+			teaDim.Render("tab moves · enter saves all three · esc cancel"),
+		}
+		for i, label := range customLabels {
+			value := m.custom.values[i]
+			if i == m.custom.focused {
+				value = m.keyInput.Value()
+			}
+			shown := value
+			if i == customKey {
+				shown = strings.Repeat("•", len([]rune(value)))
+			}
+			if shown == "" {
+				shown = teaDim.Render(customHints[i])
+			}
+			// The focused row is the one with a cursor on it; the others are
+			// what has been typed so far, which is the whole point of showing
+			// three at once.
+			caret := "  "
+			if i == m.custom.focused {
+				caret = teaUser.Render("> ")
+			}
+			rows = append(rows, m.formSurface(caret+teaDim.Render(label+"  ")+shown))
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
 	if m.mode == teaKeyEntry {
 		masked := strings.Repeat("•", len([]rune(m.keyInput.Value())))
@@ -431,4 +458,17 @@ func (m *teaModel) screen() string {
 	}
 	rows = append(rows, statusRow, m.formSurface(m.input.View()))
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+// pickerOpen reports whether one of the lists is over the chat. It is asked in
+// three places — what to draw, where a key goes, and where everything that is
+// not a key goes — and the third is the one that matters: bubbletea's filter
+// answers asynchronously, so a picker that does not receive its own messages
+// accepts a search and never applies one.
+func (m *teaModel) pickerOpen() bool {
+	switch m.mode {
+	case teaProviderPicker, teaModelPicker, teaSkillPicker, teaDisconnectPicker:
+		return true
+	}
+	return false
 }

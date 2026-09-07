@@ -1,7 +1,8 @@
 // Package openai is the client for every provider speaking OpenAI-style Chat
-// Completions — Gemini (compat endpoint), Ollama, OpenRouter, Z.ai.
-// Only the base URL, key and model name differ, so one implementation covers
-// them all.
+// Completions: OpenAI itself, Gemini through its compat endpoint, and any
+// gateway or local server added with /connect. Only the base URL, key and
+// model name differ, so one implementation covers them all — which is also why
+// adding an endpoint needs no code, only two settings.
 package openai
 
 import (
@@ -37,7 +38,7 @@ const listTimeout = 15 * time.Second
 // Options builds a client. BaseURL includes the version, e.g.
 // "https://api.z.ai/api/paas/v4".
 type Options struct {
-	Label   string // shown to the user, e.g. "zai"
+	Label   string // shown to the user, e.g. "openai"
 	BaseURL string
 	APIKey  string // may be empty for local servers such as Ollama
 	Model   string
@@ -79,6 +80,14 @@ type wireCall struct {
 		// not a typo.
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+
+	// Extra is whatever the vendor hung off the call that the schema has no
+	// field for, kept opaque and sent back untouched. Google's compat endpoint
+	// puts a thought signature here, and Gemini 3 answers 400 on the next turn
+	// without it — so this is not decoration, it is what makes a second tool
+	// call possible at all. Nothing here reads inside it, which is why one
+	// json.RawMessage covers whichever vendor does this next.
+	Extra json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type wireTool struct {
@@ -134,6 +143,7 @@ type wireChunk struct {
 					Name      string `json:"name"`
 					Arguments string `json:"arguments"`
 				} `json:"function"`
+				Extra json.RawMessage `json:"extra_content"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
 	} `json:"choices"`
@@ -181,6 +191,9 @@ func toWire(system string, msgs []provider.Message) []wireMessage {
 				call.ID, call.Type = b.ToolUseID, "function"
 				call.Function.Name = b.ToolName
 				call.Function.Arguments = string(b.ToolInput)
+				// Back out exactly as it came in. Whatever it means is the
+				// vendor's business; ours is not to drop it.
+				call.Extra = json.RawMessage(b.Signature)
 				calls = append(calls, call)
 			case provider.BlockToolResult:
 				// A tool result becomes its own message with role "tool".
@@ -227,6 +240,12 @@ func toWireTools(specs []provider.ToolSpec) []wireTool {
 	}
 	return out
 }
+
+// trimNamespace drops the "models/" Google's OpenAI-compatible endpoint puts
+// in front of every id. Nothing else does it, and left on it would make the
+// setting read "gemini/models/gemini-3.5-flash" — which works on the wire and
+// misses the model table, since that matches on the last segment.
+func trimNamespace(id string) string { return strings.TrimPrefix(id, "models/") }
 
 // Models lists the model ids the endpoint offers (GET /models). Every
 // OpenAI-compatible server implements it, so /model works for Gemini,
@@ -296,7 +315,7 @@ func (c *Client) Models() ([]string, error) {
 		if strings.Contains(strings.ToLower(m.ID), "prompt-guard") {
 			continue
 		}
-		models = append(models, chatModel{id: m.ID, created: m.Created})
+		models = append(models, chatModel{id: trimNamespace(m.ID), created: m.Created})
 	}
 	sort.SliceStable(models, func(i, j int) bool {
 		if models[i].created == models[j].created {
@@ -304,11 +323,15 @@ func (c *Client) Models() ([]string, error) {
 		}
 		return models[i].created > models[j].created
 	})
+	// No sort.Strings here, and that is the point: one used to follow this
+	// loop and undo the sort above it entirely, so the newest-first order was
+	// computed and then thrown away. An endpoint that reports no dates — a
+	// gateway usually does not — falls to id ascending through the tie-break,
+	// which is what it looked like all along and hid the mistake.
 	ids := make([]string, 0, len(models))
 	for _, m := range models {
 		ids = append(ids, m.id)
 	}
-	sort.Strings(ids)
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("the endpoint returned no models")
 	}
@@ -444,6 +467,9 @@ func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.R
 			if tc.Function.Name != "" {
 				call.Function.Name = tc.Function.Name
 			}
+			if len(tc.Extra) > 0 {
+				call.Extra = tc.Extra
+			}
 			call.Function.Arguments += tc.Function.Arguments
 		}
 	}
@@ -502,6 +528,7 @@ func toBlocks(msg wireMessage) ([]provider.ContentBlock, provider.StopReason) {
 			ToolUseID: call.ID,
 			ToolName:  call.Function.Name,
 			ToolInput: json.RawMessage(args),
+			Signature: string(call.Extra),
 		})
 		stop = provider.StopToolUse
 	}

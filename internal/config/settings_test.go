@@ -86,20 +86,19 @@ func TestModelLimits(t *testing.T) {
 		// did not move to a million, and the 4.5 releases answer shorter than
 		// the families they belong to — asking Opus 4.5 for its family's 128k
 		// output is a request the API refuses.
-		"anthropic/claude-haiku-4-5-20251001":          {Context: 200_000, MaxOutput: 64_000, InputUSD: 1, OutputUSD: 5},
-		"anthropic/claude-opus-4-5-20251101":           {Context: 200_000, MaxOutput: 64_000, InputUSD: 5, OutputUSD: 25},
-		"anthropic/claude-sonnet-4-5-20250929":         {Context: 1_000_000, MaxOutput: 64_000, InputUSD: 3, OutputUSD: 15},
-		"anthropic/claude-opus-4-8":                    {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
-		"gemini/gemini-3.5-flash":                      {Context: 1_000_000, MaxOutput: 65_536},
-		"ollama/qwen2.5-coder":                         {Context: 32_768, MaxOutput: 4_096},
-		"openrouter/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
-		"zai/glm-4.7":                                  {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
-		"zai/glm-4.6":                                  {Context: 200_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
-		// A cheap variant must not inherit its family's price: -flashx lands on
-		// the free entry, which shows no figure rather than a wrong one.
-		"zai/glm-4.7-flashx":                   {Context: 128_000, MaxOutput: 8_192},
-		"zai/glm-4.5-air":                      {Context: 128_000, MaxOutput: 8_192},
-		"openrouter/amazon/nova-lite-v1":       {Context: defaultContext, MaxOutput: defaultMaxOutput},
+		"anthropic/claude-haiku-4-5-20251001":  {Context: 200_000, MaxOutput: 64_000, InputUSD: 1, OutputUSD: 5},
+		"anthropic/claude-opus-4-5-20251101":   {Context: 200_000, MaxOutput: 64_000, InputUSD: 5, OutputUSD: 25},
+		"anthropic/claude-sonnet-4-5-20250929": {Context: 1_000_000, MaxOutput: 64_000, InputUSD: 3, OutputUSD: 15},
+		"anthropic/claude-opus-4-8":            {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
+		"gemini/gemini-3.5-flash":              {Context: 1_000_000, MaxOutput: 65_536},
+		"gw/qwen2.5-coder":                     {Context: 32_768, MaxOutput: 4_096},
+		"gw/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
+		// A gateway serving GLM gets the window and no price: nobody here
+		// knows what that gateway charges.
+		"gw/glm-4.7":                           {Context: 128_000, MaxOutput: 8_192},
+		"gw/glm-4.6":                           {Context: 200_000, MaxOutput: 8_192},
+		"gw/glm-4.5-air":                       {Context: 128_000, MaxOutput: 8_192},
+		"gw/amazon/nova-lite-v1":               {Context: defaultContext, MaxOutput: defaultMaxOutput},
 		"openai/something-nobody-has-heard-of": {Context: defaultContext, MaxOutput: defaultMaxOutput},
 	} {
 		if got := infoFor(setting); got != want {
@@ -125,10 +124,10 @@ func TestModelSummaryAndCost(t *testing.T) {
 	}
 	// An open model is hosted by everyone at a different price, so it carries
 	// none, and a model nobody has heard of says only what is safe to assume.
-	if got := ModelSummary("openrouter/llama-3.3-70b-versatile"); got != "128k context" {
+	if got := ModelSummary("gw/llama-3.3-70b-versatile"); got != "128k context" {
 		t.Fatalf("llama summary = %q", got)
 	}
-	if got := ModelSummary("openrouter/amazon/nova-lite-v1"); got != "32k context" {
+	if got := ModelSummary("gw/amazon/nova-lite-v1"); got != "32k context" {
 		t.Fatalf("unknown summary = %q", got)
 	}
 
@@ -146,12 +145,43 @@ func TestModelSummaryAndCost(t *testing.T) {
 	if got := CostUSD("anthropic/claude-sonnet-5", provider.Usage{Input: 200, Output: 100}); got != "<$0.01" {
 		t.Fatalf("a cheap turn = %q", got)
 	}
-	if got := CostUSD("openrouter/llama-3.3-70b-versatile", provider.Usage{Input: 1_000_000, Output: 100_000}); got != "" {
+	if got := CostUSD("gw/llama-3.3-70b-versatile", provider.Usage{Input: 1_000_000, Output: 100_000}); got != "" {
 		t.Fatalf("an unpriced model must stay quiet, got %q", got)
 	}
 
-	if !SupportsTools("openrouter/amazon/nova-lite-v1") {
+	if !SupportsTools("gw/amazon/nova-lite-v1") {
 		t.Error("an unknown model must be assumed to manage tools")
+	}
+}
+
+// A provider uhai has no endpoint for is a gateway, and a gateway's price is
+// not the vendor's. "cc/claude-opus-5" matched the prefix claude-opus and was
+// billed Anthropic's $5/$25 for turns that were drawn from a subscription's
+// window and cost nothing at all.
+func TestAGatewayIsSizedButNotPriced(t *testing.T) {
+	const gateway = "cc/claude-opus-5"
+
+	// Sized, because something has to decide when to compact and the family
+	// figure is the best guess available.
+	if got := ContextWindow(gateway); got != 1_000_000 {
+		t.Errorf("context = %d, want the family's 1000000", got)
+	}
+	if got := MaxOutput(gateway); got != 128_000 {
+		t.Errorf("max output = %d, want the family's 128000", got)
+	}
+
+	// Not priced, in either of the two places a price is shown.
+	if got := ModelSummary(gateway); got != "1M context" {
+		t.Errorf("summary = %q, want no price in it", got)
+	}
+	if got := CostUSD(gateway, provider.Usage{Input: 1_000_000, Output: 100_000}); got != "" {
+		t.Errorf("a gateway turn priced itself at %q", got)
+	}
+
+	// And the same model under the provider that actually sells it is
+	// untouched, which is the whole point of keying on the provider.
+	if got := CostUSD("anthropic/claude-opus-5", provider.Usage{Input: 1_000_000}); got != "$5.00" {
+		t.Errorf("anthropic's own price = %q, want $5.00", got)
 	}
 }
 

@@ -41,6 +41,7 @@ type teaModel struct {
 	picker    list.Model
 	keyInput  textarea.Model
 	credField string // which credential the entry box is collecting
+	custom    customForm
 
 	// thinking is a model's working out while it arrives, and thinkStart is
 	// when it began. It is shown live and then collapsed to one line: it is
@@ -126,6 +127,7 @@ const (
 	teaModelPicker
 	teaSkillPicker
 	teaDisconnectPicker
+	teaCustomForm
 )
 
 // chatEntry is one thing said, kept as it was written. What it looks like
@@ -145,6 +147,30 @@ const (
 	entryAnswer                  // markdown from the model
 	entryBanner                  // the welcome box
 )
+
+// customForm is the three boxes /connect shows for an endpoint uhai does not
+// ship: a name, where it lives, and what opens it. One screen rather than
+// three questions, because all three are copied from the same page — and one
+// textinput rather than three, since only the focused box is ever typed into
+// and the other two are strings until they are.
+type customForm struct {
+	values  [3]string
+	focused int
+}
+
+const (
+	customName = iota
+	customURL
+	customKey
+)
+
+var customLabels = [3]string{"name", "endpoint", "key"}
+
+var customHints = [3]string{
+	"one word, e.g. acme or 9router",
+	"base URL, the part before /chat/completions",
+	"the token the endpoint expects",
+}
 
 type teaItem struct{ title, desc string }
 
@@ -468,6 +494,23 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.SetValue(queued)
 			return m, m.submit()
 		}
+	case tea.PasteMsg:
+		// Paste is its own message, not a key press, so it missed the KeyMsg
+		// block above and fell all the way through to the chat prompt — behind
+		// whatever was open. A key pasted into /connect went silently into the
+		// box nobody was looking at and stayed there.
+		if m.mode == teaKeyEntry || m.mode == teaCustomForm {
+			var cmd tea.Cmd
+			m.keyInput, cmd = m.keyInput.Update(msg)
+			return m, cmd
+		}
+		if m.pickerOpen() {
+			var cmd tea.Cmd
+			m.picker, cmd = m.picker.Update(msg)
+			return m, cmd
+		}
+		// In the prompt it belongs to the prompt, which is what the fall
+		// through below already does.
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -476,6 +519,19 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.chat, _ = m.chat.Update(msg)
+
+	// A list open over the chat gets everything that is not a key press, and
+	// the reason is not tidiness: bubbletea's filter is asynchronous. Typing
+	// into it returns a command that works out the matches and sends a
+	// FilterMatchesMsg back, and that message is not a KeyMsg — so it fell
+	// through to here and was handed to the prompt behind the picker. The
+	// filter box showed what was typed and nothing was ever filtered, which
+	// looks exactly like a search that does not work.
+	if m.pickerOpen() {
+		m.picker, cmd = m.picker.Update(msg)
+		return m, cmd
+	}
+
 	if m.confirm == nil {
 		before := m.input.Value()
 		m.input, cmd = m.input.Update(msg)

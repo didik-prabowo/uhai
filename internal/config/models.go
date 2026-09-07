@@ -63,15 +63,15 @@ const (
 // out of an error message — Z.ai names its output ceiling when you ask for too
 // much ("限制数值范围[1,131072]"), which is the whole documentation there is.
 //
-// Two figures are known to be missing rather than wrong. Z.ai now sells glm-5,
-// glm-5.1 and glm-5.2, and OpenAI sells gpt-5; neither could be sized, because
-// every paid key here is out of credit and a limit cannot be probed on an
-// account that cannot spend. They fall to their family entries, which is the
-// safe direction: a small window compacts early, a large one fails the turn.
+// Since catalog.go this is the floor rather than the whole answer: models.dev
+// overlays it for any model it carries, which is what finally sized the two
+// that could not be sized here — Z.ai's glm-5 line and gpt-5, neither of them
+// probeable, because every paid key on this machine is out of credit and a
+// limit cannot be asked of an account that cannot spend.
 //
-// ponytail: a hand-written table, and list prices drift. Filling it from the
-// two APIs that do report would be real work for two of the five vendors, and
-// what is unlisted still works — quietly, at safe defaults.
+// What is left is what a catalog cannot know: Retired, and every figure for a
+// model running under somebody's desk. And the floor still matters, because
+// the overlay is only ever as present as the last successful fetch.
 var models = map[string]modelInfo{
 	// The 5 generation moved to a million-token window and a 128k answer, and
 	// Opus came down to a third of what Opus 4 cost. 128k output is only safe
@@ -110,17 +110,14 @@ var models = map[string]modelInfo{
 	"gemini-2.5": {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
 	"gemini-2.0": {Context: 1_000_000, MaxOutput: 8_192, Retired: true},
 
-	// GLM, from Z.ai, which makes and sells them — so they are priced. The
-	// pricing page publishes no context windows: 128k is the figure that is
-	// safe to be wrong about, and 4.6 is the one Z.ai documents at 200k.
-	// glm-4.7-flash is free and unpriced, which is also where -flashx lands —
-	// no figure beats a confident wrong one.
-	"glm-5.3-flash": {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.075, OutputUSD: 0.25},
-	"glm-5.3":       {Context: 128_000, MaxOutput: 8_192, InputUSD: 1.40, OutputUSD: 4.40},
-	"glm-4.7-flash": {Context: 128_000, MaxOutput: 8_192},
-	"glm-4.7":       {Context: 128_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
-	"glm-4.6":       {Context: 200_000, MaxOutput: 8_192, InputUSD: 0.60, OutputUSD: 2.20},
-	"glm-":          {Context: 128_000, MaxOutput: 8_192},
+	// GLM, and the sizes only. They used to carry Z.ai's own prices, which
+	// were reachable while Z.ai was a provider uhai shipped an endpoint for.
+	// It is not one any more, so whoever serves a GLM now is a gateway — and
+	// lookup strips a price for those, which made these figures unreachable
+	// rather than merely stale. The windows still earn their place: they are
+	// what a custom endpoint pointed at GLM compacts against.
+	"glm-4.6": {Context: 200_000, MaxOutput: 8_192},
+	"glm-":    {Context: 128_000, MaxOutput: 8_192},
 
 	// Open models: hosted by everyone, priced by each host, so no figures.
 	"llama-3.3":     {Context: 128_000, MaxOutput: 8_192},
@@ -139,18 +136,67 @@ func infoFor(modelSetting string) modelInfo {
 // lookup is infoFor plus the prefix that matched, which is how Known tells an
 // entry written for a model from the family fallback that caught it.
 func lookup(modelSetting string) (modelInfo, string) {
-	name := modelSetting
-	if i := strings.LastIndex(name, "/"); i >= 0 {
-		name = name[i+1:]
+	// providerName, not provider: the package of that name is imported here.
+	providerName, model, qualified := strings.Cut(modelSetting, "/")
+
+	// The family lives in the last segment either way: a bare name is all
+	// there is, and an OpenRouter id carries a second slash of its own.
+	family := modelSetting
+	if i := strings.LastIndex(family, "/"); i >= 0 {
+		family = family[i+1:]
 	}
-	name = strings.ToLower(name)
+	family = strings.ToLower(family)
 
 	best := modelInfo{Context: defaultContext, MaxOutput: defaultMaxOutput}
 	match, longest := "", 0
 	for prefix, info := range models {
-		if strings.HasPrefix(name, prefix) && len(prefix) > longest {
+		if strings.HasPrefix(family, prefix) && len(prefix) > longest {
 			best, match, longest = info, prefix, len(prefix)
 		}
+	}
+
+	// models.dev overlays the table wherever it has the model itself, since
+	// its figures are maintained and these were read off pricing pages by
+	// hand. Three things stay the table's: Retired, which models.dev does not
+	// record; a MaxOutput it left unsaid; and a NoTools already known here,
+	// since the table only ever says so about a model that proved it.
+	//
+	// The match returned is the model's own name, because that is what a hit
+	// here is — the exact model, not the family that would have caught it. No
+	// vendor's id ends in a dash, so KnownModel still tells the two apart.
+	if qualified {
+		if info, ok := catalogInfo(providerName, model); ok {
+			info.Retired = best.Retired
+			info.NoTools = info.NoTools || best.NoTools
+			if info.MaxOutput == 0 {
+				info.MaxOutput = best.MaxOutput
+			}
+			return info, family
+		}
+	}
+
+	// A provider uhai has no endpoint for is a gateway, a proxy, or somebody's
+	// own server, and what it charges cannot be known from here: the same
+	// model behind it may be billed per token, drawn from a subscription's
+	// window, or free. The table's figures are the vendor's own list prices,
+	// which is the confident wrong answer this file exists to avoid — a
+	// gateway called "cc" serving claude-opus-5 was being billed at Anthropic's
+	// $5/$25 for turns that cost nothing.
+	//
+	// The sizes stay, because those are safe to guess and something has to
+	// decide when to compact. Being wrong about a window costs an early
+	// summary; being wrong about a price is a number somebody trusts.
+	//
+	// Only this path needs it: the catalog index holds nothing but providers
+	// uhai has an endpoint for, so a hit above is a known provider by
+	// construction.
+	//
+	// ponytail: a known provider pointed somewhere else by a baseUrl override
+	// still prices at the vendor's rate — aiming "anthropic" at a proxy keeps
+	// Anthropic's figures. Reading settings here would make a hot, pure lookup
+	// depend on a file; do it when somebody actually runs that way.
+	if qualified && !Known(providerName) {
+		best.InputUSD, best.OutputUSD, best.CacheReadUSD = 0, 0, 0
 	}
 	return best, match
 }

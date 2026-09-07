@@ -64,6 +64,11 @@ func LatestIn(st Store, root string) (Session, error) {
 // symlinks resolved, so /tmp and /private/tmp are one project.
 func SameRoot(a, b string) bool { return resolve(a) == resolve(b) }
 
+// Resolve is the form a path is compared in, exported for callers that need
+// to key a map by project rather than ask about two paths at a time — the
+// daemon holds one conversation per project and has to look them up.
+func Resolve(path string) string { return resolve(path) }
+
 func resolve(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {

@@ -7,18 +7,21 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/provider/anthropic"
-	"github.com/didik-prabowo/uhai/internal/provider/gemini"
 	"github.com/didik-prabowo/uhai/internal/provider/openai"
 )
 
 // defaultModel is used when both settings.json and the env vars are empty.
-// Gemini has a free tier, so uhai runs as soon as the user has a
-// GEMINI_API_KEY. It took over from Groq, which uhai no longer speaks to.
-const defaultModel = "gemini/gemini-3.5-flash"
+// It has been three things now — Groq, then Gemini for its free tier, and
+// neither is a provider uhai ships any more. There is no free one left to
+// point at, so this is the one worth paying for rather than the one that
+// costs least: a first turn that answers well beats a first turn that is free
+// and wrong, and /connect is one command away for anyone who disagrees.
+const defaultModel = "anthropic/claude-sonnet-5"
 
 // SaveModel stores the chosen model in ~/.uhai/settings.json. /connect uses
 // it so the provider just connected is the one actually used.
@@ -312,6 +315,73 @@ func LoadProviderFor(modelSetting string) (provider.Provider, error) {
 	return loadProvider(s, modelSetting)
 }
 
+// SaveBaseURL points a provider at an endpoint, in ~/.uhai/settings.json. It
+// is what /connect writes for a custom one, and the reason that flow needs no
+// file editing: a provider uhai has never heard of is a base URL and a key,
+// and both now have a place to be typed.
+func SaveBaseURL(provider, url string) error {
+	return save(func(s *Settings) {
+		if s.BaseURLs == nil {
+			s.BaseURLs = map[string]string{}
+		}
+		s.BaseURLs[provider] = url
+	})
+}
+
+// ForgetBaseURL removes one, so /disconnect can take a custom provider out
+// whole rather than leaving a half of it behind that /model still offers.
+func ForgetBaseURL(provider string) error {
+	return save(func(s *Settings) { delete(s.BaseURLs, provider) })
+}
+
+// CustomProviders are the ones defined only by a baseUrl in settings — a
+// gateway, a company endpoint, somebody's proxy. Sorted, and never including a
+// name the table already has: pointing "anthropic" elsewhere is an override of
+// a known provider, not a new one.
+func CustomProviders() []string {
+	s, err := LoadSettings()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for name := range s.BaseURLs {
+		if name != "" && !Known(name) {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ListerModel is a model name to build a client with when the point is to ask
+// that client what models exist. The provider's default when it has one, then
+// whatever is selected if it belongs to this provider, and failing both a
+// placeholder — listing does not send the model anywhere, and a custom
+// provider has no default by definition. Without this the model picker simply
+// skipped every gateway, which made adding one only half useful.
+func ListerModel(provider string) string {
+	if m := DefaultModel(provider); m != "" {
+		return m
+	}
+	if s, err := LoadSettings(); err == nil {
+		if name, model, ok := strings.Cut(s.Model, "/"); ok && name == provider {
+			return model
+		}
+	}
+	return "-"
+}
+
+// BaseURLOf is where a provider points, "" when nothing says. For the picker,
+// which shows it beside a custom provider: two gateways look identical
+// otherwise, and the endpoint is the whole difference between them.
+func BaseURLOf(provider string) string {
+	s, err := LoadSettings()
+	if err != nil {
+		return providers[provider].BaseURL
+	}
+	return providerURL(s, provider)
+}
+
 // providerURL is where one provider's requests go: its own override first
 // since that is the specific answer, then the global one — which is there for
 // somebody running a single endpoint for everything — then the table.
@@ -367,18 +437,6 @@ func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 		}
 		return c, nil
 
-	case "gemini":
-		c, err := gemini.New(gemini.Options{
-			Label:     name,
-			BaseURL:   baseURL,
-			APIKey:    key,
-			Model:     model,
-			MaxTokens: MaxOutput(modelSetting),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
 	}
 
 	c, err := openai.New(openai.Options{

@@ -39,15 +39,6 @@ var vendorEnv = map[string]map[string]string{
 	"openai": {
 		FieldKey: "OPENAI_API_KEY",
 	},
-	"gemini": {
-		FieldKey: "GEMINI_API_KEY",
-	},
-	"openrouter": {
-		FieldKey: "OPENROUTER_API_KEY",
-	},
-	"zai": {
-		FieldKey: "ZAI_API_KEY",
-	},
 }
 
 // AuthPath returns the credentials file location: ~/.uhai/auth.json.

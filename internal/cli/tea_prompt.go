@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
@@ -196,6 +197,17 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 	case strings.HasPrefix(value, "/model"):
 		arg := strings.TrimSpace(strings.TrimPrefix(value, "/model"))
 		if arg == "" {
+			return m.beginModels()
+		}
+		// "refresh" cannot be a model — those are written provider/model — so
+		// there is nothing to be ambiguous with. It exists because the six
+		// hour cache is a courtesy until the moment you have just added a
+		// provider to a gateway, and then it is a wall with no door.
+		if arg == "refresh" {
+			if err := config.ForgetModelLists(); err != nil {
+				m.addHistory(teaDim.Render("could not clear the cache: " + err.Error()))
+				return nil
+			}
 			return m.beginModels()
 		}
 		return m.changeModel(arg, true)

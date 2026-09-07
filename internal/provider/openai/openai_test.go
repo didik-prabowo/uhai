@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -305,5 +307,138 @@ func TestNoCacheDetailsMeansEverythingIsFresh(t *testing.T) {
 	}
 	if resp.Usage.Input != 900 || resp.Usage.CacheRead != 0 {
 		t.Errorf("want 900 fresh and 0 cached, got %d and %d", resp.Usage.Input, resp.Usage.CacheRead)
+	}
+}
+
+// The thought signature Gemini 3 refuses to continue without arrives as
+// extra_content on the tool call and has to go back out on the same call next
+// turn. It used to be the gemini client's job, and the reason that client
+// existed; it is opaque here, which is why one RawMessage covers whichever
+// vendor does this next.
+func TestToolCallExtraContentSurvivesTheRoundTrip(t *testing.T) {
+	const sig = `{"google":{"thought_signature":"Ev4DCvsDARFNMg8XLYUH"}}`
+
+	// In: what the endpoint sent becomes the block's Signature.
+	var in wireMessage
+	if err := json.Unmarshal([]byte(`{
+		"role": "assistant",
+		"tool_calls": [{"id": "call_1", "type": "function",
+			"function": {"name": "ls", "arguments": "{\"path\":\".\"}"},
+			"extra_content": `+sig+`}]
+	}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	blocks, _ := toBlocks(in)
+	var use provider.ContentBlock
+	for _, b := range blocks {
+		if b.Type == provider.BlockToolUse {
+			use = b
+		}
+	}
+	if use.ToolUseID != "call_1" {
+		t.Fatalf("no tool call came back: %+v", blocks)
+	}
+	if use.Signature == "" {
+		t.Fatal("the signature was dropped on the way in — the next turn is a 400")
+	}
+
+	// Out: and goes back on the wire untouched.
+	out := toWire("", []provider.Message{{Role: provider.RoleAssistant, Content: blocks}})
+	var found string
+	for _, m := range out {
+		for _, c := range m.ToolCalls {
+			found = string(c.Extra)
+		}
+	}
+	if found == "" {
+		t.Fatal("the signature was dropped on the way out")
+	}
+	var want, got any
+	if err := json.Unmarshal([]byte(sig), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(found), &got); err != nil {
+		t.Fatalf("what went out is not the JSON that came in: %v", err)
+	}
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("signature changed in transit:\n want %v\n got  %v", want, got)
+	}
+}
+
+// A call with nothing extra must not grow an empty field: most endpoints have
+// never heard of extra_content and some validate what they are sent.
+func TestToolCallWithoutExtraContentSendsNone(t *testing.T) {
+	out := toWire("", []provider.Message{{Role: provider.RoleAssistant, Content: []provider.ContentBlock{{
+		Type: provider.BlockToolUse, ToolUseID: "c1", ToolName: "ls", ToolInput: []byte(`{}`),
+	}}}})
+	body, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "extra_content") {
+		t.Errorf("an empty extra_content reached the wire: %s", body)
+	}
+}
+
+// Google's compat endpoint is the only one that namespaces its ids, and left
+// on, "models/gemini-3.5-flash" would miss the model table.
+func TestModelNamespaceIsTrimmed(t *testing.T) {
+	if got := trimNamespace("models/gemini-3.5-flash"); got != "gemini-3.5-flash" {
+		t.Errorf("got %q", got)
+	}
+	if got := trimNamespace("glm-4.7"); got != "glm-4.7" {
+		t.Errorf("an ordinary id was rewritten to %q", got)
+	}
+}
+
+// Newest first, which the sort computes and a sort.Strings after it used to
+// undo — the ordering was thrown away one line after being worked out. It hid
+// because a gateway reports no dates at all, so the tie-break made it look
+// alphabetical either way.
+func TestModelsAreNewestFirst(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"data":[
+			{"id":"aaa-old",  "created": 100},
+			{"id":"zzz-new",  "created": 900},
+			{"id":"mmm-mid",  "created": 500},
+			{"id":"bbb-tie",  "created": 900}
+		]}`)
+	}))
+	defer srv.Close()
+
+	c, err := New(Options{Label: "t", BaseURL: srv.URL, Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.Models()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same date falls back to the id, so the two 900s are in name order.
+	want := []string{"bbb-tie", "zzz-new", "mmm-mid", "aaa-old"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// An endpoint that reports no dates is left in id order, which is the only
+// order there is to give it.
+func TestModelsWithoutDatesSortByID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"data":[{"id":"cx/gpt-6"},{"id":"cc/claude-5"},{"id":"cx/gpt-5"}]}`)
+	}))
+	defer srv.Close()
+
+	c, err := New(Options{Label: "t", BaseURL: srv.URL, Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.Models()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cc/claude-5", "cx/gpt-5", "cx/gpt-6"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }

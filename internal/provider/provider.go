@@ -130,7 +130,7 @@ type Response struct {
 // Provider is the contract each LLM vendor implements. Adding a vendor means
 // adding a type that satisfies this interface — the agent code never changes.
 type Provider interface {
-	// Name is shown to the user, e.g. "zai/glm-4.7".
+	// Name is shown to the user, e.g. "openai/gpt-4o-mini".
 	Name() string
 
 	// Send performs one full request and returns a neutral response.

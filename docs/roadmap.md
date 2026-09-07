@@ -41,9 +41,11 @@ instead, so the agent loop is exercised rather than replaced.
 
 - `internal/provider` as the contract: neutral content blocks, a stop reason,
   token usage, a hook for streamed text.
-- Three implementations split by **wire format, not by company** —
-  `openai` (Chat Completions: OpenAI, OpenRouter, Z.ai, Ollama),
-  `anthropic` (Messages), `gemini` (generateContent).
+- Two implementations split by **wire format, not by company** —
+  `openai` (Chat Completions: OpenAI, Gemini and any gateway) and `anthropic`
+  (Messages). There was a third for Gemini's
+  generateContent; it went once the compat endpoint proved it could carry a
+  thought signature.
 - A shared `provider.Post` with backoff, because two copies of a retry loop is
   one too many.
 - `config/models.go`: context window, max output, tool support, price per

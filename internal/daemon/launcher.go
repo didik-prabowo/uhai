@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -18,6 +19,59 @@ const startWait = 3 * time.Second
 // envSpawned marks a process this package started, so one that lands back in
 // Ensure knows it is the child and stops rather than spawning again.
 const envSpawned = "UHAI_DAEMON_SPAWNED"
+
+// lockWait is how long to queue behind another front end's spawn before giving
+// up on being polite. Longer than startWait, because the wait that matters is
+// the winner's whole spawn plus its readiness loop, and losing the lock race
+// is not a reason to fail.
+const lockWait = startWait + 2*time.Second
+
+// lockPath is the file that serialises spawning, beside the socket. A separate
+// file rather than the socket itself: locking the socket would tie the right
+// to *start* a daemon to a file the daemon deletes when it stops.
+func lockPath(socket string) string {
+	return strings.TrimSuffix(socket, ".sock") + ".lock"
+}
+
+// lockSpawn takes an exclusive lock on the spawn, so two front ends reaching
+// Ensure at the same moment do not both start a daemon. They already survived
+// it — the loser fails to bind, exits, and its client finds the winner on the
+// next poll — but through a failure written to the log rather than by design,
+// and a log full of "a daemon is already listening" teaches the next reader
+// that something is wrong when nothing is.
+//
+// Non-blocking flock in a poll loop rather than a blocking one: a blocking
+// call cannot be told about ctx, and a front end that cannot be interrupted
+// while starting a daemon is worse than one that occasionally spawns twice.
+//
+// A lock that cannot be taken at all is not fatal — crush makes the same call.
+// The unsynchronised path is what this has always done, and being unable to
+// create a file is a reason to be careful, not a reason to refuse to work.
+func lockSpawn(ctx context.Context, socket string) (release func(), ok bool) {
+	f, err := os.OpenFile(lockPath(socket), os.O_CREATE|os.O_RDWR, socketPerm)
+	if err != nil {
+		return func() {}, false
+	}
+	deadline := time.Now().Add(lockWait)
+	for {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+			return func() {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				f.Close()
+			}, true
+		}
+		if time.Now().After(deadline) {
+			f.Close()
+			return func() {}, false
+		}
+		select {
+		case <-ctx.Done():
+			f.Close()
+			return func() {}, false
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
 
 // Ensure returns a client for the daemon, starting one if none is running.
 //
@@ -54,6 +108,17 @@ func Ensure(ctx context.Context, socket string) (*Client, error) {
 	if os.Getenv(envSpawned) != "" {
 		return nil, fmt.Errorf("this process was started as a daemon but is not serving — " +
 			"refusing to start another")
+	}
+
+	// From here on only one front end at a time, and the first thing the
+	// winner does is look again: the daemon it was about to start may have
+	// been started by whoever held the lock a moment ago.
+	release, locked := lockSpawn(ctx, socket)
+	defer release()
+	if locked {
+		if c, ok := Running(socket); ok {
+			return c, nil
+		}
 	}
 
 	self, err := os.Executable()

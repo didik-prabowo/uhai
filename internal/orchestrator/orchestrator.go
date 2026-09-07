@@ -181,6 +181,12 @@ var store session.Store = filestore.New("")
 // every caller: the interactive session opens without one so the user can
 // /connect from inside, and the reason is passed on to be shown.
 func newAgent() (*agent.Agent, error) {
+	// The one place every entry point passes through, which is where the
+	// stored model figures belong: the picker prices a row with them and the
+	// status row prices a turn with them, and both would rather not discover
+	// a file mid-draw.
+	config.LoadCatalog()
+
 	p, err := config.LoadProvider()
 	a := agent.New(p) // p may be nil; checked before Ask
 	if p != nil {
@@ -260,6 +266,19 @@ func RunDaemon() error {
 		if err != nil {
 			return nil, nil, err
 		}
+
+		// Picked up rather than started fresh. The daemon leaves after half an
+		// hour idle and takes every conversation it holds with it; the turns
+		// were all on disk and nothing read them back, so a terminal attaching
+		// after an idle exit met a daemon with no memory of the morning. The
+		// history is the project's newest, which is what -resume with no id
+		// means, and it is only ever this project's — a conversation about
+		// another tree carried on here would act on names that are missing or,
+		// worse, on different files with the same names.
+		if prev, err := session.LatestIn(store, root); err == nil {
+			conv.History = prev.Messages
+			cli.ContinueSessionIn(prev, root)
+		}
 		conv.OnText = func(t string) { srv.Publish(root, daemon.Event{Kind: daemon.EventText, Text: t}) }
 		conv.OnDelta = func(d string) { srv.Publish(root, daemon.Event{Kind: daemon.EventDelta, Text: d}) }
 		conv.OnReasoning = func(d string) { srv.Publish(root, daemon.Event{Kind: daemon.EventReasoning, Text: d}) }
@@ -268,6 +287,11 @@ func RunDaemon() error {
 			srv.Publish(root, daemon.Event{Kind: daemon.EventTool, Text: name})
 		}
 		conv.OnUsage = func(u provider.Usage) {
+			// Billed as well as published. It used to only publish, so the
+			// terminals watching saw the cost of a turn and the session saved
+			// a moment later had none of it: a conversation held entirely
+			// through the daemon resumed claiming it had cost nothing.
+			cli.RecordUsageIn(conv, u, root)
 			srv.Publish(root, daemon.Event{Kind: daemon.EventUsage, Usage: &daemon.Usage{
 				Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite,
 			}})

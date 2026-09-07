@@ -133,6 +133,43 @@ so an attached terminal after an idle exit begins a fresh conversation.
 
 Nothing that would be lost is: a task running or queued holds it open, a turn
 in flight holds it open, and so does a terminal sitting at an idle prompt.
+
+The conversation is no longer lost either. A workspace built for a project now
+picks up that project's newest saved session — `session.LatestIn` for the
+history, `cli.ContinueSessionIn` for its id, model and spend — so a terminal
+attaching after an idle exit carries on where the morning left off rather than
+meeting a daemon with no memory of it. It is only ever *that* project's
+newest, which is what `-resume` with no id means, and for the same reason: a
+conversation about another tree carried on here acts on names that are missing
+or, worse, on different files with the same names.
+
+### One session per project
+
+That restore was blocked by something worse underneath it. `cli` kept a single
+`current` session — right for a front end, which is one process on one project,
+and wrong the moment the daemon began saving for several: both projects wrote
+into the same id, so the second turn overwrote the first project's file, `root`
+and all. Not mixed up — *gone*: `LatestIn` for that project then found nothing,
+which is exactly what the restore would have read.
+
+It is now one session per resolved root, behind a mutex because the daemon
+saves from a request goroutine per project and two can finish at once.
+`session.Resolve` is exported for the key, so the map agrees with `SameRoot`
+about what one project is — `/tmp` and `/private/tmp` must not become two
+conversations.
+
+`spent` was the twin and went the same way. It is the conversation's bill, kept
+per model, and as a package-level slice it belonged to whichever project spoke
+last: loading project B's session replaced it wholesale, and project A's next
+save wrote B's cost into A's file. It lives on the session now, where
+`session.Spend` was already stored, and `saveSession` no longer copies a global
+in — `recordUsageIn` put it there as the calls happened.
+
+Which exposed a third thing, in the daemon rather than in `cli`: `conv.OnUsage`
+published usage to the watching terminals and recorded it nowhere. A turn run
+by the daemon showed its cost on screen and was saved with none against it, so
+a conversation held entirely through the daemon resumed claiming it had cost
+nothing. It bills as well as publishes now.
 Watching counts on purpose. A terminal that has said nothing for an hour is
 still the reason the daemon exists, and pulling the socket from under it would
 leave it drawing a session connected to nothing — the failure the reconnect was
@@ -253,3 +290,43 @@ running.
 
 A unix socket is a file and outlives the process that made it, so the daemon
 removes its own on the way out and clears a leftover one on the way in.
+
+## Starting one, and the lock that stops two
+
+`Ensure` starts a daemon when none is running — `os.Executable`, `-daemon`,
+`Setsid`, `Release`, output to the socket's own log, then poll for readiness
+until `startWait`. Same shape as crush's `spawnAndWaitReady`, and started
+rather than required for the reason in its comment: a daemon nobody remembers
+to run is a daemon that never runs.
+
+Two callers reach it, and only two: `cli.Attach` and `/bg`. `daemonClient()`
+deliberately does not — reading a task list is not a reason to leave a process
+behind on a machine that had none. crush calls `ensureServer` on every client
+start instead, because crush *is* a client-server program; uhai runs perfectly
+well without one.
+
+`lockSpawn` serialises the spawn on a `daemon.lock` beside the socket. Two
+front ends reaching `Ensure` at the same moment already survived it — the loser
+fails to bind, exits, and its client finds the winner on the next poll — but
+through a failure written to the log rather than by design, and a log full of
+"a daemon is already listening" teaches the next reader that something is wrong
+when nothing is. Whoever takes the lock looks again before spawning: the daemon
+it was about to start may be the one the previous holder just started.
+
+Three decisions inside it, each with a cheaper alternative that is worse:
+
+- **Non-blocking `flock` in a poll loop**, not a blocking one. A blocking call
+  cannot be told about `ctx`, and a front end that cannot be interrupted while
+  starting a daemon is worse than one that occasionally spawns twice.
+- **A file beside the socket**, not the socket. Locking the socket would tie
+  the right to *start* a daemon to a file the daemon deletes when it stops.
+- **A lock that cannot be taken is not fatal.** The unsynchronised path is what
+  this always did; being unable to create a file is a reason to be careful, not
+  a reason to refuse to work. crush makes the same call.
+
+Still not taken from crush, deliberately: **restarting a stale-version daemon**
+(`restartIfStale` asks it to `shutdown_if_idle`, waits for the socket to go,
+and spawns a new one). uhai refuses and names the mismatch instead, because one
+daemon serves every project — standing it down to fix this terminal could
+discard another project's running work. *Build it when the daemon can stand
+down one workspace without stopping.*

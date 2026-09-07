@@ -1323,19 +1323,28 @@ func TestFailedTaskShowsWhatItWrote(t *testing.T) {
 // The id is printed on the way out, which is the moment it is needed — but
 // only when something was actually saved to resume.
 func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
-	current = session.New()
+	resetSessions(t)
 	if got := savedSessionID(); got != "" {
 		t.Fatalf("nothing was said, so there is nothing to resume: %q", got)
 	}
 
-	current.Messages = []provider.Message{{
+	UseStore(filestore.New(t.TempDir()))
+	a := agent.New(nil)
+	a.History = []provider.Message{{
 		Role:    provider.RoleUser,
 		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}},
 	}}
-	// The id is minted at startup, not at save time, so the line printed on
-	// the way out names the file that will actually be on disk.
-	if got := savedSessionID(); got != current.ID {
-		t.Fatalf("the id offered must be the one held, got %q want %q", got, current.ID)
+	if err := SaveSession(a); err != nil {
+		t.Fatal(err)
+	}
+	// The id names the file that is actually on disk — this project's, which
+	// since the daemon began serving several is a lookup rather than a global.
+	saved, err := session.LatestIn(store, here())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := savedSessionID(); got != saved.ID {
+		t.Fatalf("the id offered must be the one written, got %q want %q", got, saved.ID)
 	}
 }
 
@@ -1648,8 +1657,8 @@ func TestSkillsPickerTogglesInPlace(t *testing.T) {
 // same sum — every call in a turn is charged for its input, and only the last
 // one is ever on screen.
 func TestCostAddsUpEveryCallNotJustTheLast(t *testing.T) {
-	spent = nil
-	t.Cleanup(func() { spent = nil })
+	setSpent(here(), nil)
+	t.Cleanup(func() { setSpent(here(), nil) })
 
 	if got := spentReport(nil); got != "" {
 		t.Errorf("nothing asked yet is nothing to report, got %q", got)
@@ -1800,13 +1809,19 @@ var zaiModels = []string{
 
 func TestRecommendedKeepsTheModelsUhaiKnows(t *testing.T) {
 	got := recommended("zai", append([]string(nil), zaiModels...))
-	if len(got) != maxRecommendedModelsPerProvider {
-		t.Fatalf("want %d models, got %d: %v", maxRecommendedModelsPerProvider, len(got), got)
+
+	// The ones the table knows come first, which is what the picker shows
+	// first. Only glm-4.6 has an entry of its own now; the rest land on the
+	// "glm-" family, which is a fallback rather than knowledge — the trailing
+	// dash is how KnownModel tells them apart.
+	if got[0] != "glm-4.6" {
+		t.Errorf("the model with its own entry should rank first, got %v", got)
 	}
-	for _, want := range []string{"glm-5.3-flash", "glm-5.3", "glm-4.7", "glm-4.6"} {
-		if !slices.Contains(got, want) {
-			t.Errorf("%s is priced in the table and was dropped: %v", want, got)
-		}
+
+	// And nothing is thrown away, because "/" can only find what is in the
+	// list. Ranking used to be a cut, and glm-5 through 5.2 were simply gone.
+	if len(got) != len(zaiModels) {
+		t.Errorf("want all %d models ranked, got %d: %v", len(zaiModels), len(got), got)
 	}
 }
 
@@ -1972,23 +1987,31 @@ func TestDisconnectSaysWhenTheEnvironmentKeepsItAlive(t *testing.T) {
 // /cost used to start again with the process, so a resumed conversation
 // believed it had cost nothing.
 func TestSpendSurvivesAResume(t *testing.T) {
-	spent = nil
-	t.Cleanup(func() { spent = nil })
+	// Before the first recordUsage: the bill lives on the session now, so
+	// clearing the sessions afterwards would throw it away.
+	resetSessions(t)
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	UseStore(filestore.New(filepath.Join(dir, "sessions")))
 
 	recordUsage("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000, Output: 100_000})
 	recordUsage("anthropic/claude-sonnet-5", provider.Usage{Input: 1_000_000, Output: 100_000})
 
 	a := agent.New(nil)
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	UseStore(filestore.New(filepath.Join(dir, "sessions")))
+	// Something has to have been said: a session with no messages is not
+	// written at all, which is what "nothing said yet" means on disk.
+	a.History = []provider.Message{{Role: provider.RoleUser,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}}}}
 	if err := SaveSession(a); err != nil {
 		t.Fatal(err)
 	}
-	saved := current
+	saved, err := session.LatestIn(store, here())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// A fresh process knows nothing until the session is handed back.
-	spent = nil
+	setSpent(here(), nil)
 	if got := spentReport(nil); got != "" {
 		t.Fatalf("a new process has spent nothing, got %q", got)
 	}
@@ -2008,8 +2031,8 @@ func TestSpendSurvivesAResume(t *testing.T) {
 // the stored total at whichever model happens to be loaded now is the wrong
 // figure the moment /model is used.
 func TestSpendIsPricedPerModel(t *testing.T) {
-	spent = nil
-	t.Cleanup(func() { spent = nil })
+	setSpent(here(), nil)
+	t.Cleanup(func() { setSpent(here(), nil) })
 
 	// A million tokens on Sonnet 5 is $3; the same million on a free model is
 	// nothing, and must not be billed at Sonnet's rate just for being second.
@@ -2054,5 +2077,365 @@ func TestDaemonEventsBecomeTheSameMessages(t *testing.T) {
 		if got := daemonMsg(daemon.Event{Kind: kind}); got != nil {
 			t.Errorf("%s should not be drawn, got %#v", kind, got)
 		}
+	}
+}
+
+// "/" filters the picker, which is bubbletea's own key and needed no code —
+// what it needed was for the keys the picker already spends to stop being
+// spent while a filter is being typed.
+func TestSearchingAPickerKeepsItOpen(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.picker = m.newPicker([]list.Item{
+		teaItem{title: "zai/glm-5.3", desc: "1M context"},
+		teaItem{title: "anthropic/claude-sonnet-5", desc: "1M context"},
+	}, "Choose model")
+	m.mode = teaModelPicker
+
+	m.updatePicker(tea.KeyPressMsg{Code: '/', Text: "/"})
+	if m.picker.FilterState() == list.Unfiltered {
+		t.Fatal(`"/" did not start a search`)
+	}
+
+	// A space is a character here, not the skill picker's toggle.
+	for _, r := range "son net" {
+		m.updatePicker(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	// Esc backs out of the search, not out of the picker: a typo must not cost
+	// the whole list.
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.mode != teaModelPicker {
+		t.Errorf("esc closed the picker instead of the search, mode = %v", m.mode)
+	}
+	if m.picker.FilterState() != list.Unfiltered {
+		t.Error("esc left the search running")
+	}
+
+	// And with nothing being searched, esc means what it always meant.
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.mode != teaPrompt {
+		t.Errorf("esc must still close an unsearched picker, mode = %v", m.mode)
+	}
+}
+
+// A gateway is a base URL and a key, and both used to be a hand edit of two
+// files. All three go in on one screen now: they are copied from the same page
+// and asking for them one at a time was three enters for one paste.
+func TestConnectAddsACustomEndpoint(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, env := range []string{"UHAI_API_KEY", "UHAI_MODEL", "UHAI_BASE_URL"} {
+		t.Setenv(env, "")
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	// The row is offered, last, and is not mistaken for a provider.
+	items := providerItems()
+	if last := items[len(items)-1].name; last != customRow {
+		t.Fatalf("the custom row must come last, got %q", last)
+	}
+
+	m.selectProvider(customRow)
+	if m.mode != teaCustomForm {
+		t.Fatalf("the form did not open, mode = %v", m.mode)
+	}
+
+	fill := func(name, url, key string) {
+		m.custom = customForm{values: [3]string{name, url, key}}
+		m.keyInput.SetValue(key)
+		m.submitCustom()
+	}
+
+	// Each field is checked, and a bad one puts the cursor back on itself
+	// rather than throwing the other two away.
+	for _, bad := range []struct {
+		name, url, key string
+		want           int
+	}{
+		{"my gw", "https://x.id", "k", customName},                 // a space
+		{"ACME/x", "https://x.id", "k", customName},               // a slash
+		{"anthropic", "https://x.id", "k", customName},             // built in
+		{strings.Repeat("a", 21), "https://x.id", "k", customName}, // too long to be a name
+		// The boxes are next to each other and one of them is masked, so this
+		// is the mistake that happens — and it used to write the key into
+		// settings.json, which is 0644 precisely because it holds no secrets.
+		{"sk-0d51811bf25", "https://x.id", "sk-0d51811bf25", customName},
+		{"gw", "x.id", "k", customURL},        // no scheme
+		{"gw", "https://x.id", "", customKey}, // no key
+	} {
+		fill(bad.name, bad.url, bad.key)
+		if m.custom.focused != bad.want {
+			t.Errorf("%+v: cursor went to %d, want %d", bad, m.custom.focused, bad.want)
+		}
+		if config.Configured("gw") {
+			t.Fatalf("%+v: a rejected form saved anyway", bad)
+		}
+	}
+
+	fill("acme", "https://acme.example.com/v1/", "kunci-lokal")
+	if got := config.BaseURLOf("acme"); got != "https://acme.example.com/v1" {
+		t.Errorf("endpoint = %q, want it saved without the trailing slash", got)
+	}
+	if got := config.APIKey("acme"); got != "kunci-lokal" {
+		t.Errorf("key = %q, want it saved under the provider's own name", got)
+	}
+
+	// It is a provider now: findable, listed, and priced by nobody.
+	if !config.Configured("acme") {
+		t.Error("a saved endpoint must count as configured")
+	}
+	if config.Known("acme") {
+		t.Error("a gateway must not become Known — that is what lets the table quote a price")
+	}
+	if !slices.Contains(config.Providers(), "acme") {
+		t.Error("a custom provider is missing from the picker's list")
+	}
+	if got := config.ModelSummary("acme/sonnet-4.5"); strings.Contains(got, "$") {
+		t.Errorf("a gateway priced itself: %q", got)
+	}
+	// And it can be built to be asked what it serves, which is what the model
+	// picker does — it used to skip anything with no default model.
+	if config.ListerModel("acme") == "" {
+		t.Error("no model name to list with")
+	}
+}
+
+// Tab parks what is typed and opens the next box, wrapping, so one key reaches
+// all three.
+func TestCustomFormTabKeepsWhatWasTyped(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.selectProvider(customRow)
+
+	m.keyInput.SetValue("acme")
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.custom.focused != customURL {
+		t.Fatalf("tab went to %d", m.custom.focused)
+	}
+	if m.custom.values[customName] != "acme" {
+		t.Errorf("the name was lost: %q", m.custom.values[customName])
+	}
+	if m.keyInput.Value() != "" {
+		t.Errorf("the next box came up holding %q", m.keyInput.Value())
+	}
+
+	// Back round to the name, which is still there.
+	m.updatePicker(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if m.custom.focused != customName || m.keyInput.Value() != "acme" {
+		t.Errorf("shift+tab landed on %d holding %q", m.custom.focused, m.keyInput.Value())
+	}
+}
+
+// Forgetting only the key would leave the endpoint behind, and /model would go
+// on offering a provider that cannot answer.
+func TestDisconnectRemovesACustomEndpointWhole(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, env := range []string{"UHAI_API_KEY", "UHAI_MODEL", "UHAI_BASE_URL"} {
+		t.Setenv(env, "")
+	}
+	if err := config.SaveBaseURL("acme", "https://acme.example.com/v1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save("acme", config.Creds{config.FieldKey: "k"}); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.disconnect("acme")
+
+	if config.Configured("acme") {
+		t.Error("the endpoint survived the disconnect")
+	}
+	if slices.Contains(config.Providers(), "acme") {
+		t.Error("a disconnected gateway is still offered")
+	}
+}
+
+// Paste is not a key press. It used to miss the picker entirely and land in
+// the chat prompt behind it, which is where a pasted API key quietly went.
+func TestPasteReachesTheBoxInFront(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.selectProvider(customRow)
+
+	m.Update(tea.PasteMsg{Content: "sk-rahasia"})
+	if got := m.keyInput.Value(); got != "sk-rahasia" {
+		t.Errorf("the entry box got %q", got)
+	}
+	if got := m.input.Value(); got != "" {
+		t.Errorf("the chat prompt behind it got %q — that is the bug", got)
+	}
+}
+
+// The same rule, and the reason it is a rule rather than a courtesy to paste:
+// bubbletea's filter is asynchronous. Typing into it returns a command that
+// works out the matches and sends a FilterMatchesMsg back, and that message is
+// not a KeyMsg — so an open picker has to receive everything, not only keys,
+// or the filter box fills with text and nothing is ever filtered.
+//
+// Checked with a paste because that is the non-key message this package can
+// construct; FilterMatchesMsg carries an unexported type. The routing they
+// travel is the same line.
+func TestAnOpenPickerGetsMessagesThatAreNotKeys(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.picker = m.newPicker([]list.Item{teaItem{title: "gw/a"}}, "Choose model")
+	m.mode = teaModelPicker
+
+	m.Update(tea.PasteMsg{Content: "sonnet"})
+	if got := m.input.Value(); got != "" {
+		t.Errorf("it reached the prompt behind the picker: %q", got)
+	}
+}
+
+// A provider's models are one block. They used to be two: the best six at the
+// top and the remainder after every other provider's six, which put fourteen
+// of a gateway's twenty models below three providers' worth of rows and read
+// as "they are missing".
+func TestModelPickerKeepsAProviderTogether(t *testing.T) {
+	models := []string{"a-1", "a-2", "a-3", "a-4", "a-5", "a-6", "a-7", "a-8"}
+	ranked := recommended("gw", models)
+	if len(ranked) != len(models) {
+		t.Fatalf("ranking dropped models: %v", ranked)
+	}
+
+	var items []list.Item
+	for _, m := range ranked {
+		items = append(items, teaItem{title: "gw/" + m})
+	}
+	items = append(items, teaItem{title: "other/x"})
+
+	// Every gw row before the first row that is not one.
+	seenOther := false
+	for _, it := range items {
+		isGW := strings.HasPrefix(it.(teaItem).title, "gw/")
+		if !isGW {
+			seenOther = true
+			continue
+		}
+		if seenOther {
+			t.Fatalf("a gw model came after another provider: %v", items)
+		}
+	}
+}
+
+// A daemon serves several projects from one process, and the session it saved
+// them into was one global. Both wrote to the same id, so the second turn
+// overwrote the first project's file — root and all — and that project's
+// conversation was not mixed up but gone: LatestIn found nothing for it.
+func TestEachProjectKeepsItsOwnSession(t *testing.T) {
+	UseStore(filestore.New(t.TempDir()))
+	resetSessions(t)
+
+	say := func(text string) *agent.Agent {
+		a := agent.New(nil)
+		a.History = []provider.Message{{Role: provider.RoleUser,
+			Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
+		return a
+	}
+	if err := SaveSessionIn(say("halo dari A"), "/tmp/project-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveSessionIn(say("halo dari B"), "/tmp/project-b"); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := store.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("want one session per project, got %d: %+v", len(all), all)
+	}
+
+	a, err := session.LatestIn(store, "/tmp/project-a")
+	if err != nil {
+		t.Fatalf("project A's conversation was lost: %v", err)
+	}
+	b, err := session.LatestIn(store, "/tmp/project-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID == b.ID {
+		t.Errorf("both projects share one id: %s", a.ID)
+	}
+	if got := firstText(a); got != "halo dari A" {
+		t.Errorf("project A holds %q", got)
+	}
+	if got := firstText(b); got != "halo dari B" {
+		t.Errorf("project B holds %q", got)
+	}
+
+	// And a second turn in A goes back into A's own file rather than forking.
+	if err := SaveSessionIn(say("lagi dari A"), "/tmp/project-a"); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := store.All(); len(all) != 2 {
+		t.Errorf("a second turn forked a session: %d on disk", len(all))
+	}
+}
+
+func firstText(s session.Session) string {
+	if len(s.Messages) == 0 || len(s.Messages[0].Content) == 0 {
+		return ""
+	}
+	return s.Messages[0].Content[0].Text
+}
+
+// resetSessions clears the per-project map, which is process-wide: a test that
+// leaves one behind decides what the next one sees.
+func resetSessions(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		sessions.Lock()
+		sessions.byRoot = map[string]session.Session{}
+		sessions.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
+// The bill is the session's, not the process's. As a package-level slice it
+// was the twin of the shared-session bug: loading project B's conversation
+// replaced it wholesale, and project A's next save wrote B's cost into A's
+// file.
+func TestEachProjectKeepsItsOwnSpend(t *testing.T) {
+	UseStore(filestore.New(t.TempDir()))
+	resetSessions(t)
+
+	recordUsageIn("/tmp/project-a", "anthropic/claude-sonnet-5",
+		provider.Usage{Input: 1_000_000, Output: 100_000})
+	recordUsageIn("/tmp/project-b", "anthropic/claude-sonnet-5",
+		provider.Usage{Input: 2_000_000, Output: 200_000})
+
+	a, b := spentIn("/tmp/project-a"), spentIn("/tmp/project-b")
+	if len(a) != 1 || len(b) != 1 {
+		t.Fatalf("want one model's share each, got %v and %v", a, b)
+	}
+	if a[0].Usage.Input != 1_000_000 {
+		t.Errorf("project A was billed %d, want 1000000 — B's turn leaked in", a[0].Usage.Input)
+	}
+	if b[0].Usage.Input != 2_000_000 {
+		t.Errorf("project B was billed %d, want 2000000", b[0].Usage.Input)
+	}
+
+	// And it reaches disk under the right project.
+	agentWith := func(text string) *agent.Agent {
+		ag := agent.New(nil)
+		ag.History = []provider.Message{{Role: provider.RoleUser,
+			Content: []provider.ContentBlock{{Type: provider.BlockText, Text: text}}}}
+		return ag
+	}
+	if err := SaveSessionIn(agentWith("a"), "/tmp/project-a"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := session.LatestIn(store, "/tmp/project-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Spend) != 1 || saved.Spend[0].Usage.Input != 1_000_000 {
+		t.Errorf("the saved bill is %v", saved.Spend)
 	}
 }

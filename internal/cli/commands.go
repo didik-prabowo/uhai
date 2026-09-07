@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
@@ -34,7 +35,7 @@ var commands = []command{
 	{"/help", "show the command list"},
 	{"/clear", "clear the screen"},
 	{"/exit", "quit uhai"},
-	{"/model", "select a model for the provider"},
+	{"/model", "select a model, or /model refresh to look again"},
 	{"/compact", "summarize the history to free up context"},
 	{"/skills", "switch skills on and off, and see what each costs"},
 	{"/cost", "what this conversation has cost so far"},
@@ -212,8 +213,6 @@ func matches(input string) []command {
 	return out
 }
 
-const maxRecommendedModelsPerProvider = 6
-
 // providerLabel shows the provider in use, or why there is none yet.
 func providerLabel(p provider.Provider) string {
 	if p != nil {
@@ -232,15 +231,53 @@ func providerItems() []command {
 		} else if !config.NeedsKey(name) {
 			status = dim + "○ local, no key needed" + reset
 		}
+		if !config.Known(name) {
+			// A custom one has no price bracket to quote and no key page to
+			// send anybody to, so it says where it points instead — which is
+			// the only thing that distinguishes two of them.
+			status += dim + " · " + config.BaseURLOf(name) + reset
+		}
 		items = append(items, command{name, status})
 	}
-	return items
+	// Last, and the only row that is not a provider: everything above can be
+	// connected, this one is how a new name gets into that list at all.
+	return append(items, command{customRow, dim + "a gateway or your own endpoint" + reset})
 }
 
-// current is this conversation, rewritten after every turn. Its id is minted
-// here, at startup, so the line printed on the way out names what was actually
-// written.
-var current = session.New()
+// sessions is one conversation per project, rewritten after every turn.
+//
+// It was a single `current`, which is right for a front end — one process, one
+// project — and was wrong the moment the daemon began serving several from one
+// process: both projects saved into the same id, so the second turn overwrote
+// the first project's file, root and all, and its conversation was gone. Not
+// mixed up, gone: `LatestIn` for that project then found nothing.
+//
+// Locked because the daemon saves from a request goroutine per project, so two
+// can finish at once.
+var sessions = struct {
+	sync.Mutex
+	byRoot map[string]session.Session
+}{byRoot: map[string]session.Session{}}
+
+// sessionFor is a project's conversation, minted on first sight. The id has to
+// be made here rather than at startup, since a daemon does not know which
+// projects it will serve.
+func sessionFor(root string) session.Session {
+	key := session.Resolve(root)
+	s, ok := sessions.byRoot[key]
+	if !ok {
+		s = session.New()
+		sessions.byRoot[key] = s
+	}
+	return s
+}
+
+// here is the front end's own project. A front end has exactly one, which is
+// what lets the commands that speak of "this conversation" ask for it by name.
+func here() string {
+	dir, _ := os.Getwd()
+	return dir
+}
 
 // store is where current is kept. The composition root picks one and calls
 // UseStore; cli never chooses, and never learns which it got. The default is
@@ -256,25 +293,56 @@ var store session.Store = filestore.New("")
 // stored total would have to be priced later at whatever model was loaded
 // then, which is a confident wrong figure the moment /model is used; a share
 // per model is priced with that model's own rates and the shares are added.
-var spent []session.Spend
+//
+// It lives on the session rather than beside it, because it belongs to a
+// conversation and the daemon holds one per project. As a package-level slice
+// it was the twin of the `current` bug: loading project B's session replaced
+// it wholesale, and project A's next save wrote B's bill into A's file.
+func spent() []session.Spend { return spentIn(here()) }
 
-func recordUsage(model string, u provider.Usage) {
-	for i := range spent {
-		if spent[i].Model == model {
-			spent[i].Usage.Input += u.Input
-			spent[i].Usage.Output += u.Output
-			spent[i].Usage.CacheRead += u.CacheRead
-			spent[i].Usage.CacheWrite += u.CacheWrite
+func spentIn(root string) []session.Spend {
+	sessions.Lock()
+	defer sessions.Unlock()
+	return sessionFor(root).Spend
+}
+
+// setSpent replaces a project's bill, for the paths that hand one back whole:
+// resuming a conversation, and a test starting from nothing.
+func setSpent(root string, sp []session.Spend) {
+	sessions.Lock()
+	defer sessions.Unlock()
+	s := sessionFor(root)
+	s.Spend = sp
+	sessions.byRoot[session.Resolve(root)] = s
+}
+
+func recordUsage(model string, u provider.Usage) { recordUsageIn(here(), model, u) }
+
+// recordUsageIn adds one provider call to a project's bill. The daemon prices
+// several conversations at once, so which project is being billed cannot be
+// left to a global.
+func recordUsageIn(root, model string, u provider.Usage) {
+	sessions.Lock()
+	defer sessions.Unlock()
+	s := sessionFor(root)
+	for i := range s.Spend {
+		if s.Spend[i].Model == model {
+			s.Spend[i].Usage.Input += u.Input
+			s.Spend[i].Usage.Output += u.Output
+			s.Spend[i].Usage.CacheRead += u.CacheRead
+			s.Spend[i].Usage.CacheWrite += u.CacheWrite
+			sessions.byRoot[session.Resolve(root)] = s
 			return
 		}
 	}
-	spent = append(spent, session.Spend{Model: model, Usage: u})
+	s.Spend = append(s.Spend, session.Spend{Model: model, Usage: u})
+	sessions.byRoot[session.Resolve(root)] = s
 }
 
 // spentTotals adds the token counts up across models, which is the one figure
 // that means the same thing whichever model earned it.
 func spentTotals() (in, out, cached int) {
-	for _, s := range spent {
+	for _, s := range spent() {
 		in += s.Usage.Input + s.Usage.CacheRead + s.Usage.CacheWrite
 		out += s.Usage.Output
 		cached += s.Usage.CacheRead
@@ -298,7 +366,7 @@ func spentReport(p provider.Provider) string {
 	// what prices anything; it is only here so a caller without one still
 	// gets the tokens.
 	var usd float64
-	for _, s := range spent {
+	for _, s := range spent() {
 		usd += config.CostOf(s.Model, s.Usage)
 	}
 	if cost := config.FormatUSD(usd); cost != "" {
@@ -315,18 +383,32 @@ func UseStore(st session.Store) { store = st }
 // savedSessionID is this conversation's id, "" when nothing was said and so
 // nothing was written.
 func savedSessionID() string {
-	if len(current.Messages) == 0 {
+	sessions.Lock()
+	defer sessions.Unlock()
+	s := sessionFor(here())
+	if len(s.Messages) == 0 {
 		return ""
 	}
-	return current.ID
+	return s.ID
 }
 
 // ContinueSession makes the saves go back into a conversation that was
 // resumed, keeping its id and its start time. Without it every -resume forks
 // a fresh copy of the history and the id nobody could hold on to.
 func ContinueSession(s session.Session) {
-	current.ID, current.Started, current.Model = s.ID, s.Started, s.Model
-	spent = s.Spend
+	ContinueSessionIn(s, here())
+}
+
+// ContinueSessionIn is ContinueSession for a named project, which the daemon
+// needs: it picks up a conversation per project and its own working directory
+// says nothing about whose.
+func ContinueSessionIn(s session.Session, root string) {
+	sessions.Lock()
+	defer sessions.Unlock()
+	cur := sessionFor(root)
+	cur.ID, cur.Started, cur.Model = s.ID, s.Started, s.Model
+	cur.Messages, cur.Spend = s.Messages, s.Spend
+	sessions.byRoot[session.Resolve(root)] = cur
 }
 
 // SaveSession writes the conversation, so every way of asking keeps it
@@ -343,15 +425,20 @@ func SaveSession(a *agent.Agent) error {
 func SaveSessionIn(a *agent.Agent, root string) error { return saveSession(a, root) }
 
 func saveSession(a *agent.Agent, root string) error {
-	current.Messages = a.History
-	current.Spend = spent
+	sessions.Lock()
+	defer sessions.Unlock()
+
+	s := sessionFor(root)
+	s.Messages = a.History
+	// Spend is already on s: recordUsageIn put it there as the calls happened.
 	// Stamped on every save rather than at the start: a session resumed in a
 	// different tree belongs to the tree it is being worked in now.
-	current.Root = root
+	s.Root = root
 	if a.Provider != nil {
-		current.Model = a.Provider.Name()
+		s.Model = a.Provider.Name()
 	}
-	return store.Save(current)
+	sessions.byRoot[session.Resolve(root)] = s
+	return store.Save(s)
 }
 
 // reported remembers which finished tasks the user has already been told
@@ -608,11 +695,18 @@ func tasksReport(a *agent.Agent, id string) string {
 // RecordUsage lets the headless front end add a call to the running total.
 // Exported for the same reason SaveSession is: -p answers from orchestrator,
 // and it was the one door that recorded nothing.
-func RecordUsage(a *agent.Agent, u provider.Usage) {
+func RecordUsage(a *agent.Agent, u provider.Usage) { RecordUsageIn(a, u, here()) }
+
+// RecordUsageIn is RecordUsage for a named project. The daemon runs the turn,
+// so the daemon is what has to bill it: its own working directory says nothing
+// about whose conversation just spent the tokens, and it was publishing usage
+// to the terminals without recording it anywhere — so a turn run by the daemon
+// was saved with no cost against it at all.
+func RecordUsageIn(a *agent.Agent, u provider.Usage, root string) {
 	if a.Provider == nil {
 		return
 	}
-	recordUsage(a.Provider.Name(), u)
+	recordUsageIn(root, a.Provider.Name(), u)
 }
 
 // daemonClient is the daemon, when one is already running. Looked up per call
