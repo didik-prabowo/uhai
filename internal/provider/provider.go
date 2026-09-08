@@ -23,6 +23,21 @@ const (
 	BlockText       BlockType = "text"
 	BlockToolUse    BlockType = "tool_use"
 	BlockToolResult BlockType = "tool_result"
+
+	// BlockThinking is a model's working out, kept rather than watched. It
+	// used to be neither: reasoning arrived through the Reasoning callback,
+	// was drawn, and was let go. That is right for a vendor that streams the
+	// text and asks for nothing back, and wrong for Anthropic, which sends
+	// thinking as a signed block and expects it returned unchanged on the
+	// next request of the same conversation. Dropping them is what the docs
+	// warn produces ordering and signature errors, and the error names a rule
+	// rather than the turn that broke it.
+	//
+	// Text is the thinking as it arrived — a summary, or empty when the model
+	// was not asked to show it — and Signature is the token that came with it.
+	// Both go back exactly as they came: the API rejects a block that was
+	// edited, not one that was read.
+	BlockThinking BlockType = "thinking"
 )
 
 // ContentBlock is a vendor-neutral piece of content: plain text, a request
@@ -51,9 +66,10 @@ type ContentBlock struct {
 	ToolName  string          `json:"ToolName"`
 	ToolInput json.RawMessage `json:"ToolInput"`
 
-	// Signature is an opaque token the vendor attached to a tool call and
-	// wants handed back with it. Gemini 3 refuses the next request without it
-	// — "Function call is missing a thought_signature" — so it is carried
+	// Signature is an opaque token the vendor attached to a tool call or a
+	// thinking block and wants handed back with it. Gemini 3 refuses the next
+	// request without it — "Function call is missing a thought_signature" —
+	// and Anthropic signs every thinking block the same way, so it is carried
 	// through the history and stored with the session, not dropped on arrival.
 	// Empty for the vendors that do not use one.
 	Signature string `json:"Signature,omitempty"`

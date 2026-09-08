@@ -55,6 +55,19 @@ type Options struct {
 	// which is small enough to be safe on any model.
 	MaxTokens int
 
+	// Thinking asks the model to think before answering, in the shape the 4.6
+	// generation onwards takes: thinking: {type: "adaptive"}, where the model
+	// decides how long to spend rather than being handed a token budget.
+	// budget_tokens is not an older spelling of this — it is refused outright
+	// by the 5 generation — so there is nothing here to fall back to, and the
+	// caller asks only for models it knows take it.
+	Thinking bool
+
+	// Effort is how hard to think, in output_config. Empty sends none and
+	// takes the API's own default, which is "high". Only sent alongside
+	// Thinking: the models that predate adaptive thinking refuse the field.
+	Effort string
+
 	// WorkspaceID is which workspace the request acts in. A key tied to an
 	// identity rather than to one workspace can act in several, so the API
 	// refuses to guess: without this header it answers 400. Ordinary keys
@@ -99,6 +112,12 @@ type wireBlock struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+
+	// Set when Type is "thinking". Thinking has no omitempty: a block whose
+	// text the model was asked not to show is still a block that has to go
+	// back, and dropping the field would edit it.
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 type wireMessage struct {
@@ -113,12 +132,30 @@ type wireTool struct {
 }
 
 type wireRequest struct {
-	Model     string        `json:"model"`
-	MaxTokens int           `json:"max_tokens"`
-	System    []wireSystem  `json:"system,omitempty"`
-	Messages  []wireMessage `json:"messages"`
-	Tools     []wireTool    `json:"tools,omitempty"`
-	Stream    bool          `json:"stream"`
+	Model        string            `json:"model"`
+	MaxTokens    int               `json:"max_tokens"`
+	System       []wireSystem      `json:"system,omitempty"`
+	Messages     []wireMessage     `json:"messages"`
+	Tools        []wireTool        `json:"tools,omitempty"`
+	Stream       bool              `json:"stream"`
+	Thinking     *wireThinking     `json:"thinking,omitempty"`
+	OutputConfig *wireOutputConfig `json:"output_config,omitempty"`
+}
+
+// wireThinking asks for adaptive thinking. Display is "summarized" because the
+// default is "omitted", which still thinks and still bills for it and sends
+// back blocks with no text in them — so a terminal showing the working out
+// would draw a long pause and then an answer, and look like a model that had
+// hung. It is the visibility that is being chosen here, not the thinking.
+type wireThinking struct {
+	Type    string `json:"type"`
+	Display string `json:"display,omitempty"`
+}
+
+// wireOutputConfig carries the effort. Its own struct because the field is
+// nested rather than top-level, which is the mistake worth making once.
+type wireOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 // wireSystem is the system prompt as blocks rather than a string, which is the
@@ -169,6 +206,8 @@ type wireEvent struct {
 		Text        string `json:"text"`
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
+		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 	} `json:"delta"`
 
 	Usage *wireUsage `json:"usage"`
@@ -193,6 +232,9 @@ func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Resp
 		Messages:  toWire(req.Messages),
 		Tools:     toWireTools(req.Tools),
 		Stream:    true,
+
+		Thinking:     c.thinking(),
+		OutputConfig: c.outputConfig(),
 	})
 	if err != nil {
 		return nil, err
@@ -210,7 +252,25 @@ func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Resp
 		raw, _ := io.ReadAll(resp.Body)
 		return nil, parseError(raw, resp.StatusCode)
 	}
-	return parseStream(resp.Body, req.Stream)
+	return parseStream(resp.Body, req.Stream, req.Reasoning)
+}
+
+// thinking is the thinking parameter, or nil for a model that predates it.
+func (c *Client) thinking() *wireThinking {
+	if !c.opts.Thinking {
+		return nil
+	}
+	return &wireThinking{Type: "adaptive", Display: "summarized"}
+}
+
+// outputConfig carries the effort, and only for a model that takes thinking:
+// the older ones refuse the field, and a request refused for asking how hard
+// to think is a worse answer than the default effort.
+func (c *Client) outputConfig() *wireOutputConfig {
+	if !c.opts.Thinking || c.opts.Effort == "" {
+		return nil
+	}
+	return &wireOutputConfig{Effort: c.opts.Effort}
 }
 
 // toWire translates neutral messages into the Messages shape. It is close to a
@@ -227,6 +287,16 @@ func toWire(msgs []provider.Message) []wireMessage {
 					continue // an empty block is refused, and says nothing anyway
 				}
 				blocks = append(blocks, wireBlock{Type: "text", Text: b.Text})
+			case provider.BlockThinking:
+				// Back exactly as it came, empty text and all. This is the one
+				// block that is not ours to tidy: the API checks the signature
+				// against the content, so a block improved on the way out is a
+				// block it refuses.
+				blocks = append(blocks, wireBlock{
+					Type:      "thinking",
+					Thinking:  b.Text,
+					Signature: b.Signature,
+				})
 			case provider.BlockToolUse:
 				input := b.ToolInput
 				if len(input) == 0 {
@@ -283,7 +353,7 @@ func toWireTools(specs []provider.ToolSpec) []wireTool {
 // are reported as they arrive; a tool call's arguments arrive as fragments of
 // JSON, which are only valid once the block closes, so they are collected
 // rather than reported.
-func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, error) {
+func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.Response, error) {
 	var (
 		blocks []provider.ContentBlock
 		args   = map[int]*strings.Builder{}
@@ -324,6 +394,11 @@ func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, erro
 			switch e.ContentBlock.Type {
 			case "text":
 				blocks = append(blocks, provider.ContentBlock{Type: provider.BlockText})
+			case "thinking":
+				blocks = append(blocks, provider.ContentBlock{
+					Type: provider.BlockThinking,
+					Text: e.ContentBlock.Thinking,
+				})
 			case "tool_use":
 				blocks = append(blocks, provider.ContentBlock{
 					Type:      provider.BlockToolUse,
@@ -342,6 +417,16 @@ func parseStream(body io.Reader, onDelta func(string)) (*provider.Response, erro
 				if onDelta != nil {
 					onDelta(e.Delta.Text)
 				}
+			case "thinking_delta":
+				blocks[len(blocks)-1].Text += e.Delta.Thinking
+				if onReasoning != nil {
+					onReasoning(e.Delta.Thinking)
+				}
+			case "signature_delta":
+				// The signature closes the block rather than adding to it, and
+				// it is the half that has to survive: a thinking block sent
+				// back without one is refused.
+				blocks[len(blocks)-1].Signature += e.Delta.Signature
 			case "input_json_delta":
 				if b := args[e.Index]; b != nil {
 					b.WriteString(e.Delta.PartialJSON)

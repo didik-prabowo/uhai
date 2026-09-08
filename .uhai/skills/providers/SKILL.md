@@ -103,6 +103,44 @@ may write (150k against a 128k ceiling on a million-token window; 4.8k against
 It also absorbs `Tokens` being loose: characters over four is close for prose
 and undercounts code and JSON.
 
+## Thinking
+
+Anthropic's current models think before they answer, and uhai asks them to:
+`thinking: {type: "adaptive"}` plus `output_config: {effort: "xhigh"}`, both
+gated on `Thinking` in the model table.
+
+Three things about that shape are worth keeping straight, because the obvious
+version of each is wrong:
+
+- **`budget_tokens` is not an older spelling of it.** It is *removed* on the 5
+  generation — sending it is a 400, not a deprecation warning. There is no
+  fallback to write; a model that predates adaptive thinking is sent neither
+  parameter, which is what the table's `Thinking` flag decides.
+- **Thinking is on whether uhai asks or not**, and asking is about *visibility*.
+  `display` defaults to `"omitted"`, so the blocks arrive with empty text: the
+  model thinks, the turn is billed for it, and the screen shows a pause where
+  the working out should be. `display: "summarized"` is what makes
+  `OnReasoning` have anything to draw.
+- **Thinking blocks are kept and sent back.** This is the half that is not
+  cosmetic. Each block is signed, the API checks the signature against the
+  content, and dropping the blocks from the history — or tidying them on the
+  way out — is refused on the next turn with an error naming a rule rather
+  than the turn that broke it. So `BlockThinking` is a content block like any
+  other: stored in the session, replayed unchanged, empty text and all. Empty
+  is not absent, and the rule is about what was edited rather than what was
+  read.
+
+`effort` is the one quality knob with a bill attached, so it is also a settings
+key: `"effort": "low"` in `settings.json` overrides the table. The default is
+`xhigh` because that is what the vendor recommends for coding and agentic work,
+and the status row prices every turn, so the cost of the choice is visible
+where the choice is made.
+
+The gateways get none of this. They speak the OpenAI format, where the field is
+`reasoning_effort` and every gateway maps it differently — and uhai already
+reads `reasoning_content` back from the ones that send it. *Build the request
+half when a gateway is the thing being used for planning.*
+
 ## Providers uhai does not ship
 
 `/connect` ends with `+ custom endpoint`, which opens one screen with three

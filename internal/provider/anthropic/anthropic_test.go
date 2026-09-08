@@ -126,7 +126,7 @@ func TestEmptyTextBlockIsDropped(t *testing.T) {
 		`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_1","name":"glob"}}`,
 		`{"type":"content_block_stop","index":1}`,
 		`{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`,
-	)), nil)
+	)), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestErrorsAreSurfaced(t *testing.T) {
 
 	// An error mid-stream ends the turn rather than being swallowed.
 	if _, err := parseStream(strings.NewReader(
-		`data: {"type":"error","error":{"message":"overloaded"}}`), nil); err == nil {
+		`data: {"type":"error","error":{"message":"overloaded"}}`), nil, nil); err == nil {
 		t.Fatal("an error event must be surfaced")
 	}
 }
@@ -235,5 +235,137 @@ func TestWorkspaceIDTravelsAsAHeader(t *testing.T) {
 		if got != id {
 			t.Errorf("workspace header = %q, want %q", got, id)
 		}
+	}
+}
+
+// Thinking arrives as its own block, signed, and has to survive being stored
+// and sent back. Reasoning used to be shown and let go, which is right for a
+// vendor that streams the text and wants nothing back and wrong here: the API
+// checks the signature against the content, so a block dropped from the
+// history — or tidied on the way out — is refused on the next turn, and the
+// error names a rule rather than the turn that broke it.
+func TestThinkingIsKeptSignedAndSentBack(t *testing.T) {
+	var reasoning strings.Builder
+	resp, err := parseStream(strings.NewReader(events(
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"the file is read "}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"before it is written"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig123"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"content_block_start","index":1,"content_block":{"type":"text"}}`,
+		`{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"jawaban"}}`,
+		`{"type":"content_block_stop","index":1}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+	)), nil, func(d string) { reasoning.WriteString(d) })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Shown while it arrives, so a model thinking for twenty seconds does not
+	// look like one that has hung.
+	if got := reasoning.String(); got != "the file is read before it is written" {
+		t.Fatalf("the working out has to reach the caller as it arrives, got %q", got)
+	}
+
+	if len(resp.Content) != 2 || resp.Content[0].Type != provider.BlockThinking {
+		t.Fatalf("the thinking block has to be kept, got %+v", resp.Content)
+	}
+	if resp.Content[0].Signature != "sig123" {
+		t.Fatalf("a thinking block without its signature is refused on the next turn, got %q",
+			resp.Content[0].Signature)
+	}
+
+	// Back out unchanged, in the same order it came.
+	back := toWire([]provider.Message{{Role: provider.RoleAssistant, Content: resp.Content}})
+	if len(back) != 1 || len(back[0].Content) != 2 {
+		t.Fatalf("both blocks have to go back, got %+v", back)
+	}
+	if b := back[0].Content[0]; b.Type != "thinking" ||
+		b.Thinking != "the file is read before it is written" || b.Signature != "sig123" {
+		t.Fatalf("the block has to go back exactly as it came, got %+v", b)
+	}
+}
+
+// A model asked not to show its working still sends the block, with no text in
+// it. That one has to go back too: it is empty, not absent, and the rule is
+// about what was edited rather than what was read.
+func TestAnEmptyThinkingBlockStillGoesBack(t *testing.T) {
+	blocks := []provider.ContentBlock{
+		{Type: provider.BlockThinking, Text: "", Signature: "sig456"},
+		{Type: provider.BlockText, Text: "jawaban"},
+	}
+	back := toWire([]provider.Message{{Role: provider.RoleAssistant, Content: blocks}})
+	if len(back) != 1 || len(back[0].Content) != 2 {
+		t.Fatalf("an empty thinking block is not an empty text block, got %+v", back)
+	}
+	if b := back[0].Content[0]; b.Type != "thinking" || b.Signature != "sig456" {
+		t.Fatalf("the signature is the half that has to survive, got %+v", b)
+	}
+}
+
+// The parameters go out only for the models that take them. budget_tokens is
+// not an older spelling of adaptive thinking — the 5 generation answers 400 to
+// it — so a model that predates the parameter is sent neither, and effort
+// never travels alone.
+func TestThinkingAndEffortAreSentOnlyWhenAsked(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		thinking   bool
+		effort     string
+		wantThink  bool
+		wantEffort string
+	}{
+		{name: "off by default"},
+		{name: "adaptive with effort", thinking: true, effort: "xhigh", wantThink: true, wantEffort: "xhigh"},
+		{name: "adaptive without effort", thinking: true, wantThink: true},
+		{name: "effort alone is not sent", effort: "xhigh"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got wireRequest
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				json.Unmarshal(body, &got)
+				w.Header().Set("Content-Type", "text/event-stream")
+				io.WriteString(w, events(
+					`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
+					`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+					`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+				))
+			}))
+			defer server.Close()
+
+			c, err := New(Options{Label: "anthropic", BaseURL: server.URL, APIKey: "k",
+				Model: "claude-opus-5", Thinking: tc.thinking, Effort: tc.effort})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Send(context.Background(), provider.Request{
+				Messages: []provider.Message{{Role: provider.RoleUser,
+					Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}}}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if (got.Thinking != nil) != tc.wantThink {
+				t.Fatalf("thinking sent = %v, want %v", got.Thinking != nil, tc.wantThink)
+			}
+			if tc.wantThink {
+				if got.Thinking.Type != "adaptive" {
+					t.Fatalf("adaptive is the only shape the current models take, got %q", got.Thinking.Type)
+				}
+				// Without this the blocks arrive empty and the screen shows a
+				// pause where the working out should be.
+				if got.Thinking.Display != "summarized" {
+					t.Fatalf("the working out has to be asked for, got display %q", got.Thinking.Display)
+				}
+			}
+			effort := ""
+			if got.OutputConfig != nil {
+				effort = got.OutputConfig.Effort
+			}
+			if effort != tc.wantEffort {
+				t.Fatalf("effort sent = %q, want %q", effort, tc.wantEffort)
+			}
+		})
 	}
 }

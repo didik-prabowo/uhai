@@ -40,6 +40,18 @@ type modelInfo struct {
 	// value is the common case: it can.
 	NoTools bool
 
+	// Thinking says the model takes adaptive thinking, and Effort how hard to
+	// ask it to think. The zero value is off for both, which is right: the
+	// generation before this one refuses the parameters outright, and a
+	// request refused for asking to think is worse than one that does not ask.
+	//
+	// ponytail: the family rows describe the current generation, the way
+	// Context and MaxOutput already do — so 4.6, which takes adaptive thinking
+	// but not "xhigh", would be sent an effort it refuses. Give it a row of
+	// its own the way claude-opus-4-5 has one, if anybody runs it.
+	Thinking bool
+	Effort   string
+
 	// Retired marks a family the vendor still lists but no longer serves.
 	// Gemini answers 404 for 2.5 on a new key while /models goes on returning
 	// it, so the list cannot be asked — only the table can say.
@@ -80,9 +92,13 @@ var models = map[string]modelInfo{
 	//
 	// claude- is the fallback for anything older or unrecognised, and stays at
 	// the figures that are safe everywhere.
-	"claude-fable":  {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 10, OutputUSD: 50},
-	"claude-opus":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
-	"claude-sonnet": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15},
+	// Thinking and Effort are the 5 generation's: adaptive thinking, and
+	// "xhigh" — one step below "max" — which is what the vendor recommends for
+	// coding and agentic work and what Claude Code itself runs at. Haiku is
+	// left out because 4.5 predates both parameters and refuses them.
+	"claude-fable":  {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 10, OutputUSD: 50, Thinking: true, Effort: "xhigh"},
+	"claude-opus":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25, Thinking: true, Effort: "xhigh"},
+	"claude-sonnet": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15, Thinking: true, Effort: "xhigh"},
 	"claude-haiku":  {Context: 200_000, MaxOutput: 64_000, InputUSD: 1, OutputUSD: 5},
 
 	// The 4.5 releases answer shorter than the families they belong to, and
@@ -256,6 +272,22 @@ func ContextWindow(modelSetting string) int { return infoFor(modelSetting).Conte
 // OpenAI-style endpoints are left to their own defaults, which is what they
 // were doing before there was a table to ask.
 func MaxOutput(modelSetting string) int { return infoFor(modelSetting).MaxOutput }
+
+// Thinks reports whether the model takes adaptive thinking. Unknown models are
+// assumed not to: the parameter is refused by everything older than the 4.6
+// generation, and asking is a 400 on every turn rather than a worse answer.
+func Thinks(modelSetting string) bool { return infoFor(modelSetting).Thinking }
+
+// Effort is how hard to ask the model to think, "" for the API's own default.
+// A setting overrides the table, since the table's answer is a quality choice
+// and the bill is the user's: the status row prices each turn, so the cost of
+// thinking harder is visible where the choice is made.
+func Effort(modelSetting string) string {
+	if s, err := LoadSettings(); err == nil && s.Effort != "" {
+		return s.Effort
+	}
+	return infoFor(modelSetting).Effort
+}
 
 // SupportsTools reports whether the model can be given tools. Unknown models
 // are assumed to manage: nearly all do, and refusing to try would be worse

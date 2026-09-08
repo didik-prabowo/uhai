@@ -214,6 +214,13 @@ type Settings struct {
 	// from the files present would get it wrong. Belongs in the project's own
 	// .uhai/settings.json rather than in the home one.
 	Check string `json:"check,omitempty"`
+
+	// Effort is how hard the model should think — "low" through "max" — for
+	// the models that take it. Empty takes the table's answer, which is what
+	// the vendor recommends for this kind of work. It is here because it is
+	// the one quality setting with a bill attached: thinking harder is worth
+	// paying for on a plan and not on "what does this function do".
+	Effort string `json:"effort,omitempty"`
 }
 
 // settingsFiles returns the settings locations, lowest priority first.
@@ -430,6 +437,8 @@ func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 			APIKey:      key,
 			Model:       model,
 			MaxTokens:   MaxOutput(modelSetting),
+			Thinking:    Thinks(modelSetting),
+			Effort:      Effort(modelSetting),
 			WorkspaceID: Workspace(name),
 		})
 		if err != nil {

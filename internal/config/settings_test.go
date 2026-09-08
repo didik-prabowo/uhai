@@ -75,8 +75,8 @@ func TestProjectNotesReadsAgentsFile(t *testing.T) {
 // something it has never heard of has to be safe rather than optimistic.
 func TestModelLimits(t *testing.T) {
 	for setting, want := range map[string]modelInfo{
-		"anthropic/claude-opus-5":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
-		"anthropic/claude-sonnet-5": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15},
+		"anthropic/claude-opus-5":   {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25, Thinking: true, Effort: "xhigh"},
+		"anthropic/claude-sonnet-5": {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 3, OutputUSD: 15, Thinking: true, Effort: "xhigh"},
 		// Anything older or unrecognised lands on the claude- fallback, which
 		// stays at the figures that are safe everywhere.
 		"anthropic/claude-3-5-sonnet-20241022": {Context: 200_000, MaxOutput: 8_192},
@@ -89,7 +89,7 @@ func TestModelLimits(t *testing.T) {
 		"anthropic/claude-haiku-4-5-20251001":  {Context: 200_000, MaxOutput: 64_000, InputUSD: 1, OutputUSD: 5},
 		"anthropic/claude-opus-4-5-20251101":   {Context: 200_000, MaxOutput: 64_000, InputUSD: 5, OutputUSD: 25},
 		"anthropic/claude-sonnet-4-5-20250929": {Context: 1_000_000, MaxOutput: 64_000, InputUSD: 3, OutputUSD: 15},
-		"anthropic/claude-opus-4-8":            {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25},
+		"anthropic/claude-opus-4-8":            {Context: 1_000_000, MaxOutput: 128_000, InputUSD: 5, OutputUSD: 25, Thinking: true, Effort: "xhigh"},
 		"gemini/gemini-3.5-flash":              {Context: 1_000_000, MaxOutput: 65_536},
 		"gw/qwen2.5-coder":                     {Context: 32_768, MaxOutput: 4_096},
 		"gw/meta-llama/llama-3.3-70b-instruct": {Context: 128_000, MaxOutput: 8_192},
