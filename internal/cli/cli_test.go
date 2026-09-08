@@ -776,6 +776,31 @@ func TestAttachedSendsTheModelSwitchToTheDaemon(t *testing.T) {
 	}
 }
 
+// Attached, the history that matters is the daemon's. The opening line counted
+// agent.History, which is empty in an attached front end however long the
+// daemon's conversation is — so a daemon that had picked the morning back up
+// off disk was drawn as a blank screen saying nothing, and the next prompt was
+// answered out of a context nobody on this side could see.
+func TestAttachedSaysWhatTheDaemonPickedUp(t *testing.T) {
+	attached = daemon.DialFor(filepath.Join(t.TempDir(), "d.sock"), t.TempDir())
+	attachedHolding = daemon.Holding{Model: "9router/scan-cheap", Resumed: 12, ResumedTokens: 3400}
+	t.Cleanup(func() { attached, attachedHolding = nil, daemon.Holding{} })
+
+	m := newTeaModel(agent.New(stubProvider{}), nil)
+	m.width = 80
+	if len(m.opening) == 0 || !strings.Contains(plain(m.opening[0]), "12 messages") {
+		t.Fatalf("attached, the opening line has to name the daemon's history: %v", m.opening)
+	}
+
+	// /clear is refused rather than emptying a local agent that answers
+	// nothing. A command that looks like it worked and changed nothing is the
+	// same bug wearing different clothes.
+	m.slashCommand("/clear")
+	if last := plain(m.lines[len(m.lines)-1].text); !strings.Contains(last, "the daemon's") {
+		t.Fatalf("/clear attached has to say it cannot: %q", last)
+	}
+}
+
 type stubProvider struct{}
 
 func (stubProvider) Name() string { return "stub/stub" }

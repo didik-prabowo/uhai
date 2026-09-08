@@ -247,9 +247,15 @@ func newTeaModel(a *agent.Agent, startupErr error) *teaModel {
 	}
 	// Held until the welcome box has been drawn, which needs a width, so that
 	// these read as notes under it rather than as something above it.
-	if n := len(a.History); n > 0 {
-		m.opening = append(m.opening, teaDim.Render(fmt.Sprintf(
-			"resumed %d messages, ~%s tokens — /clear to start fresh", n, fmtTokens(a.Tokens()))))
+	if n, tokens := resumedHistory(a); n > 0 {
+		// Worded from the daemon's side when attached, because the offer is
+		// different: /clear here empties a local agent that answers nothing.
+		line := fmt.Sprintf("resumed %d messages, ~%s tokens — /clear to start fresh", n, fmtTokens(tokens))
+		if attached != nil {
+			line = fmt.Sprintf("the daemon carried on with %d messages, ~%s tokens — it remembers what this screen does not show",
+				n, fmtTokens(tokens))
+		}
+		m.opening = append(m.opening, teaDim.Render(line))
 	}
 	if startupErr != nil {
 		m.opening = append(m.opening, teaDim.Render(startupErr.Error()))

@@ -46,6 +46,14 @@ type workspace struct {
 	// rather than reading its own config. Under mu because /model changes it
 	// while health is being asked.
 	model string
+
+	// resumed is what this conversation was built on top of, from disk. Not
+	// under mu and not a running total: it is a fact about how the daemon
+	// started, written once before this workspace is reachable and true for
+	// as long as it lives. A live count would have to be read off the agent
+	// mid-turn, which is a race for a number nobody watches change.
+	resumed       int
+	resumedTokens int
 }
 
 // modelName is what a turn here would run against.
@@ -68,6 +76,17 @@ type Conversation struct {
 	// it ended up with. Nil in a daemon that cannot: the front end is told so
 	// rather than being left to guess why nothing changed.
 	SetModel func(setting string) (string, error)
+
+	// Resumed is what this conversation was built on top of: how many messages
+	// were read back from disk, and roughly what they cost to send.
+	//
+	// The daemon picks up where the last one left off, and until this crossed
+	// the wire nothing said so. A terminal attaching after an idle exit met a
+	// blank screen and a model that remembered the whole morning — the worst
+	// version of that being the prompt it answers as if the context were
+	// fresh, steered by a conversation nobody on this side can see.
+	Resumed       int
+	ResumedTokens int
 }
 
 // Builder makes the conversation for one project. The daemon calls it the
@@ -115,6 +134,7 @@ func (s *Server) workspaceFor(r *http.Request) (*workspace, error) {
 		}
 		ws.run, ws.prompt = conv.Run, conv.Prompt
 		ws.model, ws.setModel = conv.Model, conv.SetModel
+		ws.resumed, ws.resumedTokens = conv.Resumed, conv.ResumedTokens
 	}
 	s.projects[abs] = ws
 	return ws, nil

@@ -206,7 +206,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	holds := ws.prompt != nil
 	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid(), "conversation": holds,
-		"model": ws.modelName(), "proto": ProtoVersion})
+		"model": ws.modelName(), "proto": ProtoVersion,
+		// What it picked up when it started, so a terminal can say the
+		// conversation is older than the screen it is drawn on.
+		"resumed": ws.resumed, "resumed_tokens": ws.resumedTokens})
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {

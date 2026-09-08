@@ -98,25 +98,39 @@ against servers we wrote ourselves.
       DuckDuckGo does not answer this machine at all and Mojeek returns a
       captcha. A real one needs a key (Brave, Tavily, Serper) or a
       self-hosted SearXNG, which is a decision about dependencies.
-- [ ] Let an attached terminal change the model. /model and /connect reach
-      this process, not the daemon's agent, so an attached session cannot
-      switch models — which is why attaching is a mode rather than a default.
+- [x] Let an attached terminal change the model. The model is the daemon's to
+      report and the daemon's to change: /v1/health carries what its
+      conversation answers with, POST /v1/model is the switch, and it is taken
+      under the turn lock. /connect is still refused — it writes a credential
+      into the settings the daemon reads.
 - [ ] A tool that lists a directory. Reading a folder is as harmless as
       `glob`, but the only way to do it is `run_bash ls`, which asks
       permission. crush has `ls`, zero has `list_directory`.
 - [ ] A plan or todo tool, so multi-step work does not lose its thread.
       All three references have one.
-- [ ] Worker processes for the daemon, the way zero does it: a crash cannot
-      corrupt what it cannot reach, and the `recover` in place only pretends
-      otherwise. Its supervisor architecture, not an afternoon — and the
-      cheaper half of the benefit is already had.
-- [ ] Windows. Not one file: `net.Listen("unix")` is the daemon's foundation
-      and Windows wants a named pipe with a different permission model, plus
-      `Setpgid`/`Setsid`/`SIGKILL` in bash.go and the launcher. Nobody has
-      asked for it, and an untested second transport breaks quietly.
-- [ ] Reload the conversation when a daemon restarts. Turns are saved every
-      time, but a new daemon does not read them back — so an attached terminal
-      after an idle exit begins a fresh conversation without saying so.
+- [x] Worker processes for the daemon. A background task is a process now, not
+      a goroutine with a `recover` around it that could not have caught the
+      failures worth surviving anyway — a concurrent map write is fatal, not a
+      panic, and it would have taken every project's conversation with it. No
+      supervisor was needed: a task is one-shot, so stdout is the report and
+      the exit code is the status.
+- [x] Windows — *it compiles, and nothing here has run it*. The unix-only
+      pieces are behind build tags: the socket, `Setpgid`/`Setsid`/`SIGKILL`
+      in bash.go, the launcher's single-flight. Ticked because the build is
+      the part that can be checked from here; the `ponytail:` notes in
+      `proc_windows.go` and `spawn_windows.go` name what is knowingly weaker.
+      It stays untested until somebody runs it there and says what broke.
+- [x] Reload the conversation when a daemon restarts. The daemon picks up the
+      project's newest session when it builds a workspace, and now says so:
+      health carries what it read back, and the attached terminal opens with
+      a line naming it instead of a blank screen over a model that remembers
+      the morning. `/clear` is refused attached rather than clearing a local
+      agent that answers nothing.
+
+      **Still open, and small:** the messages themselves are not drawn. The
+      count is what makes the context visible; replaying it needs a route, a
+      version, and a translation from `provider.Message` back to chat entries.
+      *Build it when the count stops being enough to remember what was said.*
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 
@@ -135,9 +149,9 @@ order. Each is small; the point is that *use* picks which.
 - **Editing more than one place at a time.** `edit_file` replaces one unique
   match. A refactor across six files is six confirmations.
   *Build it when a single change routinely takes more than three edits.*
-- **Reading the web.** No tool fetches a URL, so a stack trace mentioning a
-  library's docs ends the trail. *Build it when a session is regularly
-  interrupted to paste a page in.*
+- **Reading the web** *(built)*. `fetch_url` opens an address, so a stack trace
+  mentioning a library's docs no longer ends the trail. Finding one still does
+  — see the search item in Phase 4.
 - **Images.** No tool takes one, no client sends one, and the model picker no
   longer claims otherwise — it advertised "images" on models uhai had no way
   to show an image to. A screenshot of a broken layout is the case that would

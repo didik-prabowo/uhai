@@ -51,7 +51,11 @@ import (
 // model nobody named.
 // 4: /v1/model changes it. An older daemon answers 404, and "404 page not
 // found" is not a sentence to put in front of someone who typed /model.
-const ProtoVersion = 4
+// 5: health reports the conversation the daemon picked up from disk. An older
+// one reports nothing, which reads as none — so a terminal would draw a blank
+// screen over a model that remembers the morning and say nothing about it.
+// Silently worse, again, is what the version is for.
+const ProtoVersion = 5
 
 const socketPerm fs.FileMode = 0o600
 

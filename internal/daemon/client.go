@@ -62,21 +62,39 @@ func (c *Client) Health(ctx context.Context) (int, error) {
 	return h.PID, err
 }
 
-// Conversation reports whether this daemon can run a turn, and the model it
-// would run it with. One started without a provider cannot, and says so rather
-// than failing at the prompt. The model comes back because the daemon's is the
-// only one that matters once attached: this process's own is not answering.
-func (c *Client) Conversation(ctx context.Context) (string, bool) {
+// Holding is what the daemon has for one project, as a front end about to draw
+// it needs to know: the model that will answer, and the conversation that was
+// already under way before this terminal existed.
+type Holding struct {
+	Model string
+
+	// Resumed is what the daemon read back from disk when it built this
+	// conversation, and what those messages roughly cost. Zero from a daemon
+	// that started fresh — and from one too old to say, which is why the
+	// protocol version moved with it.
+	Resumed       int
+	ResumedTokens int
+}
+
+// Conversation reports whether this daemon can run a turn, and what it holds.
+// One started without a provider cannot, and says so rather than failing at
+// the prompt. What it holds comes back because the daemon's is the only
+// conversation that matters once attached: this process's own is not
+// answering, and its history is empty however long the daemon's is.
+func (c *Client) Conversation(ctx context.Context) (Holding, bool) {
 	h, err := c.status(ctx)
-	return h.Model, err == nil && h.Conversation
+	return Holding{Model: h.Model, Resumed: h.Resumed, ResumedTokens: h.ResumedTokens},
+		err == nil && h.Conversation
 }
 
 type health struct {
-	OK           bool   `json:"ok"`
-	PID          int    `json:"pid"`
-	Conversation bool   `json:"conversation"`
-	Model        string `json:"model"`
-	Proto        int    `json:"proto"`
+	OK            bool   `json:"ok"`
+	PID           int    `json:"pid"`
+	Conversation  bool   `json:"conversation"`
+	Model         string `json:"model"`
+	Proto         int    `json:"proto"`
+	Resumed       int    `json:"resumed"`
+	ResumedTokens int    `json:"resumed_tokens"`
 }
 
 // ErrWrongVersion is a daemon this build cannot talk to. It is worth telling

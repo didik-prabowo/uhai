@@ -362,9 +362,14 @@ func RunDaemon() error {
 		// means, and it is only ever this project's — a conversation about
 		// another tree carried on here would act on names that are missing or,
 		// worse, on different files with the same names.
+		var resumed, resumedTokens int
 		if prev, err := session.LatestIn(store, root); err == nil {
 			conv.History = prev.Messages
 			cli.ContinueSessionIn(prev, root)
+			// Counted here rather than at health: this is the moment the
+			// number is a fact, and reading it off the agent later would be
+			// reading history while a turn is appending to it.
+			resumed, resumedTokens = len(prev.Messages), conv.Tokens()
 		}
 		conv.OnText = func(t string) { srv.Publish(root, daemon.Event{Kind: daemon.EventText, Text: t}) }
 		conv.OnDelta = func(d string) { srv.Publish(root, daemon.Event{Kind: daemon.EventDelta, Text: d}) }
@@ -419,7 +424,10 @@ func RunDaemon() error {
 		if conv.Provider != nil {
 			model = conv.Provider.Name()
 		}
-		return daemon.Conversation{Run: run, Prompt: prompt, Model: model, SetModel: setModel}, nil
+		return daemon.Conversation{
+			Run: run, Prompt: prompt, Model: model, SetModel: setModel,
+			Resumed: resumed, ResumedTokens: resumedTokens,
+		}, nil
 	}
 
 	srv = daemon.NewServer(store, build)

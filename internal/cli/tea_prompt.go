@@ -129,6 +129,14 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 	case value == "/exit" || value == "/quit":
 		return tea.Quit
 	case value == "/clear":
+		if attached != nil {
+			// It would clear the local agent, which answers nothing: the
+			// history belongs to the daemon. Refused out loud rather than
+			// done quietly — a command that looks like it worked and changed
+			// nothing is how the last three of these bugs read from outside.
+			m.addHistory(teaDim.Render("/clear is not available attached — the conversation is the daemon's"))
+			return nil
+		}
 		m.agent.History = nil
 		m.lines = nil // not even the echo of /clear survives the clearing
 		m.chatted = false

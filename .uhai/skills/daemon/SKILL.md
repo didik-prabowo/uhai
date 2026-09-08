@@ -179,6 +179,27 @@ newest, which is what `-resume` with no id means, and for the same reason: a
 conversation about another tree carried on here acts on names that are missing
 or, worse, on different files with the same names.
 
+Picking it up silently was the other half of the bug, and it survived the fix
+for a while. The daemon remembered the morning; the terminal attaching to it
+drew a blank screen, because the opening line counted `agent.History` and the
+*local* agent has none when attached. So the first prompt after an idle exit
+was answered out of a context nobody on that side could see — a wrong answer
+with nothing on screen to explain it, which is the shape every bug in this
+corner has had.
+
+`Conversation.Resumed` and `ResumedTokens` are what was read back; health
+carries them, and the attached terminal opens with a line naming them. They
+are snapshots taken at build and never updated: it is a fact about how this
+daemon started, not a running total, so it needs no lock and cannot be read
+off an agent mid-turn. `/clear` is refused while attached for the matching
+reason — it would empty a local agent that answers nothing, and appear to
+work.
+
+The messages themselves are still not drawn. The count is what makes the
+context visible; replaying it needs a route, a version, and a translation from
+`provider.Message` back to chat entries. *Build it when the count stops being
+enough to remember what was said.*
+
 ### One session per project
 
 That restore was blocked by something worse underneath it. `cli` kept a single

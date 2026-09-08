@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/daemon"
 	"github.com/didik-prabowo/uhai/internal/provider"
 )
@@ -26,6 +27,11 @@ var attached *daemon.Client
 // and not that one — so everything that names a model reads this instead.
 var attachedModel string
 
+// attachedHolding is the conversation the daemon was already carrying when
+// this terminal arrived. Read once at attach, and for the same reason as the
+// model: the local agent is not the one that remembers anything.
+var attachedHolding daemon.Holding
+
 // Attach points this front end at the daemon, starting one if needed. It is
 // an error rather than a fallback: someone who asked to attach and got a local
 // conversation instead would not know which one they were in.
@@ -38,12 +44,26 @@ func Attach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	model, holds := c.Conversation(ctx)
+	holding, holds := c.Conversation(ctx)
 	if !holds {
 		return fmt.Errorf("the daemon holds no conversation — it started without a provider")
 	}
-	attached, attachedModel = c, model
+	attached, attachedModel, attachedHolding = c, holding.Model, holding
 	return nil
+}
+
+// resumedHistory is the conversation being drawn as it stood before this
+// terminal opened: the daemon's when attached, this process's otherwise.
+//
+// The opening line read the local agent either way, and attached that history
+// is empty — so a daemon that had picked the morning back up off disk was met
+// with a blank screen saying nothing, and the first prompt was answered with a
+// context the person typing it could not see.
+func resumedHistory(a *agent.Agent) (msgs, tokens int) {
+	if attached != nil {
+		return attachedHolding.Resumed, attachedHolding.ResumedTokens
+	}
+	return len(a.History), a.Tokens()
 }
 
 // answeringModel is the model a turn would run against: the daemon's when

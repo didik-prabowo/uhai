@@ -896,12 +896,37 @@ func TestHealthNamesTheModelTheDaemonAnswersWith(t *testing.T) {
 	})
 	c := s.clientFor(t, dir, "proyek")
 
-	model, holds := c.Conversation(context.Background())
+	held, holds := c.Conversation(context.Background())
 	if !holds {
 		t.Fatal("a daemon with a prompt runner holds a conversation")
 	}
-	if model != "9router/scan-cheap" {
-		t.Fatalf("health must name the model that answers, got %q", model)
+	if held.Model != "9router/scan-cheap" {
+		t.Fatalf("health must name the model that answers, got %q", held.Model)
+	}
+}
+
+// A daemon that picked a conversation up off disk has to say so, because the
+// terminal drawing it cannot tell. The daemon leaves after half an hour idle
+// and reads the newest session back when it returns, so the model remembers a
+// morning that no attached screen ever drew — and the first prompt after that
+// is answered with a context the person typing it has no way to see.
+func TestHealthSaysWhatTheDaemonPickedUp(t *testing.T) {
+	s, dir := serve(t, nil, func(root string) (Conversation, error) {
+		return Conversation{
+			Prompt:  func(ctx context.Context, text string) (string, int, error) { return "", 0, nil },
+			Model:   "9router/scan-cheap",
+			Resumed: 12, ResumedTokens: 3400,
+		}, nil
+	})
+	c := s.clientFor(t, dir, "proyek")
+
+	held, holds := c.Conversation(context.Background())
+	if !holds {
+		t.Fatal("a daemon with a prompt runner holds a conversation")
+	}
+	if held.Resumed != 12 || held.ResumedTokens != 3400 {
+		t.Fatalf("health must report what was picked up, got %d messages and %d tokens",
+			held.Resumed, held.ResumedTokens)
 	}
 }
 
@@ -937,8 +962,8 @@ func TestSetModelChangesWhatTheDaemonAnswersWith(t *testing.T) {
 	if name != "9router/cc/claude-opus-5" {
 		t.Fatalf("the daemon names what it resolved, got %q", name)
 	}
-	if model, _ := c.Conversation(context.Background()); model != name {
-		t.Fatalf("health must agree with the switch, got %q", model)
+	if held, _ := c.Conversation(context.Background()); held.Model != name {
+		t.Fatalf("health must agree with the switch, got %q", held.Model)
 	}
 	if err := c.Prompt(context.Background(), "halo"); err != nil {
 		t.Fatalf("prompt: %v", err)
@@ -953,8 +978,8 @@ func TestSetModelChangesWhatTheDaemonAnswersWith(t *testing.T) {
 	if _, err := c.SetModel(context.Background(), "tidakada/apa"); err == nil {
 		t.Fatal("a model the provider refuses has to come back as an error")
 	}
-	if model, _ := c.Conversation(context.Background()); model != name {
-		t.Fatalf("a refused switch must change nothing, got %q", model)
+	if held, _ := c.Conversation(context.Background()); held.Model != name {
+		t.Fatalf("a refused switch must change nothing, got %q", held.Model)
 	}
 }
 
