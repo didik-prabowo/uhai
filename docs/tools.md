@@ -89,7 +89,7 @@ Lists files whose name matches a pattern.
 { "pattern": "**/*_test.go", "path": "internal" }
 ```
 
-`path` defaults to the working directory. A leading `**/` is dropped and the
+`path` is relative to the project and defaults to the whole of it. A leading `**/` is dropped and the
 rest matched against the file name, so `**/*.go` finds Go files at any depth.
 There is no brace expansion and no `**` in the middle of a pattern —
 `src/**/test/*.go` will not work. Use `grep`, or a command, for more than that.
@@ -134,7 +134,7 @@ for both.
 
 ## Internals
 
-Searches walk the working directory themselves rather than shelling out, so
+Searches walk the project themselves rather than shelling out, so
 they need no permission and behave the same everywhere.
 
 | | |

@@ -24,7 +24,7 @@ func (j *jiraTool) Description() string     { return "Search issues." }
 func (j *jiraTool) Schema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
 func (j *jiraTool) NeedsConfirm() bool      { return true }
 
-func (j *jiraTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
+func (j *jiraTool) Run(_ context.Context, _ string, input json.RawMessage) (string, bool) {
 	j.called = string(input)
 	return "PROJ-1, PROJ-2", false
 }
@@ -53,7 +53,7 @@ func TestAToolCanComeFromAnotherPackage(t *testing.T) {
 	}
 
 	// And it runs.
-	out, isErr := tools.Execute(context.Background(), "search_jira", json.RawMessage(`{"q":"bug"}`))
+	out, isErr := tools.Execute(context.Background(), "", "search_jira", json.RawMessage(`{"q":"bug"}`))
 	if isErr || !strings.Contains(out, "PROJ-1") {
 		t.Fatalf("the registered tool did not run: %q %v", out, isErr)
 	}
@@ -89,7 +89,7 @@ func TestRegisterIsSafeWhileTheListIsRead(t *testing.T) {
 			defer wg.Done()
 			tools.Definitions()
 			tools.NeedsConfirm("read_file")
-			tools.Execute(context.Background(), "glob", json.RawMessage(`{}`))
+			tools.Execute(context.Background(), "", "glob", json.RawMessage(`{}`))
 		}()
 	}
 	wg.Wait()
@@ -102,4 +102,4 @@ func (t namedTool) Description() string     { return "late arrival" }
 func (t namedTool) Schema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
 func (t namedTool) NeedsConfirm() bool      { return false }
 
-func (t namedTool) Run(context.Context, json.RawMessage) (string, bool) { return "ok", false }
+func (t namedTool) Run(context.Context, string, json.RawMessage) (string, bool) { return "ok", false }

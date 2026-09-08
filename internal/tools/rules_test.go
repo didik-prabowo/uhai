@@ -146,7 +146,7 @@ func TestSchemasAreValidAndRequireWhatIsUsed(t *testing.T) {
 // A name nobody implements must fail loudly. Answering "" would read to the
 // model as a tool that did nothing successfully.
 func TestUnknownToolIsRefused(t *testing.T) {
-	out, isErr := Execute(context.Background(), "delete_everything", json.RawMessage(`{}`))
+	out, isErr := Execute(context.Background(), "", "delete_everything", json.RawMessage(`{}`))
 	if !isErr || !strings.Contains(out, "unknown tool") {
 		t.Fatalf("got %q, isError=%v", out, isErr)
 	}
@@ -161,7 +161,7 @@ func TestLongResultsAreTruncated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, isErr := Execute(context.Background(), "read_file", json.RawMessage(fmt.Sprintf(`{"path":%q}`, path)))
+	out, isErr := Execute(context.Background(), "", "read_file", json.RawMessage(fmt.Sprintf(`{"path":%q}`, path)))
 	if isErr {
 		t.Fatalf("reading a large file is not an error: %q", out)
 	}
@@ -176,7 +176,7 @@ func TestLongResultsAreTruncated(t *testing.T) {
 // Reading what is not there is an error the model can act on, not an empty
 // string it would take for an empty file.
 func TestReadingWhatIsNotThereIsAnError(t *testing.T) {
-	out, isErr := Execute(context.Background(), "read_file", json.RawMessage(`{"path":"/nowhere/at/all.go"}`))
+	out, isErr := Execute(context.Background(), "", "read_file", json.RawMessage(`{"path":"/nowhere/at/all.go"}`))
 	if !isErr || !strings.Contains(out, "could not read file") {
 		t.Fatalf("got %q, isError=%v", out, isErr)
 	}
@@ -198,7 +198,7 @@ func TestEditRefusesWhatItCannotDoSafely(t *testing.T) {
 		{"missing", `{"path":%q,"old":"tiga","new":"x"}`, "not in the file"},
 		{"ambiguous", `{"path":%q,"old":"satu","new":"x"}`, "appears 2 times"},
 	} {
-		out, isErr := Execute(context.Background(), "edit_file", json.RawMessage(fmt.Sprintf(c.input, path)))
+		out, isErr := Execute(context.Background(), "", "edit_file", json.RawMessage(fmt.Sprintf(c.input, path)))
 		if !isErr || !strings.Contains(out, c.want) {
 			t.Errorf("%s: got %q, want an error mentioning %q", c.name, out, c.want)
 		}
@@ -229,7 +229,7 @@ func TestSearchesSkipTheNoiseDirectories(t *testing.T) {
 		{"glob", `{"pattern":"**/*.go","path":%q}`},
 		{"grep", `{"pattern":"penanda","path":%q}`},
 	} {
-		out, isErr := Execute(context.Background(), tool.name, json.RawMessage(fmt.Sprintf(tool.input, dir)))
+		out, isErr := Execute(context.Background(), "", tool.name, json.RawMessage(fmt.Sprintf(tool.input, dir)))
 		if isErr {
 			t.Fatalf("%s failed: %q", tool.name, out)
 		}
@@ -253,12 +253,12 @@ func TestSearchesStopAtTheMatchLimit(t *testing.T) {
 		}
 	}
 
-	out, _ := Execute(context.Background(), "glob", json.RawMessage(fmt.Sprintf(`{"pattern":"*.go","path":%q}`, dir)))
+	out, _ := Execute(context.Background(), "", "glob", json.RawMessage(fmt.Sprintf(`{"pattern":"*.go","path":%q}`, dir)))
 	if lines := strings.Count(out, "\n") + 1; lines > maxMatches {
 		t.Errorf("glob returned %d lines, cap is %d", lines, maxMatches)
 	}
 
-	out, _ = Execute(context.Background(), "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
+	out, _ = Execute(context.Background(), "", "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
 	if lines := strings.Count(out, "\n") + 1; lines > maxMatches {
 		t.Errorf("grep returned %d lines, cap is %d", lines, maxMatches)
 	}
@@ -272,7 +272,7 @@ func TestGrepShortensAVeryLongLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, isErr := Execute(context.Background(), "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
+	out, isErr := Execute(context.Background(), "", "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
 	if isErr {
 		t.Fatalf("grep failed: %q", out)
 	}
@@ -292,7 +292,7 @@ func TestGrepSkipsBinaryFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, _ := Execute(context.Background(), "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
+	out, _ := Execute(context.Background(), "", "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
 	if strings.Contains(out, "app.bin") {
 		t.Errorf("a binary file must be skipped: %q", out)
 	}
@@ -315,7 +315,7 @@ func TestShellKillsWhatItStarted(t *testing.T) {
 	}()
 
 	// The child outlives its shell unless the whole group is killed.
-	_, _ = Shell(ctx, fmt.Sprintf("(sleep 1; touch %q) & wait", marker), nil)
+	_, _ = Shell(ctx, "", fmt.Sprintf("(sleep 1; touch %q) & wait", marker), nil)
 
 	<-timeAfter(1500)
 	if _, err := os.Stat(marker); err == nil {
@@ -358,7 +358,7 @@ func TestFetchRefusesWhatIsNotThePublicInternet(t *testing.T) {
 		"file:///etc/passwd",
 		"ftp://example.com/x",
 	} {
-		out, isErr := Execute(context.Background(), "fetch_url",
+		out, isErr := Execute(context.Background(), "", "fetch_url",
 			json.RawMessage(`{"url":`+strconv.Quote(target)+`}`))
 		if !isErr {
 			t.Errorf("%s must be refused, got %q", target, out)
@@ -389,13 +389,13 @@ func TestFetchStripsMarkup(t *testing.T) {
 // did something would be a finding of its own.
 func TestEveryToolIsActuallyDispatched(t *testing.T) {
 	for _, spec := range Definitions() {
-		out, _ := Execute(context.Background(), spec.Name, json.RawMessage(`{}`))
+		out, _ := Execute(context.Background(), "", spec.Name, json.RawMessage(`{}`))
 		if strings.Contains(out, "unknown tool") {
 			t.Errorf("%s is offered to the model but Execute has no case for it", spec.Name)
 		}
 	}
 	// And the other direction, so the check cannot pass by accident.
-	if out, _ := Execute(context.Background(), "nope", json.RawMessage(`{}`)); !strings.Contains(out, "unknown tool") {
+	if out, _ := Execute(context.Background(), "", "nope", json.RawMessage(`{}`)); !strings.Contains(out, "unknown tool") {
 		t.Errorf("a tool nobody defined must be refused, got %q", out)
 	}
 }

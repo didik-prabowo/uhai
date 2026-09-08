@@ -22,13 +22,13 @@ func (globTool) Schema() json.RawMessage {
 			"type": "object",
 			"properties": {
 				"pattern": {"type": "string", "description": "Name pattern, e.g. \"*.go\" or \"**/*_test.go\""},
-				"path": {"type": "string", "description": "Folder to search in, default the working directory"}
+				"path": {"type": "string", "description": "Folder to search in, relative to the project, default the whole project"}
 			},
 			"required": ["pattern"]
 		}`)
 }
 
-func (globTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
+func (globTool) Run(ctx context.Context, root string, input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -45,9 +45,13 @@ func (globTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 
 	var found []string
 	match := matcher(args.Pattern)
-	err := walk(ctx, args.Path, func(path string) bool {
-		if match(path) {
-			found = append(found, path)
+	// Walked absolutely, matched and reported relative to the project. The
+	// pattern the model writes is a project path — "internal/**/*.go" — and it
+	// would match nothing against /Users/…/internal/foo.go.
+	err := walk(ctx, resolve(root, args.Path), func(path string) bool {
+		rel := display(root, path)
+		if match(rel) {
+			found = append(found, rel)
 		}
 		return len(found) < maxMatches
 	})

@@ -25,14 +25,14 @@ func (grepTool) Schema() json.RawMessage {
 			"type": "object",
 			"properties": {
 				"pattern": {"type": "string", "description": "Go regular expression to search for"},
-				"path": {"type": "string", "description": "Folder to search in, default the working directory"},
+				"path": {"type": "string", "description": "Folder to search in, relative to the project, default the whole project"},
 				"include": {"type": "string", "description": "Only search files whose name matches this pattern, e.g. \"*.go\""}
 			},
 			"required": ["pattern"]
 		}`)
 }
 
-func (grepTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
+func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (string, bool) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -54,8 +54,12 @@ func (grepTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 	if args.Include != "" {
 		include = matcher(args.Include)
 	}
-	err = walk(ctx, args.Path, func(path string) bool {
-		if !include(path) {
+	// Walked absolutely, matched and reported relative to the project: the
+	// include pattern is written as a project path, and so is every result the
+	// model reads back and hands to read_file.
+	err = walk(ctx, resolve(root, args.Path), func(path string) bool {
+		rel := display(root, path)
+		if !include(rel) {
 			return true
 		}
 		data, err := os.ReadFile(path)
@@ -66,7 +70,7 @@ func (grepTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
 			if !re.MatchString(line) {
 				continue
 			}
-			hits = append(hits, fmt.Sprintf("%s:%d:%s", path, i+1, truncate(line)))
+			hits = append(hits, fmt.Sprintf("%s:%d:%s", rel, i+1, truncate(line)))
 			if len(hits) >= maxMatches {
 				return false
 			}

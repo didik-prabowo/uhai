@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
@@ -33,13 +35,22 @@ type Tool interface {
 
 	// Run does the work and returns what the model should read.
 	//
+	// root is the project the call is about, and every relative path in input
+	// is resolved against it rather than against the process's own directory.
+	// A tool with nothing on disk to touch ignores it.
+	//
+	// It is an argument rather than a package-level setting because one
+	// process serves several projects at once: the daemon holds a workspace
+	// per project and their turns run together, so a root stored anywhere but
+	// on the call would be read by the wrong one.
+	//
 	// isError is not "the function failed" — it is the is_error flag on the
 	// tool_result block that goes back over the wire, and result is what the
 	// model reads either way. A tool that cannot do its job has still done
 	// its job by saying why: "could not read file: no such file" is a fact
 	// the model can act on, where a dropped result leaves it believing the
 	// file was empty. That is why this is not (string, error).
-	Run(ctx context.Context, input json.RawMessage) (result string, isError bool)
+	Run(ctx context.Context, root string, input json.RawMessage) (result string, isError bool)
 }
 
 // mu guards all. Registration is expected at startup, but the whole point of
@@ -109,15 +120,53 @@ func Definitions() []provider.ToolSpec {
 
 // Execute runs one tool by name and returns its output as text (truncated if
 // too long) plus an error flag.
-func Execute(ctx context.Context, name string, input json.RawMessage) (result string, isError bool) {
+func Execute(ctx context.Context, root, name string, input json.RawMessage) (result string, isError bool) {
 	t, ok := find(name)
 	if !ok {
 		return fmt.Sprintf("unknown tool: %s", name), true
 	}
-	result, isError = t.Run(ctx, input)
+	result, isError = t.Run(ctx, root, input)
 
 	if len(result) > maxResultLen {
 		result = result[:maxResultLen] + "\n...[output truncated]"
 	}
 	return result, isError
+}
+
+// resolve is where a path the model gave lands on disk: under the project when
+// it is relative, and exactly where it says when it is absolute.
+//
+// It exists because the process's own directory is not the project's. One
+// daemon serves every project on the machine and is started from whichever one
+// happened to need it first, so a relative path resolved against the process
+// read — and wrote, and ran commands in — that first project's tree for every
+// project after it. Nothing said so: the paths all existed, in the wrong repo.
+//
+// An absolute path is left alone rather than confined. What may be touched is
+// already answered by the allow/ask/deny lists, and confining here would
+// quietly change what a rule someone wrote means.
+func resolve(root, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if root == "" {
+		return path // no project named: the process's own directory, as before
+	}
+	return filepath.Join(root, path)
+}
+
+// display is the other direction: what the model should be shown. Searches
+// walk an absolute root now, and handing back absolute paths would change
+// every result the model reads and pastes into its next call — for a fact it
+// gains nothing from. Anything outside the project keeps its full path,
+// because "../../.." is a worse answer than the truth.
+func display(root, path string) string {
+	if root == "" {
+		return path
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return path
+	}
+	return rel
 }

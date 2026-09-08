@@ -200,6 +200,36 @@ context visible; replaying it needs a route, a version, and a translation from
 `provider.Message` back to chat entries. *Build it when the count stops being
 enough to remember what was said.*
 
+### One project per turn, on disk as well
+
+The workspace keys everything a conversation *holds*. What it **does** was
+keyed by nothing: `launcher.go` starts the daemon with no `cmd.Dir`, so it
+inherits the directory of whichever front end first needed one and keeps it for
+life, and the tools resolved their relative paths against the process. Nothing
+chdirs at turn time — `inRoot` in the orchestrator wraps agent *construction*,
+which is why AGENTS.md and the permission lists were already right and the
+tools were not.
+
+So a turn in project B read, wrote and ran commands in project A's tree. It is
+the socket-per-project bug again, one layer down, and it hid for the same
+reason: with one project the inherited directory *is* the project, and every
+path resolves to a file that exists.
+
+`Agent.Root` is the project, `tools.Execute(ctx, root, …)` carries it to the
+call, and `Shell` takes a directory. On the call rather than in a package
+variable, because the daemon runs two projects' turns at once — each workspace
+has its own `turning` lock, not a shared one — so anything stored would be read
+by the wrong turn.
+
+Two details worth keeping:
+
+- **Absolute paths are left alone.** Confining them to the project is a policy,
+  and uhai already has one in the allow/ask/deny lists; resolving here would
+  quietly change what a rule someone wrote means.
+- **Searches walk absolute and report relative.** The pattern the model writes
+  is a project path, and so is every result it hands back to `read_file`.
+  Reporting absolute paths would break the first and bloat the second.
+
 ### One session per project
 
 That restore was blocked by something worse underneath it. `cli` kept a single

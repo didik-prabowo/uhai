@@ -19,7 +19,7 @@ func tryEdit(t *testing.T, path, old, new string) (string, bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Execute(context.Background(), "edit_file", in)
+	return Execute(context.Background(), "", "edit_file", in)
 }
 
 func TestEditFile(t *testing.T) {
@@ -50,7 +50,7 @@ func TestEditFile(t *testing.T) {
 func TestWriteFileCreatesParentFolders(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deep", "nested", "x.txt")
 	in, _ := json.Marshal(map[string]string{"path": path, "content": "hi"})
-	if out, isErr := Execute(context.Background(), "write_file", in); isErr {
+	if out, isErr := Execute(context.Background(), "", "write_file", in); isErr {
 		t.Fatalf("write_file should create parents: %s", out)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -62,7 +62,7 @@ func TestRunBashCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	in, _ := json.Marshal(map[string]string{"command": "echo hi"})
-	if _, isErr := Execute(ctx, "run_bash", in); !isErr {
+	if _, isErr := Execute(ctx, "", "run_bash", in); !isErr {
 		t.Fatal("a cancelled context must stop the command")
 	}
 }
@@ -78,7 +78,7 @@ func TestGlobAndGrep(t *testing.T) {
 	run := func(tool string, args map[string]string) string {
 		t.Helper()
 		in, _ := json.Marshal(args)
-		out, isErr := Execute(context.Background(), tool, in)
+		out, isErr := Execute(context.Background(), "", tool, in)
 		if isErr {
 			t.Fatalf("%s failed: %s", tool, out)
 		}
@@ -108,7 +108,7 @@ func TestGlobAndGrep(t *testing.T) {
 	if !strings.Contains(got, "notes.txt") {
 		t.Fatalf("grep without include should search every file: %s", got)
 	}
-	if _, isErr := Execute(context.Background(), "grep", []byte(`{"pattern":"("}`)); !isErr {
+	if _, isErr := Execute(context.Background(), "", "grep", []byte(`{"pattern":"("}`)); !isErr {
 		t.Fatal("a broken regular expression must be reported, not panic")
 	}
 }
@@ -124,7 +124,7 @@ func TestBashTimeoutOutlivesATestSuite(t *testing.T) {
 	// hold the turn open.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	if _, err := Shell(ctx, "sleep 30", nil); err == nil {
+	if _, err := Shell(ctx, "", "sleep 30", nil); err == nil {
 		t.Fatal("a command must be killed when its context ends")
 	}
 }
@@ -183,7 +183,7 @@ func TestSearchStopsWhenInterrupted(t *testing.T) {
 		{NameGlob, `{"pattern":"**/*.go"}`},
 		{NameGrep, `{"pattern":"func "}`},
 	} {
-		out, isErr := Execute(ctx, c.name, json.RawMessage(c.input))
+		out, isErr := Execute(ctx, "", c.name, json.RawMessage(c.input))
 		if !isErr || !strings.Contains(out, "interrupted") {
 			t.Errorf("%s ran on regardless: isErr=%v out=%q", c.name, isErr, out)
 		}
@@ -193,7 +193,7 @@ func TestSearchStopsWhenInterrupted(t *testing.T) {
 // And an uncancelled search still works, so the check is a check and not a
 // wall.
 func TestSearchStillWorksUninterrupted(t *testing.T) {
-	out, isErr := Execute(context.Background(), NameGlob, json.RawMessage(`{"pattern":"*.go"}`))
+	out, isErr := Execute(context.Background(), "", NameGlob, json.RawMessage(`{"pattern":"*.go"}`))
 	if isErr || !strings.Contains(out, ".go") {
 		t.Errorf("a plain search must still find things: isErr=%v out=%q", isErr, out)
 	}
@@ -242,7 +242,7 @@ func TestSearchGivesUpRatherThanHoldingTheTurn(t *testing.T) {
 		{NameGlob, `{"pattern":"**/*.go"}`},
 		{NameGrep, `{"pattern":"func "}`},
 	} {
-		out, isErr := Execute(context.Background(), c.name, json.RawMessage(c.input))
+		out, isErr := Execute(context.Background(), "", c.name, json.RawMessage(c.input))
 		if !isErr {
 			t.Errorf("%s: a search that found nothing in time is an error, got %q", c.name, out)
 		}
@@ -395,5 +395,81 @@ func TestTheBaselineHoldsWithoutAGitignore(t *testing.T) {
 	})
 	if len(seen) != 1 || !strings.HasSuffix(seen[0], "main.go") {
 		t.Errorf("want only main.go, got %v", seen)
+	}
+}
+
+// One process, two projects, and nothing may cross between them.
+//
+// This is the bug the root exists for. The daemon serves every project on the
+// machine from the single directory it was spawned in — whichever project
+// happened to need a daemon first — and tools resolved their relative paths
+// against that. So a turn in project B read, wrote and ran commands in project
+// A's tree, and nothing said so: every path existed, in the wrong repo.
+func TestEachProjectsToolsStayInItsOwnTree(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(a, "note.txt"), []byte("project A"), 0644)
+	os.WriteFile(filepath.Join(b, "note.txt"), []byte("project B"), 0644)
+
+	read := func(root string) string {
+		out, isErr := Execute(context.Background(), root, NameRead, json.RawMessage(`{"path":"note.txt"}`))
+		if isErr {
+			t.Fatalf("read in %s: %s", root, out)
+		}
+		return out
+	}
+	if got := read(a); !strings.Contains(got, "project A") {
+		t.Fatalf("project A read the wrong tree: %q", got)
+	}
+	if got := read(b); !strings.Contains(got, "project B") {
+		t.Fatalf("project B read the wrong tree: %q", got)
+	}
+
+	// Writing is the half that does damage, so it is the half worth naming.
+	if out, isErr := Execute(context.Background(), b, NameWrite,
+		json.RawMessage(`{"path":"new.txt","content":"written in B"}`)); isErr {
+		t.Fatalf("write in B: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(a, "new.txt")); err == nil {
+		t.Fatal("a write for project B landed in project A")
+	}
+	if _, err := os.Stat(filepath.Join(b, "new.txt")); err != nil {
+		t.Fatalf("the write did not land in project B: %v", err)
+	}
+}
+
+// run_bash is rooted the same way, and by the shell's own working directory
+// rather than by rewriting the command: a command is the user's text, and a
+// tool that edits it is a tool nobody can predict.
+func TestRunBashRunsInTheProject(t *testing.T) {
+	dir := t.TempDir()
+	out, isErr := Execute(context.Background(), dir, NameBash, json.RawMessage(`{"command":"pwd"}`))
+	if isErr {
+		t.Fatalf("bash: %s", out)
+	}
+	// macOS hands out /var symlinks for a temp dir, so compare what the shell
+	// resolves rather than the string the test was given.
+	want, _ := filepath.EvalSymlinks(dir)
+	if got, _ := filepath.EvalSymlinks(strings.TrimSpace(out)); got != want {
+		t.Fatalf("run_bash ran in %q, want %q", got, want)
+	}
+}
+
+// A search reports what the model can hand straight back to read_file. The
+// walk is absolute now, and results that came back absolute would be a
+// different string for every machine, longer, and wrong for a pattern the
+// model writes as a project path.
+func TestSearchesReportProjectPaths(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "internal"), 0755)
+	os.WriteFile(filepath.Join(dir, "internal", "main.go"), []byte("package main // needle\n"), 0644)
+
+	out, isErr := Execute(context.Background(), dir, NameGlob, json.RawMessage(`{"pattern":"internal/**/*.go"}`))
+	if isErr || !strings.Contains(out, "internal/main.go") || strings.Contains(out, dir) {
+		t.Fatalf("glob must match and report the project path, got %q", out)
+	}
+
+	out, isErr = Execute(context.Background(), dir, NameGrep, json.RawMessage(`{"pattern":"needle"}`))
+	if isErr || !strings.Contains(out, "internal/main.go:1:") || strings.Contains(out, dir) {
+		t.Fatalf("grep must report the project path, got %q", out)
 	}
 }

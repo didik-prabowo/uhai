@@ -28,14 +28,14 @@ func (readTool) Schema() json.RawMessage {
 		}`)
 }
 
-func (readTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
+func (readTool) Run(_ context.Context, root string, input json.RawMessage) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil {
 		return err.Error(), true
 	}
-	data, err := os.ReadFile(args.Path)
+	data, err := os.ReadFile(resolve(root, args.Path))
 	if err != nil {
 		return fmt.Sprintf("could not read file: %v", err), true
 	}

@@ -30,7 +30,7 @@ func (writeTool) Schema() json.RawMessage {
 		}`)
 }
 
-func (writeTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
+func (writeTool) Run(_ context.Context, root string, input json.RawMessage) (string, bool) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -38,12 +38,13 @@ func (writeTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	if err := json.Unmarshal(input, &args); err != nil {
 		return err.Error(), true
 	}
-	if dir := filepath.Dir(args.Path); dir != "." {
+	path := resolve(root, args.Path)
+	if dir := filepath.Dir(path); dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Sprintf("could not create folder: %v", err), true
 		}
 	}
-	if err := os.WriteFile(args.Path, []byte(args.Content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(args.Content), 0644); err != nil {
 		return fmt.Sprintf("could not write file: %v", err), true
 	}
 	return fmt.Sprintf("OK, wrote %d bytes to %s", len(args.Content), args.Path), false

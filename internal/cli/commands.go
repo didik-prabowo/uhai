@@ -610,7 +610,7 @@ func spawnCheck(a *agent.Agent, command string) (string, error) {
 
 			// Reported line by line, so /tasks t1 shows a slow suite working
 			// rather than nothing at all until it is over.
-			out, err := tools.Shell(ctx, command, func(line string) {
+			out, err := tools.Shell(ctx, here(), command, func(line string) {
 				a.Tasks.Progress(t.ID, line+"\n")
 			})
 			return lastLines(out, checkReportLines), 0, err

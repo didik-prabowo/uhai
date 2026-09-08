@@ -145,6 +145,17 @@ type Agent struct {
 	Thinking bool
 	Effort   string
 
+	// Root is the project this conversation is about. Every relative path a
+	// tool is given resolves against it, and run_bash runs in it.
+	//
+	// It is on the agent rather than in the tools because one process holds
+	// several: the daemon serves every project on the machine from the single
+	// directory it was started in, so tools that resolved against the process
+	// read, wrote and ran commands in whichever project woke it first. Empty
+	// means the process's own directory, which is what a pipe and a one-shot
+	// run want.
+	Root string
+
 	// answeredBy is the last model a provider named, so OnModel fires on a
 	// change rather than on every turn.
 	answeredBy string
@@ -414,7 +425,7 @@ func (a *Agent) runTools(ctx context.Context, blocks []provider.ContentBlock) []
 			result, isError = a.spawn(ctx, block.ToolInput)
 		default:
 			a.OnToolCall(block.ToolName, string(block.ToolInput))
-			result, isError = tools.Execute(ctx, block.ToolName, block.ToolInput)
+			result, isError = tools.Execute(ctx, a.Root, block.ToolName, block.ToolInput)
 		}
 
 		results = append(results, provider.ContentBlock{

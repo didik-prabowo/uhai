@@ -64,7 +64,7 @@ func (fetchTool) Schema() json.RawMessage {
 		}`)
 }
 
-func (fetchTool) Run(ctx context.Context, input json.RawMessage) (string, bool) {
+func (fetchTool) Run(ctx context.Context, _ string, input json.RawMessage) (string, bool) {
 	var args struct {
 		URL string `json:"url"`
 	}

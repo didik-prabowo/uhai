@@ -238,6 +238,11 @@ func newAgent() (*agent.Agent, error) {
 		cli.UseProviderOn(a, p)
 	}
 	a.AllowTool = func(name string) bool { return !config.ToolDenied(name) }
+	// The project this agent works in. Right for both front ends because the
+	// daemon builds each project's agent inside inRoot, the same reason
+	// AGENTS.md and the permission lists come out right — and the daemon
+	// states it again below rather than leaving the guarantee inherited.
+	a.Root, _ = os.Getwd()
 	if notes := config.ProjectNotes(); notes != "" {
 		a.System += "\n\n# Project instructions\nThese come from UHAI.md, AGENTS.md or CLAUDE.md in the working directory. Follow them.\n\n" + notes
 	}
@@ -345,6 +350,10 @@ func RunDaemon() error {
 		if err != nil {
 			return daemon.Conversation{}, err
 		}
+		// Stated, not inherited. newAgent read it from the working directory
+		// inside inRoot, which is correct today and quietly wrong the first
+		// time an agent is built outside it.
+		conv.Root = root
 
 		// Picked up rather than started fresh. The daemon leaves after half an
 		// hour idle and takes every conversation it holds with it; the turns

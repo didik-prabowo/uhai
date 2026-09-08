@@ -31,7 +31,7 @@ func (editTool) Schema() json.RawMessage {
 		}`)
 }
 
-func (editTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
+func (editTool) Run(_ context.Context, root string, input json.RawMessage) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
 		Old  string `json:"old"`
@@ -44,7 +44,8 @@ func (editTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 		return "old must not be empty — use write_file to create a file", true
 	}
 
-	data, err := os.ReadFile(args.Path)
+	path := resolve(root, args.Path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Sprintf("could not read file: %v", err), true
 	}
@@ -60,7 +61,7 @@ func (editTool) Run(_ context.Context, input json.RawMessage) (string, bool) {
 	}
 
 	updated := strings.Replace(string(data), args.Old, args.New, 1)
-	if err := os.WriteFile(args.Path, []byte(updated), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
 		return fmt.Sprintf("could not write file: %v", err), true
 	}
 	return fmt.Sprintf("OK, edited %s", args.Path), false
