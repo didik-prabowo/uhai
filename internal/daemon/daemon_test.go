@@ -1368,3 +1368,35 @@ func TestShutdownDoesNotAskWhetherItIsBusy(t *testing.T) {
 		t.Fatalf("a person's stop takes the work with it, got %v", err)
 	}
 }
+
+// Stopping a daemon that is not running is what the caller wanted: none is
+// left running, and that is already true. It used to come back as an error,
+// which made `make install` fail its build on any machine that had never
+// started one — the step runs after every install, and the message it printed
+// named a missing socket rather than anything the user had done wrong.
+//
+// A daemon that answers and then refuses is a different thing and still an
+// error, which is why this is not an ignored exit code in the Makefile: that
+// would have swallowed both.
+func TestNothingListeningOnASocketThatIsNotThere(t *testing.T) {
+	if Listening(filepath.Join(t.TempDir(), "nothing.sock")) {
+		t.Fatal("a socket that was never created has nobody on it")
+	}
+
+	// A file where the socket should be, with no daemon behind it — what a
+	// daemon that died without tidying up leaves. It has to read the same.
+	stale := filepath.Join(t.TempDir(), "stale.sock")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if Listening(stale) {
+		t.Fatal("a socket nobody is bound to has nobody on it")
+	}
+}
+
+func TestListeningSeesARunningDaemon(t *testing.T) {
+	s, _ := serve(t, nil, nil)
+	if !Listening(s.Addr()) {
+		t.Fatal("a daemon that is serving has to be seen")
+	}
+}

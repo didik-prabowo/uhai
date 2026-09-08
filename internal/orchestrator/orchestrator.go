@@ -494,6 +494,19 @@ func StopDaemon() error {
 	if err != nil {
 		return err
 	}
+	// Nothing there is not a failure: the point of stopping one is that none
+	// is left running, and that is already true. `make install` calls this
+	// after every build and was failing the build on a machine that had
+	// simply never started a daemon.
+	//
+	// A daemon that answers and then refuses is a different thing, and still
+	// an error — which is why this is not `-@uhai -daemon-stop` in the
+	// Makefile, where both would have been swallowed together.
+	if !daemon.Listening(socket) {
+		fmt.Fprintln(os.Stderr, "uhai: no daemon was running")
+		return nil
+	}
+
 	c, ok := daemon.Running(socket)
 	if !ok {
 		// Might be a version it cannot talk to, which is exactly when someone

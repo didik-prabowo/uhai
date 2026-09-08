@@ -309,6 +309,25 @@ func (c *Client) post(ctx context.Context, path string, body, into any) error {
 // Running reports whether a daemon is there to talk to. Front ends ask before
 // choosing between the daemon and their own process, and a failure here is an
 // answer rather than an error: no daemon is the ordinary case.
+// Listening says whether anything is on the other end of the socket, without
+// asking it anything. Running cannot answer this: it asks for health, so a
+// daemon of another version comes back false — which is right for "can I talk
+// to it" and wrong for "is one there", and stopping one is exactly the case
+// where the version does not matter.
+//
+// Dialling rather than looking for the file: a socket left behind by a daemon
+// that died is a file with nobody on it, and the two have to read the same.
+// The transport lives in this package, so the one place that knows a daemon is
+// reached over a unix socket stays the one place that says so.
+func Listening(socket string) bool {
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 func Running(socket string) (*Client, bool) {
 	c := Dial(socket)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
