@@ -8,13 +8,14 @@
 package tools
 
 const (
-	NameRead  = "read_file"
-	NameWrite = "write_file"
-	NameEdit  = "edit_file"
-	NameGlob  = "glob"
-	NameGrep  = "grep"
-	NameBash  = "run_bash"
-	NameFetch = "fetch_url"
+	NameRead       = "read_file"
+	NameWrite      = "write_file"
+	NameEdit       = "edit_file"
+	NameGlob       = "glob"
+	NameGrep       = "grep"
+	NameBash       = "run_bash"
+	NameFetch      = "fetch_url"
+	NameFindSymbol = "find_symbol"
 
 	// NameSpawnTask is here although the tool is not: spawning a task needs an
 	// Agent, so it is built in internal/agent and never appears in Definitions.

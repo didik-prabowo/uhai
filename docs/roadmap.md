@@ -131,6 +131,12 @@ against servers we wrote ourselves.
       count is what makes the context visible; replaying it needs a route, a
       version, and a translation from `provider.Message` back to chat entries.
       *Build it when the count stops being enough to remember what was said.*
+- [x] Ask the language server. `find_symbol` answers where a symbol is defined,
+      who uses it and what implements it — by meaning, where grep answers by
+      text: `grep -rnw Run` over `internal/` returns 51 lines, and the question
+      "which Run" has two answers, which the tool says rather than guesses.
+      Read from crush and zero, and smaller than both because it leaves out the
+      half they need and uhai does not — see below.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 
@@ -140,6 +146,24 @@ what the daemon still lacks against them — is in [references.md](references.md
 **Done when** a working day goes by without dropping back to another tool.
 Everything below waits for what this phase teaches: a roadmap written before
 the first real use is a list of guesses.
+
+### What the language server is not asked for
+
+Verified against gopls rather than assumed: `initialize`, then a query with no
+`didOpen` at all, and it answers from disk. uhai's edits land on disk before
+the model can ask anything, so the document sync an editor needs — zero's is
+305 lines of versions, mutexes and `publishDiagnostics` — buys nothing here.
+
+That sync is the price of **diagnostics**, and diagnostics are what
+`go build ./...` already answers. *Build them when a project uhai is used in
+has no fast build to ask* — a large TypeScript tree is the case that would
+earn it.
+
+**Rename** is crush's other half: it has `lsp_rename` and `lsp_replace_symbol`,
+which make the server an editing mechanism rather than a way of looking. Left
+out because `edit_file` already edits and the model can see what it is
+changing. *Build it when a rename across twenty files is being done by hand
+often enough to be worth not seeing.*
 
 ## Phase 5 — The gaps a day of use will name
 

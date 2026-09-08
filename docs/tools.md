@@ -28,7 +28,7 @@ that only look inside it do not:
 
 | default | tools |
 |---|---|
-| `allow` | [`read_file`](#read_file), [`glob`](#glob), [`grep`](#grep) |
+| `allow` | [`read_file`](#read_file), [`glob`](#glob), [`grep`](#grep), [`find_symbol`](#find_symbol) |
 | `ask` | [`write_file`](#write_file), [`edit_file`](#edit_file), [`run_bash`](#run_bash), [`fetch_url`](#fetch_url) |
 
 A chained command line is judged part by part, so allowing `Bash(git:*)` does
@@ -105,6 +105,35 @@ Searches file contents with a Go regular expression, returning
 
 Binary files are skipped, and so are unreadable ones: a corner you cannot open
 is not a reason to fail the whole search.
+
+### find_symbol
+
+Asks the project's language server where a symbol is defined, who uses it, or
+what implements it.
+
+```json
+{ "name": "UseProviderOn", "what": "references" }
+```
+
+It takes a name, not a line and column. The references this was read from take
+a position, which means the model greps first and then counts characters into
+a line — the step it gets wrong and cannot check. Every position uhai sends to
+a server came from that server.
+
+`what` is `definition` (the default), `references` or `implementations`. A name
+declared in more than one place comes back as the list of places rather than a
+guess; `path` picks one.
+
+What it buys over `grep` is meaning. A method called `Run` collides with every
+other `Run` in the tree and with the word in a comment; the language server
+returns the ones that are the same `Run`.
+
+A project with no language server installed — or written in a language uhai has
+no entry for — gets a note saying so and suggesting `grep`, not an error. The
+turn goes on.
+
+Servers are started on first use and kept warm for the rest of the session,
+because starting one costs an index of the whole project.
 
 ### run_bash
 

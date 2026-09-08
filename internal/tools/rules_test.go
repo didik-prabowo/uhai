@@ -84,13 +84,14 @@ func TestDocumentedDefaultsMatchTheCode(t *testing.T) {
 // invariant the whole permission model rests on.
 func TestOnlyChangingToolsAskFirst(t *testing.T) {
 	asks := map[string]bool{
-		"read_file":  false,
-		"glob":       false,
-		"grep":       false,
-		"write_file": true,
-		"edit_file":  true,
-		"run_bash":   true,
-		"fetch_url":  true,
+		"read_file":   false,
+		"glob":        false,
+		"grep":        false,
+		"find_symbol": false,
+		"write_file":  true,
+		"edit_file":   true,
+		"run_bash":    true,
+		"fetch_url":   true,
 	}
 	for name, want := range asks {
 		if got := NeedsConfirm(name); got != want {
@@ -106,13 +107,14 @@ func TestOnlyChangingToolsAskFirst(t *testing.T) {
 // field the model cannot see is a call it will get wrong every time.
 func TestSchemasAreValidAndRequireWhatIsUsed(t *testing.T) {
 	required := map[string][]string{
-		"read_file":  {"path"},
-		"write_file": {"path", "content"},
-		"edit_file":  {"path", "old", "new"},
-		"glob":       {"pattern"},
-		"fetch_url":  {"url"},
-		"grep":       {"pattern"},
-		"run_bash":   {"command"},
+		"read_file":   {"path"},
+		"write_file":  {"path", "content"},
+		"edit_file":   {"path", "old", "new"},
+		"glob":        {"pattern"},
+		"fetch_url":   {"url"},
+		"grep":        {"pattern"},
+		"find_symbol": {"name"},
+		"run_bash":    {"command"},
 	}
 
 	for _, spec := range Definitions() {

@@ -87,6 +87,7 @@ actually do is not in the text, so there is nothing to judge.
 | `Read` | `read_file` | reading a file | path |
 | `Glob` | `glob` | finding files by name | path |
 | `Grep` | `grep` | searching file contents | path |
+| `find_symbol` | — | asking the language server about a symbol | — |
 | `Write` | `write_file` | creating or overwriting a file | path |
 | `Edit` | `edit_file` | replacing part of a file | path |
 | `Bash` | `run_bash` | running a shell command | command |

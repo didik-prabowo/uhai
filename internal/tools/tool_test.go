@@ -473,3 +473,24 @@ func TestSearchesReportProjectPaths(t *testing.T) {
 		t.Fatalf("grep must report the project path, got %q", out)
 	}
 }
+
+// No language server is the ordinary state of most machines, and it must read
+// as an answer rather than as a failure: the model is told what to use instead
+// and the turn goes on. A tool that errors here would cost a turn to say
+// nothing, on every project that has no server installed.
+func TestFindSymbolWithoutAServerSendsTheModelToGrep(t *testing.T) {
+	dir := t.TempDir() // no go.mod, no package.json: nothing claims a language
+	out, isErr := Execute(context.Background(), dir, NameFindSymbol, json.RawMessage(`{"name":"Whatever"}`))
+	if isErr {
+		t.Fatalf("a missing language server is not an error: %s", out)
+	}
+	if !strings.Contains(out, "grep") {
+		t.Fatalf("the model has to be told what to use instead, got %q", out)
+	}
+}
+
+func TestFindSymbolRefusesAnEmptyName(t *testing.T) {
+	if out, isErr := Execute(context.Background(), t.TempDir(), NameFindSymbol, json.RawMessage(`{"name":"  "}`)); !isErr {
+		t.Fatalf("an empty name is a bad call, not a search: %q", out)
+	}
+}

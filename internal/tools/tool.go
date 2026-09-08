@@ -90,6 +90,7 @@ var all = []Tool{
 	grepTool{},
 	bashTool{},
 	fetchTool{},
+	symbolTool{},
 }
 
 // find is the one lookup. A name nobody defined finds nothing, which is what
