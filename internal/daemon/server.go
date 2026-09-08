@@ -22,6 +22,13 @@ type Event struct {
 	Text string `json:"text,omitempty"`
 	Task string `json:"task,omitempty"`
 
+	// Input is set when Kind is EventTool: the JSON the tool was called with.
+	// Without it an attached terminal drew "⎿ run_bash" and never the command
+	// — the one thing the line exists to say. The arguments and not a
+	// rendered line, because how it reads is the front end's business and the
+	// width it has to fit is not known here.
+	Input string `json:"input,omitempty"`
+
 	// Question is set when Kind is EventQuestion: the daemon needs a human to
 	// decide something before it can go on.
 	Question *Question `json:"question,omitempty"`

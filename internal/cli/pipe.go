@@ -20,7 +20,7 @@ func runPipe(a *agent.Agent, startupErr error) {
 
 	// The answer goes to stdout so it can be piped; everything else to stderr,
 	// so it does not pollute that.
-	a.OnText = func(text string) { fmt.Println(text) }
+	a.OnText = func(text string) { fmt.Println(markThinking(text)) }
 	a.OnToolCall = func(name, input string) {
 		fmt.Fprintf(os.Stderr, "  ⎿ %s(%s)\n", name, truncate(input, 200))
 	}

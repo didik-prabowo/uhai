@@ -14,6 +14,7 @@ build: ## the binary, here
 
 install: ## the binary, onto your PATH
 	$(ENV) $(GO) install ./cmd/uhai
+	@uhai -daemon-stop
 
 run: build ## build it and open it
 	./$(BINARY)

@@ -168,7 +168,16 @@ func highlight(source, lang string) []string {
 	if err := formatters.TTY256.Format(&out, styles.Get("catppuccin-mocha"), iterator); err != nil {
 		return strings.Split(strings.Trim(source, "\n"), "\n")
 	}
-	return strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	painted := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	// Chroma is given a trailing newline — a lexer that has to see the end of
+	// the last line — and hands back one more line than the source has, made
+	// of nothing but the reset it closes with. It counted as a line, the
+	// count disagreed with the source, and the caller threw the whole
+	// highlight away: every block was drawn plain.
+	for len(painted) > 0 && visibleLen(painted[len(painted)-1]) == 0 {
+		painted = painted[:len(painted)-1]
+	}
+	return painted
 }
 
 // keepBand turns the band back on after every reset chroma writes. Without it
@@ -178,6 +187,11 @@ func keepBand(line string, band lipgloss.Style) string {
 	if on == "" {
 		return line
 	}
+	// Chroma ends every token with ESC[0m and lipgloss writes ESC[m: two
+	// spellings of the same reset, and only one of them was being looked for,
+	// so the band died on the first coloured token and the rest of the line
+	// was drawn on bare terminal.
+	line = strings.ReplaceAll(line, "\x1b[0m", off)
 	return on + strings.ReplaceAll(line, off, off+on)
 }
 

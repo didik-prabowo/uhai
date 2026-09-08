@@ -97,9 +97,12 @@ func daemonMsg(e daemon.Event) tea.Msg {
 	case daemon.EventReasoning:
 		return teaThinkMsg(e.Text)
 	case daemon.EventTool:
-		return teaToolMsg(toolLine(e.Text, ""))
+		return teaToolMsg(toolLine(e.Text, e.Input))
 	case daemon.EventNotice:
-		return teaTextMsg(teaDim.Render(e.Text))
+		// A note, not an answer. As an answer it went through glamour, which
+		// is wrong for a dim one-liner — and teaTextMsg clears the stream,
+		// so a task reporting in mid-turn wiped the answer being written.
+		return teaNoteMsg(e.Text)
 	case daemon.EventUsage:
 		if e.Usage == nil {
 			return nil
@@ -146,7 +149,7 @@ func (m *teaModel) answerDaemon(id string, allowed bool) {
 		// Already answered elsewhere, or the turn was abandoned. Said rather
 		// than swallowed: the user pressed a key and deserves to know it
 		// decided nothing.
-		m.program.Send(teaTextMsg(teaDim.Render("that question was already settled: " + err.Error())))
+		m.program.Send(teaNoteMsg("that question was already settled: " + err.Error()))
 	}
 }
 

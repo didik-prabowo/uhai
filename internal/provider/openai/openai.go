@@ -445,7 +445,16 @@ func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.R
 		}
 
 		delta := chunk.Choices[0].Delta
-		if thought := delta.ReasoningContent + delta.Reasoning; thought != "" && onReasoning != nil {
+		// Whichever of the two names arrived, not both: a gateway that fills
+		// in the other name as well was sending the same text twice, and
+		// adding them wrote every chunk on top of itself — "</think>" arrived
+		// as "</</thinkthink>>", which is not a tag any more and was drawn as
+		// it stood.
+		thought := delta.ReasoningContent
+		if thought == "" {
+			thought = delta.Reasoning
+		}
+		if thought != "" && onReasoning != nil {
 			onReasoning(thought)
 		}
 		if delta.Content != "" {

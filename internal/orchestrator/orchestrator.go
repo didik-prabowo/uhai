@@ -371,7 +371,7 @@ func RunDaemon() error {
 		conv.OnReasoning = func(d string) { srv.Publish(root, daemon.Event{Kind: daemon.EventReasoning, Text: d}) }
 		conv.OnNotice = func(t string) { srv.Publish(root, daemon.Event{Kind: daemon.EventNotice, Text: t}) }
 		conv.OnToolCall = func(name, input string) {
-			srv.Publish(root, daemon.Event{Kind: daemon.EventTool, Text: name})
+			srv.Publish(root, daemon.Event{Kind: daemon.EventTool, Text: name, Input: input})
 		}
 		conv.OnUsage = func(u provider.Usage) {
 			// Billed as well as published. It used to only publish, so the

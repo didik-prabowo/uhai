@@ -70,7 +70,7 @@ func (m *teaModel) settled(name, input string) (allow, decided bool) {
 	case config.PermDeny:
 		// Refused by the project, so nobody is asked and the model is told
 		// plainly rather than left to guess at a silent failure.
-		m.program.Send(teaTextMsg(teaDim.Render("refused by this project's settings: " + name)))
+		m.program.Send(teaNoteMsg("refused by this project's settings: " + name))
 		return false, true
 	}
 	return false, false
@@ -140,6 +140,12 @@ func (m *teaModel) confirmPanel() []string {
 // toolLine is one tool call as a line of the chat: what it does, not the JSON
 // it arrived as. A path or a command can be read at a glance; an escaped blob
 // has to be decoded before it says anything.
+//
+// A verb rather than the tool's own name, which is the model's word for it and
+// not a person's: "Reading internal/cli/tea.go" says what is happening to
+// somebody who has never read this project's tool table. The name is still
+// what is shown when there is nothing else to say, since a bare verb says
+// less than the name did.
 func toolLine(name, input string) string {
 	var args struct {
 		Path    string `json:"path"`
@@ -149,6 +155,9 @@ func toolLine(name, input string) string {
 		URL     string `json:"url"`
 	}
 	if json.Unmarshal([]byte(input), &args) != nil {
+		if strings.TrimSpace(input) == "" {
+			return name // nothing to say about it, so nothing is said
+		}
 		return name + " " + truncate(input, 120)
 	}
 
@@ -160,7 +169,12 @@ func toolLine(name, input string) string {
 		subject = args.Path
 	case tools.NameFetch:
 		subject = args.URL
-	case tools.NameGlob, tools.NameGrep:
+	case tools.NameGlob:
+		subject = args.Pattern
+		if args.Path != "" {
+			subject += " under " + args.Path
+		}
+	case tools.NameGrep:
 		subject = args.Pattern
 		if args.Include != "" {
 			subject += " in " + args.Include
@@ -169,13 +183,29 @@ func toolLine(name, input string) string {
 			subject += " under " + args.Path
 		}
 	default:
+		if strings.TrimSpace(input) == "" {
+			return name
+		}
 		return name + " " + truncate(input, 120)
 	}
 
 	if subject == "" {
 		return name
 	}
-	return name + " " + truncate(subject, 120)
+	return toolVerb[name] + " " + truncate(subject, 120)
+}
+
+// What each tool is doing, in the tense of the moment the line is drawn: the
+// call has been made and is running. Only the tools above are here — anything
+// else falls through to its own name and its arguments.
+var toolVerb = map[string]string{
+	tools.NameBash:  "Running",
+	tools.NameRead:  "Reading",
+	tools.NameWrite: "Writing",
+	tools.NameEdit:  "Editing",
+	tools.NameGlob:  "Finding",
+	tools.NameGrep:  "Searching",
+	tools.NameFetch: "Fetching",
 }
 
 // confirmTitle names the kind of thing being approved, since the first line of

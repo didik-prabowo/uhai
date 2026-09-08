@@ -23,6 +23,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/provider/anthropic"
 	"github.com/didik-prabowo/uhai/internal/session"
 	"github.com/didik-prabowo/uhai/internal/task"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // waitTries is how long a test waits for a goroutine to get somewhere, at 5ms
@@ -132,8 +133,10 @@ func TestAnswerStreamsThenSettles(t *testing.T) {
 	// Once complete the answer leaves the live block and is printed into the
 	// terminal's scrollback instead — here, with no program running, that is
 	// the pending history.
+	// Two lines: the answer, and the blank one that keeps it clear of
+	// whatever was said above it.
 	m.Update(teaTextMsg("halo dunia"))
-	if m.stream != "" || len(m.lines) != printed+1 {
+	if m.stream != "" || len(m.lines) != printed+2 {
 		t.Fatalf("finished answer: stream = %q, history = %q", m.stream, m.lines)
 	}
 	// The live block itself, not the whole View: View draws the pending
@@ -703,6 +706,29 @@ func TestFinishedTaskTravelsWithTheNextPrompt(t *testing.T) {
 
 // stubProvider answers nothing, which is all this test needs: what matters is
 // the prompt that reaches it.
+// A gateway that wraps every turn in an empty <think></think> — 9router's
+// cc/* route does — was sending a block that is text to the agent and nothing
+// to the eye. It rendered to no rows, and the blank line an answer is given
+// was all that survived: one gap per turn, splitting tool calls that belonged
+// together.
+func TestAnAnswerThatRendersToNothingAddsNoLines(t *testing.T) {
+	m := newTeaModel(agent.New(stubProvider{}), nil)
+	m.width = 80
+	m.add(chatEntry{kind: entryAnswer, text: "sebelumnya"})
+	before := len(m.lines)
+
+	m.Update(teaTextMsg("<think></think>"))
+	if len(m.lines) != before {
+		t.Fatalf("an empty thinking block is not a line of the chat: %d -> %d", before, len(m.lines))
+	}
+
+	// One with something in it still is, working out and all.
+	m.Update(teaTextMsg("<think>hm</think>jawaban"))
+	if len(m.lines) == before {
+		t.Fatal("an answer with words in it has to be drawn")
+	}
+}
+
 // Attached, the turn runs against the daemon's agent, and so must the model.
 // /model used to swap this process's provider — the one nothing asks — and the
 // status row read that same provider, so the row named a model no turn had run
@@ -990,15 +1016,73 @@ func TestConfirmPanelLeavesTheChatVisible(t *testing.T) {
 	}
 }
 
-// A tool call is a line of the conversation, so it has to read like one.
+// Claude writes a sentence as text beside a tool call and GLM puts the same
+// sentence in its reasoning, which goes when the answer starts — so the tool
+// block had nothing above it saying why, on exactly the models that explain
+// themselves the least.
+func TestTheReasoningLeavesASentenceAboveTheToolCalls(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.Update(teaThinkMsg("Perlu lihat repository-nya.\nCari pola sq.Update dulu."))
+	m.Update(teaToolMsg(toolLine(tools.NameGrep, `{"pattern":"sq.Update"}`)))
+
+	rows := make([]string, 0, 2)
+	for _, line := range m.lines[len(m.lines)-2:] {
+		rows = append(rows, strings.TrimSpace(plain(line.text)))
+	}
+	want := []string{"Cari pola sq.Update dulu.", "⎿ Searching sq.Update"}
+	if !slices.Equal(rows, want) {
+		t.Fatalf("the last thought stands above the call, got %q want %q", rows, want)
+	}
+	// Once said it is not said again: the second call in the same batch has
+	// the same working out behind it.
+	m.Update(teaToolMsg(toolLine(tools.NameGrep, `{"pattern":"SetMap"}`)))
+	if got := strings.TrimSpace(plain(m.lines[len(m.lines)-2].text)); got != "⎿ Searching sq.Update" {
+		t.Fatalf("the sentence must not repeat, got %q above the second call", got)
+	}
+}
+
+// A turn that ran tools ends with the answer, and it used to be appended
+// straight after the last ⎿ line — so the reply looked like one more of them.
+func TestTheAnswerStandsClearOfTheToolCalls(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.Update(teaToolMsg(toolLine(tools.NameGrep, `{"pattern":"SELECT"}`)))
+	m.Update(teaTextMsg("Scan singkat."))
+
+	last := m.lines[len(m.lines)-1]
+	gap := m.lines[len(m.lines)-2]
+	if last.kind != entryAnswer || strings.TrimSpace(gap.text) != "" {
+		t.Fatalf("the answer needs a blank line above it, got %+v then %+v", gap, last)
+	}
+	// And only one: a question already leaves a line below it, and two blanks
+	// read as the turn losing its place.
+	m2 := newTeaModel(agent.New(nil), nil)
+	m2.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	was := len(m2.lines)
+	m2.addHistory("")
+	m2.Update(teaTextMsg("Halo."))
+	if len(m2.lines) != was+2 {
+		t.Fatalf("a blank line already there is enough, got %d new lines", len(m2.lines)-was)
+	}
+}
+
+// A tool call is a line of the conversation, so it has to read like one: a
+// verb and what it is happening to, not the model's name for the tool. A case
+// added to toolLine without a verb would draw a line starting with a space.
 func TestToolCallsReadAsWhatTheyDo(t *testing.T) {
 	for _, c := range []struct{ name, input, want string }{
-		{"run_bash", `{"command":"go run hello-world/main.go"}`, "run_bash go run hello-world/main.go"},
-		{"edit_file", `{"path":"hello-world/main.go","old":"a","new":"b"}`, "edit_file hello-world/main.go"},
-		{"read_file", `{"path":"internal/cli/tea.go"}`, "read_file internal/cli/tea.go"},
-		{"grep", `{"pattern":"func Test","include":"*.go","path":"internal"}`, "grep func Test in *.go under internal"},
-		{"glob", `{"pattern":"**/*_test.go"}`, "glob **/*_test.go"},
-		{"read_file", `not json at all`, "read_file not json at all"},
+		{tools.NameBash, `{"command":"go run hello-world/main.go"}`, "Running go run hello-world/main.go"},
+		{tools.NameEdit, `{"path":"hello-world/main.go","old":"a","new":"b"}`, "Editing hello-world/main.go"},
+		{tools.NameWrite, `{"path":"a.go","content":"x"}`, "Writing a.go"},
+		{tools.NameRead, `{"path":"internal/cli/tea.go"}`, "Reading internal/cli/tea.go"},
+		{tools.NameFetch, `{"url":"https://example.com"}`, "Fetching https://example.com"},
+		{tools.NameGrep, `{"pattern":"func Test","include":"*.go","path":"internal"}`, "Searching func Test in *.go under internal"},
+		{tools.NameGlob, `{"pattern":"**/*_test.go"}`, "Finding **/*_test.go"},
+		// Nothing to read the arguments out of, so the name is all there is.
+		{tools.NameRead, `not json at all`, "read_file not json at all"},
 	} {
 		if got := toolLine(c.name, c.input); got != c.want {
 			t.Errorf("%s → %q, want %q", c.name, got, c.want)
@@ -1396,10 +1480,10 @@ func TestSessionIDIsOnlyOfferedWhenThereIsOne(t *testing.T) {
 }
 
 // A thinking model can be quiet for twenty seconds before it writes anything.
-// The working out is shown while it is all there is, then collapses to a line:
-// keeping it would bury the answer, dropping it would leave the wait
-// unexplained.
-func TestThinkingIsShownThenCollapsed(t *testing.T) {
+// The working out is shown while it is all there is and goes when the answer
+// starts: keeping it would bury the answer, and a note in its place is a
+// leftover of the wait rather than part of the reply.
+func TestThinkingIsShownThenGone(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
@@ -1413,14 +1497,10 @@ func TestThinkingIsShownThenCollapsed(t *testing.T) {
 	if got := strings.Join(m.streamRows(), "\n"); strings.Contains(got, "probably") {
 		t.Fatalf("the answer starting must end the thinking: %q", got)
 	}
-	var note string
 	for _, line := range m.lines {
-		if strings.Contains(line.text, "thought for") {
-			note = line.text
+		if strings.Contains(line.text, "thought") {
+			t.Fatalf("the wait must leave nothing behind: %q", line.text)
 		}
-	}
-	if note == "" {
-		t.Fatal("the wait must be accounted for, even after the thinking goes")
 	}
 }
 
@@ -1777,6 +1857,35 @@ func TestCodeBlockIsABoxLinedUpWithTheProse(t *testing.T) {
 	}
 }
 
+// The colours were being computed and then thrown away: chroma is given a
+// trailing newline and hands back a line more than the source has, the count
+// disagreed, and every block fell back to plain text on a band.
+func TestCodeBlockIsColoured(t *testing.T) {
+	src := "SELECT id\nFROM users;"
+	if got, want := len(highlight(src, "sql")), len(strings.Split(src, "\n")); got != want {
+		t.Fatalf("highlight returned %d lines for %d of source", got, want)
+	}
+
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 24})
+	out := m.rendererText("```sql\n" + src + "\n```\n")
+
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "\x1b[48;") {
+			continue // not a row of the box
+		}
+		// A foreground of chroma's own, and the band still on after it: the
+		// two resets are spelled differently and only one was looked for, so
+		// the background used to die on the first coloured token.
+		if !strings.Contains(line, "\x1b[38;5;") {
+			t.Errorf("a row of code carries no colour:\n%q", line)
+		}
+		if strings.HasSuffix(plain(line), " ") == false {
+			t.Errorf("the band must reach the end of the row:\n%q", line)
+		}
+	}
+}
+
 // A line too long for the screen is cut, not wrapped: a wrapped line takes the
 // shape of the box with it.
 func TestCodeBlockCutsALineTooWideForTheScreen(t *testing.T) {
@@ -2105,6 +2214,21 @@ func TestDaemonEventsBecomeTheSameMessages(t *testing.T) {
 	}
 	if got := daemonMsg(daemon.Event{Kind: daemon.EventReasoning, Text: "hm"}); got != tea.Msg(teaThinkMsg("hm")) {
 		t.Errorf("reasoning is not the answer and must stay apart, got %#v", got)
+	}
+
+	// The tool line's whole job is saying which command ran. The event used to
+	// carry only the name, so an attached terminal drew "⎿ run_bash" and left
+	// out the part worth reading.
+	tool := daemonMsg(daemon.Event{Kind: daemon.EventTool, Text: "run_bash", Input: `{"command":"gh pr diff 1"}`})
+	if tool != tea.Msg(teaToolMsg("Running gh pr diff 1")) {
+		t.Errorf("a tool call must arrive with what it was called with, got %#v", tool)
+	}
+
+	// A notice is a note, not an answer. As an answer it went through glamour
+	// and cleared the stream with it, so a task reporting in mid-turn wiped
+	// the answer being written.
+	if got := daemonMsg(daemon.Event{Kind: daemon.EventNotice, Text: "t1 selesai"}); got != tea.Msg(teaNoteMsg("t1 selesai")) {
+		t.Errorf("a notice must arrive as a note, got %#v", got)
 	}
 
 	usage := daemonMsg(daemon.Event{Kind: daemon.EventUsage, Usage: &daemon.Usage{Input: 12, Output: 3, CacheRead: 900}})
@@ -2536,5 +2660,66 @@ func TestSettledHonoursAlwaysAndProjectRules(t *testing.T) {
 	m.allowed.add("run_bash")
 	if allow, decided := m.settled("run_bash", `{"command":"ls"}`); !allow || !decided {
 		t.Fatal(`"always" must settle the next one without asking`)
+	}
+}
+
+// A tool call with nothing to show is a name, not a name and a space. The
+// daemon sent no arguments at all, and the trailing space it left was the
+// visible half of that.
+func TestAToolLineWithNothingToShowIsJustTheName(t *testing.T) {
+	for _, input := range []string{"", "   ", "{}"} {
+		if got := toolLine("run_bash", input); got != "run_bash" {
+			t.Errorf("toolLine(run_bash, %q) = %q, want %q", input, got, "run_bash")
+		}
+	}
+}
+
+// A model whose provider has no reasoning field writes the working out into
+// the answer and fences it with <think>. A gateway that does not map that to
+// reasoning_content passes the tags through, and they were drawn literally.
+func TestAFinishedThinkBlockDisappears(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	out := plain(m.rendererText("<think>\nBaca diff dulu.\n</think>\n\nDua endpoint baru."))
+	if strings.Contains(out, "<think>") || strings.Contains(out, "</think>") {
+		t.Fatalf("the tags must not be drawn as themselves: %q", out)
+	}
+	// Closed means the answer is here, so the wait leaves nothing behind — no
+	// working out, and no marker where it was.
+	if strings.Contains(out, "Baca diff dulu.") || strings.Contains(out, "✻") {
+		t.Fatalf("a closed block leaves nothing behind:\n%s", out)
+	}
+	if strings.TrimSpace(plain(out)) != "Dua endpoint baru." {
+		t.Fatalf("only the answer is left, on its own: %q", out)
+	}
+}
+
+// The markers are padded for glamour, and the live block does not run
+// glamour: the padding was drawn as two empty rows each side.
+func TestTheLiveBlockDoesNotDrawTheMarkerPadding(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.stream = "<think>\nBaca diff dulu.\n</think>\n\nDua endpoint baru."
+
+	var rows []string
+	for _, row := range m.streamRows() {
+		rows = append(rows, strings.TrimSpace(plain(row)))
+	}
+	want := []string{"Dua endpoint baru."}
+	if !slices.Equal(rows, want) {
+		t.Fatalf("streamRows() = %q, want %q", rows, want)
+	}
+}
+
+// While it is still arriving there is no answer to bury, so the working out
+// stays and says what it is.
+func TestAnUnclosedThinkBlockKeepsItsWorkingOut(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	out := plain(m.rendererText("<think>\nBaca diff du"))
+	if !strings.Contains(out, "✻ thinking") || !strings.Contains(out, "Baca diff du") {
+		t.Fatalf("an open block keeps its marker and its text:\n%s", out)
 	}
 }

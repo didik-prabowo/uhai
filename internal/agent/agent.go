@@ -267,7 +267,11 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 		}
 
 		for _, block := range resp.Content {
-			if block.Type == provider.BlockText && block.Text != "" {
+			// Trimmed, not just non-empty. A model that puts a newline
+			// between two tool calls was handing the front end a paragraph
+			// made of nothing, and it drew it: a blank line between every
+			// ⎿ line, which reads as the turn losing its place.
+			if block.Type == provider.BlockText && strings.TrimSpace(block.Text) != "" {
 				a.OnText(block.Text)
 			}
 		}

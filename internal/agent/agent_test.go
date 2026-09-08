@@ -593,3 +593,46 @@ func (s *scriptedProvider) Name() string { return "fake/scripted" }
 func (s *scriptedProvider) Send(_ context.Context, req provider.Request) (*provider.Response, error) {
 	return s.send(req)
 }
+
+// blankThenText answers with a newline beside a tool call, the way a model
+// that has nothing to say between two calls does, and then with an answer.
+type blankThenText struct{ calls int }
+
+func (b *blankThenText) Name() string { return "fake" }
+
+func (b *blankThenText) Send(_ context.Context, _ provider.Request) (*provider.Response, error) {
+	b.calls++
+	if b.calls == 1 {
+		return &provider.Response{
+			StopReason: provider.StopToolUse,
+			Content: []provider.ContentBlock{
+				{Type: provider.BlockText, Text: "\n"},
+				{Type: provider.BlockToolUse, ToolUseID: "t1", ToolName: "glob", ToolInput: json.RawMessage(`{"pattern":"*.go"}`)},
+			},
+		}, nil
+	}
+	return &provider.Response{
+		StopReason: provider.StopEndTurn,
+		Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "sudah"}},
+	}, nil
+}
+
+// A block made of whitespace is not a paragraph. It was drawn as one, which
+// put a blank line between every tool call of a long turn.
+func TestABlankTextBlockIsNotDrawn(t *testing.T) {
+	a := New(&blankThenText{})
+	var said []string
+	a.OnText = func(text string) { said = append(said, text) }
+
+	if err := a.Ask(context.Background(), "cari"); err != nil {
+		t.Fatal(err)
+	}
+	if len(said) != 1 || said[0] != "sudah" {
+		t.Fatalf("only the answer is worth drawing, got %q", said)
+	}
+	// And it is still in the history: what the model said is not the front
+	// end's to edit, only to draw or not.
+	if first := a.History[1].Content[0]; first.Text != "\n" {
+		t.Fatalf("the block must survive in the history, got %+v", first)
+	}
+}

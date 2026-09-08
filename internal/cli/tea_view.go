@@ -102,7 +102,7 @@ func (m *teaModel) streamRows() []string {
 	// columns at that moment reads as the text moving.
 	width := m.cols() - len(chatGutter)
 	if m.thinking != "" {
-		for _, line := range strings.Split(m.thinking, "\n") {
+		for _, line := range strings.Split(squeezeBlank(markThinking(m.thinking)), "\n") {
 			for _, row := range wrapHanging(line, width) {
 				rows = append(rows, teaDim.Render(chatGutter+row))
 			}
@@ -111,7 +111,7 @@ func (m *teaModel) streamRows() []string {
 	if m.stream == "" {
 		return rows
 	}
-	for _, line := range strings.Split(m.stream, "\n") {
+	for _, line := range strings.Split(squeezeBlank(markThinking(m.stream)), "\n") {
 		for _, row := range wrapHanging(line, width) {
 			rows = append(rows, chatGutter+row)
 		}
@@ -119,25 +119,12 @@ func (m *teaModel) streamRows() []string {
 	return rows
 }
 
-// collapseThinking replaces the working out with a note that it happened.
-// Keeping all of it would bury the answer — a thinking model writes more of it
-// than of the reply — and dropping it silently would leave the twenty seconds
-// unexplained.
-func (m *teaModel) collapseThinking() {
-	if m.thinking == "" {
-		return
-	}
-	took := time.Since(m.thinkStart).Round(time.Second)
-	m.thinking = ""
-	m.addHistory(teaDim.Render(fmt.Sprintf("✻ thought for %s", took)))
-}
-
 // rendererText renders an answer: the prose through glamour, and each fenced
 // code block drawn here, because a block is a shape and glamour draws it as
 // flowing text.
 func (m *teaModel) rendererText(text string) string {
 	var out []string
-	for _, part := range splitFences(text) {
+	for _, part := range splitFences(markThinking(text)) {
 		if part.code {
 			// A blank line each side. Without them a block sits against the
 			// sentence that introduced it, and two blocks with one line of

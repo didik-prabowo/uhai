@@ -42,12 +42,10 @@ type teaModel struct {
 	credField string // which credential the entry box is collecting
 	custom    customForm
 
-	// thinking is a model's working out while it arrives, and thinkStart is
-	// when it began. It is shown live and then collapsed to one line: it is
-	// how the answer was reached, not the answer, and on some models there is
-	// more of it than there is answer.
+	// thinking is a model's working out while it arrives. It is shown live and
+	// then goes: it is how the answer was reached, not the answer, and on some
+	// models there is more of it than there is answer.
 	thinking    string
-	thinkStart  time.Time
 	provider    string
 	commandSel  int
 	inputHeight int
@@ -266,6 +264,12 @@ func (m *teaModel) addHistory(text string) {
 }
 
 func (m *teaModel) add(e chatEntry) {
+	// An answer never runs straight into the line above it. After a run of
+	// tool calls it did, and the reply read as one more ⎿ line rather than as
+	// the thing they were all for.
+	if e.kind == entryAnswer && len(m.lines) > 0 && strings.TrimSpace(m.lines[len(m.lines)-1].text) != "" {
+		m.lines = append(m.lines, chatEntry{kind: entryPlain})
+	}
 	m.lines = append(m.lines, e)
 	m.refresh()
 }
@@ -412,26 +416,42 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case teaThinkMsg:
-		if m.thinking == "" {
-			m.thinkStart = time.Now()
-		}
 		m.thinking += string(msg)
 		m.refresh()
 	case teaDeltaMsg:
 		// The answer starting is what ends the thinking: what it was working
-		// towards is here, and the working out collapses to a line.
-		m.collapseThinking()
+		// towards is here, and the working out goes with the wait.
+		m.thinking = ""
 		m.streamed += len(msg)
 		m.stream += string(msg)
 		m.refresh()
 	case teaTextMsg:
 		// The complete text arrives once the call is done: the streamed copy
 		// makes way for the rendered one.
-		m.collapseThinking()
+		m.thinking = ""
 		m.stream = ""
+		// Unless there is nothing in it once the working out is taken out. A
+		// gateway that wraps every turn in an empty <think></think> was
+		// sending a block that is text to the agent and nothing to the eye:
+		// it rendered to no rows at all, and the blank line an answer is
+		// given was the only thing left of it — one gap per turn, between
+		// tool calls that belonged together.
+		if strings.TrimSpace(markThinking(string(msg))) == "" {
+			return m, nil
+		}
 		m.add(chatEntry{kind: entryAnswer, text: string(msg)})
 	case teaToolMsg:
 		m.toolCalls++
+		// A model that narrates in its reasoning rather than in text leaves
+		// the tool block with nothing above it saying why: Claude writes a
+		// sentence as text beside the call, GLM puts the same sentence in
+		// reasoning_content, which is shown live and then goes. The last line
+		// of the working out is that sentence — what it decided just before
+		// calling — so it stays where the reasoning was.
+		if line := lastLine(m.thinking); line != "" {
+			m.addHistory(teaDim.Render(truncate(line, max(20, m.cols()-3))))
+			m.thinking = ""
+		}
 		// Cut to the width rather than to some number of characters: a tool
 		// call is a note of what happened, and a note that wraps twice reads
 		// as the thing itself.
@@ -490,7 +510,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addHistory(text)
 		}
 		m.status = ""
-		m.collapseThinking() // a turn that died mid-thought still says it thought
+		m.thinking = ""
 		m.afterTurn()
 		// However a turn ended, the line saying so is about the turn rather
 		// than part of what was said, so it stands clear of it.

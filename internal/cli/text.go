@@ -5,6 +5,7 @@ package cli
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -18,6 +19,69 @@ const (
 	green    = "\x1b[38;2;134;239;172m" // a key is in place
 	reset    = "\x1b[0m"
 )
+
+// markThinking deals with the tags a model uses to fence its working out when
+// the provider has no field for it. GLM and the DeepSeek family write
+// <think>…</think> straight into the answer, and a gateway that does not map
+// it to reasoning_content passes the tags through — so an answer opened with a
+// literal "<think>" and ran into its own reasoning with nothing between them.
+//
+// A block that has closed is dropped whole. Once the answer is there the
+// working out is worth nothing, and anything left in its place — the two
+// markers, or the one line they were collapsed to — is a leftover of the wait
+// rather than part of the reply. The spinner already goes when the wait is
+// over; this is the same thing said in the chat.
+//
+// An unclosed block is the one still streaming, so it keeps its marker and its
+// text: while it is all there is, it is worth watching. Plain text and no
+// markdown, because this goes through glamour next and a rule of dashes would
+// turn the line above it into a heading.
+//
+// A streamed chunk can split a tag down the middle. Nothing is done about it:
+// the stream is redrawn from the whole answer so far, so at worst one frame
+// shows half a tag and the next one does not.
+func markThinking(text string) string {
+	return thinkTags.Replace(thinkBlock.ReplaceAllString(text, ""))
+}
+
+// Non-greedy, so two blocks in one answer stay two. The trailing space goes
+// with it, or the answer starts on the blank lines the block was padded with.
+var thinkBlock = regexp.MustCompile(`(?s)<think(?:ing)?>.*?</think(?:ing)?>\s*`)
+
+// What is left after the blocks are gone is an unpaired tag: an opening one is
+// the working out still arriving, a closing one is a block whose start never
+// came. Blank lines each side, so each marker is a paragraph of its own —
+// without them glamour reflows the whole thing into one and the markers land
+// mid-sentence, which is worse than the tags were: at least a tag looked like
+// a tag.
+var thinkTags = strings.NewReplacer(
+	"<think>", "\n\n✻ thinking\n\n",
+	"</think>", "\n\n✻ answer\n\n",
+	"<thinking>", "\n\n✻ thinking\n\n",
+	"</thinking>", "\n\n✻ answer\n\n",
+)
+
+// squeezeBlank trims the padding the markers bring to one blank line, for the
+// live block: the markers are padded for glamour, which reflows and collapses
+// it, and the stream is drawn raw — so a marker arrived with two empty rows
+// above and below it and the answer looked like it belonged to another turn.
+func squeezeBlank(s string) string {
+	return strings.Trim(blankRuns.ReplaceAllString(s, "\n\n"), "\n")
+}
+
+var blankRuns = regexp.MustCompile(`\n{3,}`)
+
+// lastLine is the last thing said in a block of text, tags and blank lines
+// aside. Empty when there is nothing in it worth a line of the chat.
+func lastLine(text string) string {
+	lines := strings.Split(squeezeBlank(markThinking(text)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" && line != "✻ thinking" && line != "✻ answer" {
+			return line
+		}
+	}
+	return ""
+}
 
 // visibleLen counts a line's printed width: colour escapes occupy no columns
 // and must not be counted.

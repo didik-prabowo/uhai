@@ -255,6 +255,27 @@ data: [DONE]
 	}
 }
 
+// A gateway that fills in both names sends the same text twice. Added
+// together it wrote every chunk on top of itself, so "</think>" reached the
+// screen as "</</thinkthink>>".
+func TestBothSpellingsInOneChunkAreOneThought(t *testing.T) {
+	sse := `data: {"choices":[{"delta":{"reasoning_content":"</","reasoning":"</"}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":"think","reasoning":"think"}}]}
+
+data: {"choices":[{"delta":{"content":"sudah"}}]}
+
+data: [DONE]
+`
+	var thinking string
+	if _, err := parseStream(strings.NewReader(sse), nil, func(d string) { thinking += d }); err != nil {
+		t.Fatal(err)
+	}
+	if thinking != "</think" {
+		t.Errorf("the same text under two names is one thought, got %q", thinking)
+	}
+}
+
 // Every OpenAI-style vendor caches without being asked and reports it, and
 // uhai read none of it: two identical requests to Z.ai came back with 3 cached
 // tokens and then 1395 of 1397, all of it priced as fresh input.
