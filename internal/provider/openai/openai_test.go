@@ -463,3 +463,68 @@ func TestModelsWithoutDatesSortByID(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+// Behind a gateway the model asked for and the model that answers are two
+// different things: 9router's "plan-deep" is an alias over five of them, and
+// every chunk names the one that took the turn. Reading it is the only way
+// anything downstream — the context window, the effort, the row on screen —
+// works from the model rather than from the alias.
+func TestTheModelThatAnsweredIsRead(t *testing.T) {
+	sse := `data: {"model":"claude-opus-5","choices":[{"delta":{"role":"assistant"}}]}
+
+data: {"model":"claude-opus-5","choices":[{"delta":{"content":"ok"}}]}
+
+data: [DONE]
+`
+	resp, err := parseStream(strings.NewReader(sse), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Model != "claude-opus-5" {
+		t.Fatalf("the answering model has to survive the parse, got %q", resp.Model)
+	}
+}
+
+// A vendor that names nobody leaves it empty, and empty means "nobody said"
+// rather than "the one that was configured" — the caller decides what to do
+// with not knowing, and it must not be handed a guess.
+func TestNoModelNamedLeavesItEmpty(t *testing.T) {
+	resp, err := parseStream(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n"), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Model != "" {
+		t.Fatalf("nothing named a model, so nothing may be claimed: %q", resp.Model)
+	}
+}
+
+// Effort travels as reasoning_effort here, and only when the caller asks. The
+// first turn behind an alias cannot know which model it is talking to, so it
+// asks for nothing rather than sending a field the model may refuse.
+func TestReasoningEffortTravelsOnlyWhenAsked(t *testing.T) {
+	for _, effort := range []string{"", "xhigh"} {
+		var got wireRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &got)
+			fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n")
+		}))
+
+		c, err := New(Options{Label: "9router", BaseURL: server.URL, APIKey: "k", Model: "plan-deep"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Send(context.Background(), provider.Request{
+			Messages: []provider.Message{{Role: provider.RoleUser,
+				Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}}}},
+			Effort: effort,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		server.Close()
+
+		if got.ReasoningEffort != effort {
+			t.Fatalf("reasoning_effort sent = %q, want %q", got.ReasoningEffort, effort)
+		}
+	}
+}

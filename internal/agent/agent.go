@@ -128,6 +128,27 @@ type Agent struct {
 	// the history.
 	OnNotice func(text string)
 
+	// OnModel fires when a provider names the model that answered and it is
+	// not the one that answered last. Behind a gateway the configured name is
+	// an alias — 9router's "plan-deep" is five models — so the window, the
+	// effort and anything else that follows a model rather than a provider
+	// cannot be settled until the answer arrives, and can change again on the
+	// next turn.
+	//
+	// A callback rather than a lookup here: what a model's name implies lives
+	// in config, and this package has never known where its settings came
+	// from. Whoever built the agent applies it.
+	OnModel func(name string)
+
+	// Thinking asks the model to think before answering, and Effort how hard.
+	// Set from the model, so they move when OnModel says the model moved.
+	Thinking bool
+	Effort   string
+
+	// answeredBy is the last model a provider named, so OnModel fires on a
+	// change rather than on every turn.
+	answeredBy string
+
 	// LastUsage is what the last provider call cost, when the provider says.
 	LastUsage provider.Usage
 
@@ -184,6 +205,10 @@ func New(p provider.Provider) *Agent {
 	}
 }
 
+// AnsweredBy is the model a provider last named, "" when none has. Behind a
+// gateway this is the only true answer to "what am I talking to".
+func (a *Agent) AnsweredBy() string { return a.answeredBy }
+
 func (a *Agent) systemPrompt() string {
 	if a.Provider == nil {
 		return a.System
@@ -236,6 +261,8 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 			// and a turn that dies mid-thought should not leave a thought in
 			// the history pretending to be one.
 			Reasoning: a.OnReasoning,
+			Thinking:  a.Thinking,
+			Effort:    a.Effort,
 		})
 		if err != nil {
 			// Compacting at 85% is a guess about how many tokens the history
@@ -264,6 +291,16 @@ func (a *Agent) Ask(ctx context.Context, userPrompt string) error {
 		a.LastUsage = resp.Usage
 		if a.OnUsage != nil {
 			a.OnUsage(resp.Usage)
+		}
+		// Before the next iteration, so a window learned from this answer is
+		// the one the next request is measured against. It fires on a change
+		// only: a gateway repeats the name in every chunk of every turn, and
+		// most of them say the same thing as the last.
+		if resp.Model != "" && resp.Model != a.answeredBy {
+			a.answeredBy = resp.Model
+			if a.OnModel != nil {
+				a.OnModel(resp.Model)
+			}
 		}
 
 		for _, block := range resp.Content {

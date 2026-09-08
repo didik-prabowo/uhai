@@ -335,13 +335,15 @@ func TestThinkingAndEffortAreSentOnlyWhenAsked(t *testing.T) {
 			defer server.Close()
 
 			c, err := New(Options{Label: "anthropic", BaseURL: server.URL, APIKey: "k",
-				Model: "claude-opus-5", Thinking: tc.thinking, Effort: tc.effort})
+				Model: "claude-opus-5"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := c.Send(context.Background(), provider.Request{
 				Messages: []provider.Message{{Role: provider.RoleUser,
 					Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "halo"}}}},
+				Thinking: tc.thinking,
+				Effort:   tc.effort,
 			}); err != nil {
 				t.Fatal(err)
 			}

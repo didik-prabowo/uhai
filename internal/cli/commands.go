@@ -219,8 +219,31 @@ func matches(input string) []command {
 // wrong moment, silently.
 func UseProviderOn(a *agent.Agent, p provider.Provider) {
 	a.Provider = p
-	a.MaxContextTokens = config.ContextWindow(p.Name())
 	a.UseTools = config.SupportsTools(p.Name())
+	useModel(a, p.Name())
+
+	// And again whenever the answer names a different model than the last one
+	// did. A gateway alias is not a model: "9router/plan-deep" is five of
+	// them, and until this the window came from a name nothing was measured
+	// against — the fallback 32k, against a model with a million, so a
+	// planning conversation was summarised away every 27k tokens while it
+	// still had room for thirty times that.
+	a.OnModel = func(name string) {
+		useModel(a, name)
+		a.OnNotice(fmt.Sprintf("answered by %s — %s", name, config.ModelSummary(name)))
+	}
+}
+
+// useModel applies what follows the model rather than the provider. Called
+// with the configured name at first and with the answering one after that.
+//
+// UseTools is deliberately not in here. Whether the conversation has tools is
+// something its history already commits to — there are tool_use blocks in it —
+// and switching that off midway would strand them.
+func useModel(a *agent.Agent, name string) {
+	a.MaxContextTokens = config.ContextWindow(name)
+	a.Thinking = config.Thinks(name)
+	a.Effort = config.Effort(name)
 }
 
 // providerLabel shows the provider in use, or why there is none yet.

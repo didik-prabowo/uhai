@@ -136,10 +136,49 @@ key: `"effort": "low"` in `settings.json` overrides the table. The default is
 and the status row prices every turn, so the cost of the choice is visible
 where the choice is made.
 
-The gateways get none of this. They speak the OpenAI format, where the field is
-`reasoning_effort` and every gateway maps it differently — and uhai already
-reads `reasoning_content` back from the ones that send it. *Build the request
-half when a gateway is the thing being used for planning.*
+The OpenAI format spells effort `reasoning_effort`, and it goes out the same
+way — from the request, gated on the same table.
+
+## An alias is not a model
+
+A gateway model name may be a *route*. 9router's `plan-deep` is five models
+behind one word, picked per turn; `code-daily`, `scan-cheap`, `refactor-heavy`
+and `review` are the others. Nothing in the name says which, and the model
+table cannot help: `plan-deep` matches no family, so it fell all the way to the
+32k default — while the model actually answering was Opus 5 with a million.
+A planning conversation was being summarised away every 27k tokens with thirty
+times that much room going spare, and nothing on screen said so, because from
+uhai's side nothing was wrong.
+
+The answer is in the response, and had been all along. Every chunk of an
+OpenAI-format stream carries `model`, and behind an alias it names the model
+that took the turn:
+
+    data: {"id":"chatcmpl-...","model":"claude-opus-5","choices":[...]}
+
+So `Response.Model` is read, `Agent.OnModel` fires when it differs from the
+last one, and `useModel` in cli applies what follows a model rather than a
+provider: the window, whether it thinks, how hard. Empty means *nobody said* —
+not "the configured one" — because a guess here is what the whole problem was.
+
+Three things fall out of that shape and are worth keeping:
+
+- **Sizing from a reported name is not pricing from it.** The rule that a
+  gateway must never become `Known` is about money: uhai cannot know what your
+  gateway charges. A context window is a fact about the model, and the table
+  already answers it for `9router/cc/claude-opus-5` — 1M context, no price.
+  Reading the name changes the first and must never touch the second.
+- **`UseTools` stays with the provider.** The history commits to it — there are
+  `tool_use` blocks in it — and switching it off midway would strand them.
+- **The first turn cannot know.** It goes out at the alias's figures, and every
+  turn after it at the answering model's. Saving the last model with the
+  session would narrow that to the first turn of a *new* conversation, and it
+  would still be a guess, since the route may move. *Build it if the first turn
+  of a session turns out to matter.*
+
+A combo has a second cost worth knowing: prompt caches are per model, so a
+route that moves mid-conversation pays cold cache writes again. It shows up in
+`/cost` as the "from cache" figure collapsing.
 
 ## Providers uhai does not ship
 

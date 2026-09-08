@@ -636,3 +636,50 @@ func TestABlankTextBlockIsNotDrawn(t *testing.T) {
 		t.Fatalf("the block must survive in the history, got %+v", first)
 	}
 }
+
+// namingProvider answers with a different model each call, the way a gateway
+// alias does when it routes.
+type namingProvider struct {
+	names []string
+	i     int
+}
+
+func (p *namingProvider) Name() string { return "9router/plan-deep" }
+
+func (p *namingProvider) Send(_ context.Context, _ provider.Request) (*provider.Response, error) {
+	name := p.names[p.i]
+	p.i++
+	return &provider.Response{
+		Model:      name,
+		StopReason: provider.StopEndTurn,
+		Content:    []provider.ContentBlock{{Type: provider.BlockText, Text: "ok"}},
+	}, nil
+}
+
+// A gateway alias is not a model. Until the answer is read, everything that
+// follows the model rather than the provider — the context window most of all
+// — is settled from a name nothing was measured against: "plan-deep" matched
+// no family, so a conversation with a million tokens of room was being
+// summarised away every 27k.
+//
+// It has to fire on a change and not on every turn: the name is repeated in
+// every chunk of every answer, and most of them say what the last one said.
+func TestTheAnsweringModelIsReportedWhenItChanges(t *testing.T) {
+	a := New(&namingProvider{names: []string{"claude-opus-5", "claude-opus-5", "glm-5.3"}})
+
+	var seen []string
+	a.OnModel = func(name string) { seen = append(seen, name) }
+
+	for i := 0; i < 3; i++ {
+		if err := a.Ask(context.Background(), "halo"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if len(seen) != 2 || seen[0] != "claude-opus-5" || seen[1] != "glm-5.3" {
+		t.Fatalf("want one report per change, got %v", seen)
+	}
+	if a.AnsweredBy() != "glm-5.3" {
+		t.Fatalf("the last model to answer is the current one, got %q", a.AnsweredBy())
+	}
+}

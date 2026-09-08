@@ -79,16 +79,8 @@ func restore(a *agent.Agent, id string) (string, error) {
 	if perr != nil {
 		return fmt.Sprintf("this conversation was held with %s, carrying on with what settings.json says: %v", s.Model, perr), nil
 	}
-	use(a, p)
+	cli.UseProviderOn(a, p)
 	return "", nil
-}
-
-// use points the agent at a provider, along with the two facts that follow the
-// model rather than the session.
-func use(a *agent.Agent, p provider.Provider) {
-	a.Provider = p
-	a.MaxContextTokens = config.ContextWindow(p.Name())
-	a.UseTools = config.SupportsTools(p.Name())
 }
 
 // ListSessions prints what can be resumed, newest first. It is a command
@@ -243,7 +235,7 @@ func newAgent() (*agent.Agent, error) {
 	p, err := config.LoadProvider()
 	a := agent.New(p) // p may be nil; checked before Ask
 	if p != nil {
-		use(a, p)
+		cli.UseProviderOn(a, p)
 	}
 	a.AllowTool = func(name string) bool { return !config.ToolDenied(name) }
 	if notes := config.ProjectNotes(); notes != "" {

@@ -115,11 +115,19 @@ type Request struct {
 	// caller that does not want live output simply leaves this nil.
 	Stream func(delta string)
 
-	// Reasoning receives a thinking model's working out, which the vendors
-	// send apart from the answer and which is not the answer: it is shown
-	// differently, it is not kept, and it is never sent back. Without it a
-	// model that thinks for twenty seconds looks like a model that has hung.
+	// Reasoning receives a thinking model's working out as it streams, which
+	// is not the answer and is drawn differently. What comes back in Content
+	// is what is kept; this is only for showing progress, so a model that
+	// thinks for twenty seconds does not look like one that has hung.
 	Reasoning func(delta string)
+
+	// Thinking asks the model to think before answering, and Effort how hard.
+	// Per request rather than per client because they are properties of the
+	// model that answers, and behind a gateway that is not decided until the
+	// answer arrives: one alias can route to a different model every turn.
+	// Empty Effort sends none and takes the vendor's own default.
+	Thinking bool
+	Effort   string
 }
 
 // Usage is what one call cost in tokens. Zero means the provider did not say.
@@ -141,6 +149,17 @@ type Response struct {
 	Content    []ContentBlock
 	StopReason StopReason
 	Usage      Usage
+
+	// Model is who actually answered, when the vendor says so. Empty when it
+	// does not, and empty is not "the configured one" — it is "nobody said".
+	//
+	// It exists for the gateways, where the name asked for and the name that
+	// answered are different things: 9router's "plan-deep" is five models
+	// behind one alias, and every chunk it sends names the one that took the
+	// turn. Without reading it, everything downstream that depends on which
+	// model this is — the context window, the effort, the row on the screen —
+	// is working from the alias.
+	Model string
 }
 
 // Provider is the contract each LLM vendor implements. Adding a vendor means

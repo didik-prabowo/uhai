@@ -437,8 +437,6 @@ func loadProvider(s Settings, modelSetting string) (provider.Provider, error) {
 			APIKey:      key,
 			Model:       model,
 			MaxTokens:   MaxOutput(modelSetting),
-			Thinking:    Thinks(modelSetting),
-			Effort:      Effort(modelSetting),
 			WorkspaceID: Workspace(name),
 		})
 		if err != nil {

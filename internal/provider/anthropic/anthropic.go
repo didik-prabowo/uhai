@@ -55,19 +55,6 @@ type Options struct {
 	// which is small enough to be safe on any model.
 	MaxTokens int
 
-	// Thinking asks the model to think before answering, in the shape the 4.6
-	// generation onwards takes: thinking: {type: "adaptive"}, where the model
-	// decides how long to spend rather than being handed a token budget.
-	// budget_tokens is not an older spelling of this — it is refused outright
-	// by the 5 generation — so there is nothing here to fall back to, and the
-	// caller asks only for models it knows take it.
-	Thinking bool
-
-	// Effort is how hard to think, in output_config. Empty sends none and
-	// takes the API's own default, which is "high". Only sent alongside
-	// Thinking: the models that predate adaptive thinking refuse the field.
-	Effort string
-
 	// WorkspaceID is which workspace the request acts in. A key tied to an
 	// identity rather than to one workspace can act in several, so the API
 	// refuses to guess: without this header it answers 400. Ordinary keys
@@ -233,8 +220,8 @@ func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Resp
 		Tools:     toWireTools(req.Tools),
 		Stream:    true,
 
-		Thinking:     c.thinking(),
-		OutputConfig: c.outputConfig(),
+		Thinking:     thinking(req),
+		OutputConfig: outputConfig(req),
 	})
 	if err != nil {
 		return nil, err
@@ -256,8 +243,11 @@ func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Resp
 }
 
 // thinking is the thinking parameter, or nil for a model that predates it.
-func (c *Client) thinking() *wireThinking {
-	if !c.opts.Thinking {
+// budget_tokens is not an older spelling of it — the 5 generation answers 400
+// — so there is nothing to fall back to, and the caller asks only for the
+// models it knows take it.
+func thinking(req provider.Request) *wireThinking {
+	if !req.Thinking {
 		return nil
 	}
 	return &wireThinking{Type: "adaptive", Display: "summarized"}
@@ -266,11 +256,11 @@ func (c *Client) thinking() *wireThinking {
 // outputConfig carries the effort, and only for a model that takes thinking:
 // the older ones refuse the field, and a request refused for asking how hard
 // to think is a worse answer than the default effort.
-func (c *Client) outputConfig() *wireOutputConfig {
-	if !c.opts.Thinking || c.opts.Effort == "" {
+func outputConfig(req provider.Request) *wireOutputConfig {
+	if !req.Thinking || req.Effort == "" {
 		return nil
 	}
-	return &wireOutputConfig{Effort: c.opts.Effort}
+	return &wireOutputConfig{Effort: req.Effort}
 }
 
 // toWire translates neutral messages into the Messages shape. It is close to a

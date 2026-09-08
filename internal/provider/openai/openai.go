@@ -105,6 +105,12 @@ type wireRequest struct {
 	Tools    []wireTool    `json:"tools,omitempty"`
 	Stream   bool          `json:"stream"`
 
+	// ReasoningEffort is how hard to think, this format's spelling of what
+	// Anthropic calls output_config.effort. Omitted unless asked for: the
+	// models that do not reason refuse it, and the field travels only once
+	// something has said which model this actually is.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+
 	// StreamOptions asks for a final chunk carrying the token counts, which a
 	// stream otherwise leaves out. It is a pointer so it can be dropped for
 	// servers that do not know the field.
@@ -116,6 +122,7 @@ type streamOptions struct {
 }
 
 type wireResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message      wireMessage `json:"message"`
 		FinishReason string      `json:"finish_reason"`
@@ -128,6 +135,11 @@ type wireResponse struct {
 
 // wireChunk is one server-sent event of a streamed completion.
 type wireChunk struct {
+	// Model is who answered. Every chunk carries it, and behind a gateway it
+	// is the only place the answer to that question exists: "plan-deep" is an
+	// alias over five models, and the chunks name the one that took the turn.
+	Model string `json:"model"`
+
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
@@ -345,6 +357,11 @@ func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Resp
 		Tools:         toWireTools(req.Tools),
 		Stream:        true,
 		StreamOptions: &streamOptions{IncludeUsage: true},
+
+		// Only when something has said which model this is. Behind an alias
+		// the first turn cannot know, so it goes without and the answer names
+		// the model for every turn after it.
+		ReasoningEffort: req.Effort,
 	}
 
 	body, err := json.Marshal(wire)
@@ -409,6 +426,7 @@ func (c *Client) post(ctx context.Context, body []byte) (*http.Response, error) 
 func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.Response, error) {
 	var text strings.Builder
 	var usage provider.Usage
+	var model string
 	calls := map[int]*wireCall{}
 	var order []int
 
@@ -427,6 +445,9 @@ func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.R
 		var chunk wireChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // a chunk we cannot read is not worth killing the answer for
+		}
+		if model == "" {
+			model = chunk.Model // every chunk repeats it; the first is enough
 		}
 		if chunk.Error != nil {
 			return nil, fmt.Errorf("provider error: %s", chunk.Error.Message)
@@ -494,7 +515,7 @@ func parseStream(body io.Reader, onDelta, onReasoning func(string)) (*provider.R
 	if len(blocks) == 0 {
 		return nil, fmt.Errorf("the model returned an empty response")
 	}
-	return &provider.Response{Content: blocks, StopReason: stop, Usage: usage}, nil
+	return &provider.Response{Content: blocks, StopReason: stop, Usage: usage, Model: model}, nil
 }
 
 // parse is split from Send so it can be tested without the network.
@@ -514,7 +535,7 @@ func parse(raw []byte, status int) (*provider.Response, error) {
 	}
 
 	blocks, stop := toBlocks(wire.Choices[0].Message)
-	return &provider.Response{Content: blocks, StopReason: stop}, nil
+	return &provider.Response{Content: blocks, StopReason: stop, Model: wire.Model}, nil
 }
 
 // toBlocks turns one assistant message into neutral content blocks.
