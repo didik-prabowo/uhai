@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"regexp"
 	"sort"
@@ -260,6 +261,12 @@ const fieldCustomModel = "customModel"
 func customStep(field string) bool { return field == fieldCustomModel }
 
 func (m *teaModel) beginConnect(arg string) tea.Cmd {
+	if attached != nil {
+		m.addHistory(teaDim.Render("attached to the daemon, which answers with " +
+			m.answeringModel() + " — connecting a provider here would change this process " +
+			"and not the one answering. `uhai -daemon-stop`, then attach again."))
+		return nil
+	}
 	if arg != "" {
 		return m.selectProvider(arg)
 	}
@@ -481,11 +488,7 @@ func (m *teaModel) activateProvider(name string) tea.Cmd {
 
 // useProvider switches model, and with it how much history fits before the
 // agent has to summarize — a window is a property of the model, not a setting.
-func (m *teaModel) useProvider(p provider.Provider) {
-	m.agent.Provider = p
-	m.agent.MaxContextTokens = config.ContextWindow(p.Name())
-	m.agent.UseTools = config.SupportsTools(p.Name())
-}
+func (m *teaModel) useProvider(p provider.Provider) { UseProviderOn(m.agent, p) }
 
 func (m *teaModel) beginModels() tea.Cmd { return m.beginModelsFor("") }
 
@@ -621,6 +624,15 @@ func (m *teaModel) changeModel(setting string, verify bool) tea.Cmd {
 	if setting == "" {
 		m.addHistory(teaDim.Render("use /model provider/model, for example /model zai/glm-4.7"))
 		return nil
+	}
+	// Attached, the switch belongs to the daemon: its agent is the one that
+	// answers, and this process's provider is not consulted by anything.
+	if attached != nil {
+		m.status = m.spinner.View() + " switching model..."
+		return tea.Batch(m.spinner.Tick, func() tea.Msg {
+			name, err := attached.SetModel(context.Background(), setting)
+			return teaAttachedModelMsg{name: name, err: err}
+		})
 	}
 	p, err := config.LoadProviderFor(setting)
 	if err != nil {

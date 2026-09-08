@@ -184,10 +184,10 @@ func (m *teaModel) cols() int {
 }
 
 func (m *teaModel) modelHint() string {
-	if m.agent.Provider == nil {
+	if attached == nil && m.agent.Provider == nil {
 		return "model: -"
 	}
-	hint := "model: " + m.agent.Provider.Name()
+	hint := "model: " + m.answeringModel()
 	// How full the window is, so compaction is something you saw coming
 	// rather than something that happened to you.
 	if limit := m.agent.MaxContextTokens; limit > 0 {

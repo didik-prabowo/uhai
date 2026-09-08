@@ -17,6 +17,50 @@ import (
 // the daemon's, the history has to stay consistent, and half a turn written
 // into it is worse than a whole one nobody watched. Escape is a different
 // thing and will need a route of its own.
+// handleSetModel points this project's conversation at another model. It is a
+// route rather than something each front end does for itself because the agent
+// that answers lives here: /model in an attached terminal used to swap the
+// provider of a process nothing asks, and the turn still ran against the model
+// the daemon started with.
+func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.workspaceFor(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if ws.setModel == nil {
+		http.Error(w, "this daemon cannot change the model for "+ws.root+
+			": no provider was connected, or the project could not be opened", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model == "" {
+		http.Error(w, "a model is required", http.StatusBadRequest)
+		return
+	}
+
+	// The turn lock, so a switch waits for the answer being written rather
+	// than changing the model halfway through it. Whoever asked is a terminal
+	// with a spinner on it, and waiting is what a spinner is for.
+	ws.turning.Lock()
+	defer ws.turning.Unlock()
+
+	name, err := ws.setModel(body.Model)
+	if err != nil {
+		// The provider's own sentence: a model that does not exist, a key that
+		// is missing and a URL that does not answer are three different
+		// problems and only it knows which one this is.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ws.mu.Lock()
+	ws.model = name
+	ws.mu.Unlock()
+	writeJSON(w, map[string]any{"model": name})
+}
+
 func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request) {
 	ws, err := s.workspaceFor(r)
 	if err != nil {

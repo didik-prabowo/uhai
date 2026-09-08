@@ -41,7 +41,17 @@ import (
 // that meets as a confusing failure somewhere downstream instead of a sentence
 // at the door. zero sends a CtrlHello frame carrying one; crush serves
 // /v1/version; this rides along on health, which every client already calls.
-const ProtoVersion = 1
+// 2: EventTool carries the tool's arguments. An older daemon still answers
+// every call this build makes, so nothing fails — it just publishes the tool's
+// name and nothing else, and the terminal draws "⎿ grep" for a search whose
+// pattern is the only part worth reading. Silently worse is exactly what the
+// version is for.
+// 3: health reports the model the daemon answers with. An older one does not,
+// and the front end would draw an empty model row while a turn ran against a
+// model nobody named.
+// 4: /v1/model changes it. An older daemon answers 404, and "404 page not
+// found" is not a sentence to put in front of someone who typed /model.
+const ProtoVersion = 4
 
 const socketPerm fs.FileMode = 0o600
 

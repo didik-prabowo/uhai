@@ -260,6 +260,30 @@ conversation they were in, and a wrong guess costs a turn against the wrong
 model. Attaching to a daemon that holds no conversation is an error rather than
 a fallback, for the same reason.
 
+So the model is the daemon's to report and the daemon's to change.
+`/v1/health` carries the model its conversation answers with, and everything
+that names one reads that instead of the local provider. It used to read the
+local one: `/model` swapped a provider nothing asks, the status row read that
+same provider, and the row named a model no turn had run against while the
+answers kept coming back in the old model's voice. Nothing on screen
+contradicted it.
+
+`POST /v1/model` is the switch, taken under the turn lock so it waits for the
+answer being written rather than changing the model halfway through it. The
+daemon resolves the name and sends back what it resolved — a terminal that
+echoed what was typed would print a model nobody had loaded — and saves it, so
+the next daemon starts where this one was left. A name the provider refuses
+comes back as an error and changes nothing: the alternative is a daemon with no
+provider because a name was mistyped. Refusing it here was the first version,
+and it lasted about ten minutes of real use.
+
+`/connect` is still refused while attached: it writes a credential, and the
+settings it would have to be written into are the ones the daemon reads.
+
+`Builder` returns a `Conversation` — the two runners, the model, and the setter
+— rather than four values, of which two were strings nobody could tell apart at
+the call site.
+
 `daemonMsg` turns each event into the message the agent's own callback would
 have produced, so the screen, the spinner and the cost row cannot tell which
 side of the socket the answer came from. It is a function of its own because a

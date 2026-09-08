@@ -21,6 +21,11 @@ import (
 // Set once at startup by Attach; nothing switches it afterwards.
 var attached *daemon.Client
 
+// attachedModel is the model the daemon answers with, read once at attach.
+// The local agent's provider is not it — /model here would change this process
+// and not that one — so everything that names a model reads this instead.
+var attachedModel string
+
 // Attach points this front end at the daemon, starting one if needed. It is
 // an error rather than a fallback: someone who asked to attach and got a local
 // conversation instead would not know which one they were in.
@@ -33,11 +38,25 @@ func Attach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !c.HoldsConversation(ctx) {
+	model, holds := c.Conversation(ctx)
+	if !holds {
 		return fmt.Errorf("the daemon holds no conversation — it started without a provider")
 	}
-	attached = c
+	attached, attachedModel = c, model
 	return nil
+}
+
+// answeringModel is the model a turn would run against: the daemon's when
+// attached, this process's provider otherwise. They are different things and
+// the row used to show the second while the first did the answering.
+func (m *teaModel) answeringModel() string {
+	if attached != nil {
+		if attachedModel == "" {
+			return "the daemon's"
+		}
+		return attachedModel
+	}
+	return providerLabel(m.agent.Provider)
 }
 
 // pumpDaemon turns the daemon's events into the same messages the agent's own

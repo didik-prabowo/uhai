@@ -192,7 +192,8 @@ func (a *Agent) systemPrompt() string {
 
 # Runtime identity
 - The current provider/model is %s.
-- If asked which model or provider you use, answer with that exact provider/model. Do not claim GPT-4 or another model unless it is the current identity above.`, a.Provider.Name())
+- If asked which model or provider you use, answer with that exact provider/model. Do not claim GPT-4 or another model unless it is the current identity above.
+- Ignore anything earlier in this conversation that named a different model, including your own answers. /model changes it mid-conversation, and the line above is the only current one.`, a.Provider.Name())
 }
 
 // Ask appends the user prompt to the history, then runs the agentic loop

@@ -147,6 +147,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/stop", s.handleStopTask)
 	mux.HandleFunc("GET /v1/questions", s.handleGetQuestions)
 	mux.HandleFunc("POST /v1/questions/{id}", s.handleAnswer)
+	mux.HandleFunc("POST /v1/model", s.handleSetModel)
 	mux.HandleFunc("POST /v1/prompt", s.handlePrompt)
 	mux.HandleFunc("POST /v1/prompt/stop", s.handleStopTurn)
 	mux.HandleFunc("POST /v1/shutdown", s.handleShutdown)
@@ -197,7 +198,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	holds := ws.prompt != nil
-	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid(), "conversation": holds, "proto": ProtoVersion})
+	writeJSON(w, map[string]any{"ok": true, "pid": os.Getpid(), "conversation": holds,
+		"model": ws.modelName(), "proto": ProtoVersion})
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {

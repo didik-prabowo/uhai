@@ -62,18 +62,21 @@ func (c *Client) Health(ctx context.Context) (int, error) {
 	return h.PID, err
 }
 
-// HoldsConversation reports whether this daemon can run a turn. One started
-// without a provider cannot, and says so rather than failing at the prompt.
-func (c *Client) HoldsConversation(ctx context.Context) bool {
+// Conversation reports whether this daemon can run a turn, and the model it
+// would run it with. One started without a provider cannot, and says so rather
+// than failing at the prompt. The model comes back because the daemon's is the
+// only one that matters once attached: this process's own is not answering.
+func (c *Client) Conversation(ctx context.Context) (string, bool) {
 	h, err := c.status(ctx)
-	return err == nil && h.Conversation
+	return h.Model, err == nil && h.Conversation
 }
 
 type health struct {
-	OK           bool `json:"ok"`
-	PID          int  `json:"pid"`
-	Conversation bool `json:"conversation"`
-	Proto        int  `json:"proto"`
+	OK           bool   `json:"ok"`
+	PID          int    `json:"pid"`
+	Conversation bool   `json:"conversation"`
+	Model        string `json:"model"`
+	Proto        int    `json:"proto"`
 }
 
 // ErrWrongVersion is a daemon this build cannot talk to. It is worth telling
@@ -327,6 +330,20 @@ func (c *Client) Prompt(ctx context.Context, text string) error {
 		return errors.New(out.Err)
 	}
 	return nil
+}
+
+// SetModel points the daemon's conversation at another model and returns the
+// name it ended up with. The name comes back rather than being assumed: the
+// daemon resolves it against its own config, and a front end that echoed what
+// was typed would print a model nobody had loaded.
+func (c *Client) SetModel(ctx context.Context, setting string) (string, error) {
+	var out struct {
+		Model string `json:"model"`
+	}
+	if err := c.post(ctx, "/v1/model", map[string]string{"model": setting}, &out); err != nil {
+		return "", err
+	}
+	return out.Model, nil
 }
 
 // StopTurn is Escape: it cancels the turn under way. It is not an error to

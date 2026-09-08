@@ -716,12 +716,12 @@ func TestEscapeReleasesAQuestionWaitingForAnAnswer(t *testing.T) {
 	// The builder is told which project it is for, which is exactly what Ask
 	// needs — no test-only wiring to carry the root around.
 	var s *Server
-	s = NewServer(nil, func(root string) (Runner, Runner, error) {
-		return nil, func(ctx context.Context, text string) (string, int, error) {
+	s = NewServer(nil, func(root string) (Conversation, error) {
+		return Conversation{Prompt: func(ctx context.Context, text string) (string, int, error) {
 			close(asking)
 			answered <- s.Ask(ctx, root, "write_file", `{"path":"main.go"}`)
 			return "", 0, nil
-		}, nil
+		}}, nil
 	})
 	s.AnswerWait = time.Hour // only Escape can end this
 	if err := s.Listen(socket); err != nil {
@@ -751,11 +751,11 @@ func TestEscapeReleasesAQuestionWaitingForAnAnswer(t *testing.T) {
 // cares about tasks does not have to say anything about conversations, and the
 // other way round.
 func taskBuilder(run Runner) Builder {
-	return func(string) (Runner, Runner, error) { return run, nil, nil }
+	return func(string) (Conversation, error) { return Conversation{Run: run}, nil }
 }
 
 func promptBuilder(prompt Runner) Builder {
-	return func(string) (Runner, Runner, error) { return nil, prompt, nil }
+	return func(string) (Conversation, error) { return Conversation{Prompt: prompt}, nil }
 }
 
 // One daemon now serves every project, which is the trade crush and zero both
@@ -818,11 +818,11 @@ func TestEventsDoNotLeakBetweenProjects(t *testing.T) {
 // project's terminal must not be able to stop another's t1.
 func TestTasksDoNotLeakBetweenProjects(t *testing.T) {
 	release := make(chan struct{})
-	s, dir := serve(t, nil, func(root string) (Runner, Runner, error) {
-		return func(ctx context.Context, prompt string) (string, int, error) {
+	s, dir := serve(t, nil, func(root string) (Conversation, error) {
+		return Conversation{Run: func(ctx context.Context, prompt string) (string, int, error) {
 			<-release
 			return "selesai di " + filepath.Base(root), 0, nil
-		}, nil, nil
+		}}, nil
 	})
 	a := s.clientFor(t, dir, "proyek-a")
 	b := s.clientFor(t, dir, "proyek-b")
@@ -881,12 +881,89 @@ func TestQuestionsDoNotLeakBetweenProjects(t *testing.T) {
 // project's terminal lost it with no idea why.
 //
 // zero avoids this by supervising worker processes, so a worker can die alone.
+// The model is the daemon's to report, not the terminal's to guess. A front
+// end reads the config as it is now; the daemon built its agent from the
+// config as it was when it started, and /model in an attached terminal changes
+// the first and not the second. The status row named one model while the turn
+// ran against another, which is the one kind of wrong nothing on screen
+// contradicts.
+func TestHealthNamesTheModelTheDaemonAnswersWith(t *testing.T) {
+	s, dir := serve(t, nil, func(root string) (Conversation, error) {
+		return Conversation{
+			Prompt: func(ctx context.Context, text string) (string, int, error) { return "", 0, nil },
+			Model:  "9router/scan-cheap",
+		}, nil
+	})
+	c := s.clientFor(t, dir, "proyek")
+
+	model, holds := c.Conversation(context.Background())
+	if !holds {
+		t.Fatal("a daemon with a prompt runner holds a conversation")
+	}
+	if model != "9router/scan-cheap" {
+		t.Fatalf("health must name the model that answers, got %q", model)
+	}
+}
+
+// Changing the model is the daemon's to do, because the agent that answers is
+// the daemon's. It used to be done in the terminal, on a provider nothing
+// consults, and the turn still ran against the model the daemon started with
+// while the status row named the new one.
+func TestSetModelChangesWhatTheDaemonAnswersWith(t *testing.T) {
+	answered := make(chan string, 1)
+	s, dir := serve(t, nil, func(root string) (Conversation, error) {
+		model := "9router/scan-cheap"
+		return Conversation{
+			Prompt: func(ctx context.Context, text string) (string, int, error) {
+				answered <- model
+				return "", 0, nil
+			},
+			Model: model,
+			SetModel: func(setting string) (string, error) {
+				if setting == "tidakada/apa" {
+					return "", errors.New("no such model")
+				}
+				model = setting
+				return model, nil
+			},
+		}, nil
+	})
+	c := s.clientFor(t, dir, "proyek")
+
+	name, err := c.SetModel(context.Background(), "9router/cc/claude-opus-5")
+	if err != nil {
+		t.Fatalf("set model: %v", err)
+	}
+	if name != "9router/cc/claude-opus-5" {
+		t.Fatalf("the daemon names what it resolved, got %q", name)
+	}
+	if model, _ := c.Conversation(context.Background()); model != name {
+		t.Fatalf("health must agree with the switch, got %q", model)
+	}
+	if err := c.Prompt(context.Background(), "halo"); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if ran := <-answered; ran != name {
+		t.Fatalf("the turn ran against %q, not the model that was chosen", ran)
+	}
+
+	// A model the provider refuses leaves the conversation on the one that
+	// works. Refusing and keeping is the whole point: the alternative is a
+	// daemon with no provider because a name was mistyped.
+	if _, err := c.SetModel(context.Background(), "tidakada/apa"); err == nil {
+		t.Fatal("a model the provider refuses has to come back as an error")
+	}
+	if model, _ := c.Conversation(context.Background()); model != name {
+		t.Fatalf("a refused switch must change nothing, got %q", model)
+	}
+}
+
 // Recovering is the cheaper answer for a daemon that runs the work itself.
 func TestAPanicInOneProjectDoesNotTakeTheDaemon(t *testing.T) {
-	s, dir := serve(t, nil, func(root string) (Runner, Runner, error) {
-		return func(ctx context.Context, prompt string) (string, int, error) {
+	s, dir := serve(t, nil, func(root string) (Conversation, error) {
+		return Conversation{Run: func(ctx context.Context, prompt string) (string, int, error) {
 			panic("the model did something unexpected")
-		}, nil, nil
+		}}, nil
 	})
 	a := s.clientFor(t, dir, "proyek-a")
 	b := s.clientFor(t, dir, "proyek-b")
@@ -1097,11 +1174,11 @@ func TestAnIdleDaemonStops(t *testing.T) {
 // one would leave it drawing a session connected to nothing.
 func TestABusyDaemonStaysUp(t *testing.T) {
 	release := make(chan struct{})
-	s, dir := serve(t, nil, func(root string) (Runner, Runner, error) {
-		return func(ctx context.Context, prompt string) (string, int, error) {
+	s, dir := serve(t, nil, func(root string) (Conversation, error) {
+		return Conversation{Run: func(ctx context.Context, prompt string) (string, int, error) {
 			<-release
 			return "", 0, nil
-		}, nil, nil
+		}}, nil
 	})
 	c := s.clientFor(t, dir, "proyek")
 
@@ -1195,7 +1272,7 @@ func TestShutdownIfIdleRefusesWhileBusy(t *testing.T) {
 		<-release
 		return "sudah", 1, nil
 	}
-	s, dir := serve(t, nil, func(string) (Runner, Runner, error) { return run, run, nil })
+	s, dir := serve(t, nil, func(string) (Conversation, error) { return Conversation{Run: run, Prompt: run}, nil })
 	c := s.clientFor(t, dir, "proyek")
 
 	if _, err := c.StartTask(context.Background(), "kerja"); err != nil {
@@ -1249,7 +1326,7 @@ func TestShutdownDoesNotAskWhetherItIsBusy(t *testing.T) {
 		<-release
 		return "", 0, nil
 	}
-	s, dir := serve(t, nil, func(string) (Runner, Runner, error) { return run, run, nil })
+	s, dir := serve(t, nil, func(string) (Conversation, error) { return Conversation{Run: run, Prompt: run}, nil })
 	c := s.clientFor(t, dir, "proyek")
 
 	if _, err := c.StartTask(context.Background(), "kerja"); err != nil {

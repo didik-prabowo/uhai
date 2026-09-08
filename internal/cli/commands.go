@@ -213,6 +213,16 @@ func matches(input string) []command {
 	return out
 }
 
+// UseProviderOn is the same for an agent no teaModel owns — the daemon's,
+// which changes model over the socket. Exported so the two cannot drift: a
+// model swapped without its context window is a session that compacts at the
+// wrong moment, silently.
+func UseProviderOn(a *agent.Agent, p provider.Provider) {
+	a.Provider = p
+	a.MaxContextTokens = config.ContextWindow(p.Name())
+	a.UseTools = config.SupportsTools(p.Name())
+}
+
 // providerLabel shows the provider in use, or why there is none yet.
 func providerLabel(p provider.Provider) string {
 	if p != nil {

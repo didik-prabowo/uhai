@@ -34,6 +34,7 @@ type workspace struct {
 	tasks     *task.Registry
 	run       Runner // what a background task does
 	prompt    Runner // one turn of this project's conversation
+	setModel  func(setting string) (string, error)
 	questions questions
 
 	turning  sync.Mutex
@@ -41,12 +42,38 @@ type workspace struct {
 
 	mu       sync.Mutex
 	watchers map[chan Event]struct{}
+	// model is what prompt answers with, so a front end can say so truthfully
+	// rather than reading its own config. Under mu because /model changes it
+	// while health is being asked.
+	model string
 }
 
-// Builder makes the two runners for one project. The daemon calls it the first
-// time a project is heard from, so a machine with ten checkouts pays for the
-// ones actually used.
-type Builder func(root string) (run, prompt Runner, err error)
+// modelName is what a turn here would run against.
+func (w *workspace) modelName() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.model
+}
+
+// Conversation is one project's agent as the daemon sees it: what it can run,
+// what it answers with, and how to point it at another model. A struct rather
+// than four return values — the third was already a string nobody could tell
+// from the fourth by looking at the call.
+type Conversation struct {
+	Run    Runner // what a background task does
+	Prompt Runner // one turn of this project's conversation
+	Model  string // what Prompt answers with, as built
+
+	// SetModel points the conversation at another model and returns the name
+	// it ended up with. Nil in a daemon that cannot: the front end is told so
+	// rather than being left to guess why nothing changed.
+	SetModel func(setting string) (string, error)
+}
+
+// Builder makes the conversation for one project. The daemon calls it the
+// first time a project is heard from, so a machine with ten checkouts pays for
+// the ones actually used.
+type Builder func(root string) (Conversation, error)
 
 // workspaceFor is the project a request is about, created if this is the first
 // time it has been heard from.
@@ -79,14 +106,15 @@ func (s *Server) workspaceFor(r *http.Request) (*workspace, error) {
 
 	ws := &workspace{root: abs, tasks: &task.Registry{}, watchers: map[chan Event]struct{}{}}
 	if s.New != nil {
-		run, prompt, err := s.New(abs)
+		conv, err := s.New(abs)
 		if err != nil {
 			// Remembered anyway, without runners: the project exists and can
 			// be listed and watched, and asking it to run something says why.
 			s.projects[abs] = ws
 			return ws, nil
 		}
-		ws.run, ws.prompt = run, prompt
+		ws.run, ws.prompt = conv.Run, conv.Prompt
+		ws.model, ws.setModel = conv.Model, conv.SetModel
 	}
 	s.projects[abs] = ws
 	return ws, nil

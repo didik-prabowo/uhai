@@ -134,7 +134,7 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 		m.chatted = false
 		// A cleared chat is a session starting over, so it opens the way one
 		// does: with the welcome box, not with an empty screen.
-		m.add(chatEntry{kind: entryBanner, text: providerLabel(m.agent.Provider)})
+		m.add(chatEntry{kind: entryBanner, text: m.answeringModel()})
 		return nil
 	case value == "/compact":
 		if m.agent.Provider == nil {

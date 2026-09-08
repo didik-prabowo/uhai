@@ -337,7 +337,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeInput()
 		if !m.banner {
 			m.banner = true
-			m.add(chatEntry{kind: entryBanner, text: providerLabel(m.agent.Provider)})
+			m.add(chatEntry{kind: entryBanner, text: m.answeringModel()})
 			for _, line := range m.opening {
 				m.addHistory(line)
 			}
@@ -445,6 +445,14 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirm = &msg.request
 	case teaNoteMsg:
 		m.addHistory(teaDim.Render(string(msg)))
+	case teaAttachedModelMsg:
+		m.status = ""
+		if msg.err != nil {
+			m.addHistory(teaDim.Render("the daemon kept " + m.answeringModel() + ": " + msg.err.Error()))
+			return m, nil
+		}
+		attachedModel = msg.name
+		m.addHistory(teaDim.Render("using " + msg.name))
 	case teaModelsMsg:
 		m.status = ""
 		if msg.err != nil || len(msg.items) == 0 {
@@ -565,6 +573,13 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // teaNoteMsg is a dim line from work that finished after the command did.
 type teaNoteMsg string
+
+// teaAttachedModelMsg is the daemon's answer to a model change. The name it
+// carries is the daemon's, not the string that was typed: it resolved it.
+type teaAttachedModelMsg struct {
+	name string
+	err  error
+}
 
 type teaModelsMsg struct {
 	items []list.Item

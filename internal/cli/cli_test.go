@@ -703,6 +703,53 @@ func TestFinishedTaskTravelsWithTheNextPrompt(t *testing.T) {
 
 // stubProvider answers nothing, which is all this test needs: what matters is
 // the prompt that reaches it.
+// Attached, the turn runs against the daemon's agent, and so must the model.
+// /model used to swap this process's provider — the one nothing asks — and the
+// status row read that same provider, so the row named a model no turn had run
+// against while the answers kept coming back in the old model's voice. Nothing
+// on screen contradicted it.
+func TestAttachedSendsTheModelSwitchToTheDaemon(t *testing.T) {
+	m := newTeaModel(agent.New(stubProvider{}), nil)
+	m.width = 80
+	attached, attachedModel = daemon.DialFor(filepath.Join(t.TempDir(), "d.sock"), t.TempDir()), "9router/scan-cheap"
+	t.Cleanup(func() { attached, attachedModel = nil, "" })
+
+	if got := m.modelHint(); !strings.Contains(got, "9router/scan-cheap") {
+		t.Fatalf("the row must name the model that answers, got %q", got)
+	}
+
+	// The switch leaves as a command and nothing local moves: the local
+	// provider is not what answers, so changing it would be the old bug.
+	if cmd := m.changeModel("9router/cc/claude-opus-5", false); cmd == nil {
+		t.Fatal("attached, a model change has to be sent to the daemon")
+	}
+	if name := m.agent.Provider.Name(); name != "stub/stub" {
+		t.Fatalf("nothing local may change while the daemon is answering, got %s", name)
+	}
+
+	// The daemon's answer, and only then does the row change.
+	m.Update(teaAttachedModelMsg{name: "9router/cc/claude-opus-5"})
+	if got := m.modelHint(); !strings.Contains(got, "9router/cc/claude-opus-5") {
+		t.Fatalf("the row follows the daemon, got %q", got)
+	}
+
+	// A refusal keeps the model that works and says which one that is.
+	m.Update(teaAttachedModelMsg{err: errors.New("no such model")})
+	if attachedModel != "9router/cc/claude-opus-5" {
+		t.Fatalf("a refused switch must change nothing, got %q", attachedModel)
+	}
+	if last := plain(m.lines[len(m.lines)-1].text); !strings.Contains(last, "no such model") {
+		t.Fatalf("a refusal has to say why: %q", last)
+	}
+
+	// /connect is still refused: it writes a key, and the daemon's own
+	// settings are what it would have to be written into.
+	m.beginConnect("")
+	if last := plain(m.lines[len(m.lines)-1].text); !strings.Contains(last, "daemon-stop") {
+		t.Fatalf("connecting while attached has to say how to do it: %q", last)
+	}
+}
+
 type stubProvider struct{}
 
 func (stubProvider) Name() string { return "stub/stub" }

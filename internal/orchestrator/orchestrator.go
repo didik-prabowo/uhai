@@ -284,17 +284,25 @@ func RunDaemon() error {
 	// come from the right place — which is the whole reason a request has to
 	// name its project.
 	var srv *daemon.Server
-	build := func(root string) (daemon.Runner, daemon.Runner, error) {
-		newFor := func() (*agent.Agent, error) {
+	build := func(root string) (daemon.Conversation, error) {
+		// Everything that reads config does it from the project's own
+		// directory, which is where its settings, its AGENTS.md and its
+		// permission lists are.
+		inRoot := func(f func() error) error {
 			back, err := os.Getwd()
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if err := os.Chdir(root); err != nil {
-				return nil, err
+				return err
 			}
 			defer os.Chdir(back)
-			return newAgent()
+			return f()
+		}
+		newFor := func() (*agent.Agent, error) {
+			var a *agent.Agent
+			err := inRoot(func() (err error) { a, err = newAgent(); return err })
+			return a, err
 		}
 
 		// A background task runs in a process of its own, not a goroutine.
@@ -343,7 +351,7 @@ func RunDaemon() error {
 		// front ends watching this project and no other.
 		conv, err := newFor()
 		if err != nil {
-			return nil, nil, err
+			return daemon.Conversation{}, err
 		}
 
 		// Picked up rather than started fresh. The daemon leaves after half an
@@ -384,7 +392,34 @@ func RunDaemon() error {
 			}
 			return "", conv.Tokens(), err
 		}
-		return run, prompt, nil
+		// Changing the model happens here, on the agent that answers, rather
+		// than in the terminal that asked: /model there swapped a provider
+		// nothing consults. Saved as well as swapped, so the next daemon
+		// starts on the model this one was left on.
+		setModel := func(setting string) (string, error) {
+			var p provider.Provider
+			err := inRoot(func() (err error) {
+				if p, err = config.LoadProviderFor(setting); err != nil {
+					return err
+				}
+				return config.SaveModel(setting)
+			})
+			if err != nil {
+				return "", err
+			}
+			cli.UseProviderOn(conv, p)
+			return p.Name(), nil
+		}
+
+		// The model is reported rather than inferred by whoever attaches:
+		// the daemon built this agent from the config as it was when it
+		// started, and a terminal that read the config now could name a model
+		// that has not answered anything.
+		model := ""
+		if conv.Provider != nil {
+			model = conv.Provider.Name()
+		}
+		return daemon.Conversation{Run: run, Prompt: prompt, Model: model, SetModel: setModel}, nil
 	}
 
 	srv = daemon.NewServer(store, build)
