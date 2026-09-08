@@ -145,6 +145,14 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 		m.add(chatEntry{kind: entryBanner, text: m.answeringModel()})
 		return nil
 	case value == "/compact":
+		if attached != nil {
+			// It would compact the local agent's history, which is empty, and
+			// report "0 → 0" while the daemon's conversation goes on filling
+			// up. The agent compacts itself when the window fills, so nothing
+			// is lost by refusing — only the ability to ask for it early.
+			m.addHistory(teaDim.Render("/compact is not available attached — the conversation is the daemon's"))
+			return nil
+		}
 		if m.agent.Provider == nil {
 			m.addHistory(teaDim.Render("no provider connected — type /connect"))
 			return nil

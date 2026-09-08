@@ -495,8 +495,11 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.usage.Output += msg.Output
 		// The turn's shape above, the conversation's bill below: they are not
 		// the same sum, since every call in a turn is charged for its input.
-		if m.agent.Provider != nil {
-			recordUsage(m.agent.Provider.Name(), provider.Usage(msg))
+		// Against the model that answered, not the one this process holds:
+		// /cost adds each model's share at its own price, so billing the
+		// daemon's tokens to the local setting is a wrong figure twice over.
+		if name := m.pricingModel(); name != "" {
+			recordUsage(name, provider.Usage(msg))
 		}
 		m.streamed = 0
 	case teaCompactMsg:

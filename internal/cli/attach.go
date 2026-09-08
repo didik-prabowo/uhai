@@ -79,6 +79,27 @@ func (m *teaModel) answeringModel() string {
 	return providerLabel(m.agent.Provider)
 }
 
+// pricingModel is the model a turn is billed against: the daemon's when
+// attached, this process's otherwise. Empty when there is nothing to price,
+// which is what config.CostUSD already answers "" to.
+//
+// The status row was taught to name the daemon's model and left pricing the
+// local one, which is the same bug one column to the right. Both halves are
+// wrong and in opposite directions: a gateway turn quoted at Anthropic's list
+// price because settings.json here says anthropic, or a real bill shown as
+// nothing at all because the local setting is a gateway. A price is only
+// allowed for a model uhai ships an endpoint for, and *which* model that is
+// has to be the one that answered.
+func (m *teaModel) pricingModel() string {
+	if attached != nil {
+		return attachedModel
+	}
+	if m.agent.Provider == nil {
+		return ""
+	}
+	return m.agent.Provider.Name()
+}
+
 // pumpDaemon turns the daemon's events into the same messages the agent's own
 // callbacks produce, so everything downstream — the screen, the spinner, the
 // cost row — cannot tell which side of the socket the answer came from.

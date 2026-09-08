@@ -298,6 +298,31 @@ comes back as an error and changes nothing: the alternative is a daemon with no
 provider because a name was mistyped. Refusing it here was the first version,
 and it lasted about ten minutes of real use.
 
+### The rule the attached front end keeps breaking
+
+Five fixes have now landed in this corner and every one is the same sentence:
+**attaching moved where the agent runs, and some part of the front end went on
+reading its own object.** The local `agent.Agent` in an attached terminal has
+no history, no usage and a provider nothing asks. Reading it is never an error
+the compiler can see, and never an error the screen shows — it produces a
+plausible number.
+
+What it looked like each time:
+
+    the model row       named the local provider while the daemon answered
+    permission          decided locally? no — it skipped the rules entirely
+    the opening line    counted a local history that is always empty
+    /clear, /compact    emptied a local agent that answers nothing
+    the price           priced the daemon's tokens at the local model's rate
+
+So, before touching anything the front end draws or any command it answers:
+ask whether the fact belongs to the conversation or to this process. If it is
+the conversation's, it is the daemon's when attached — `attachedModel`,
+`attachedHolding`, `pricingModel()`, `resumedHistory()` are where that lives —
+and a command that would change it either goes over the socket or is refused
+out loud. Never done quietly: a command that appears to work and changes
+nothing is how every one of these read from the outside.
+
 `/connect` is still refused while attached: it writes a credential, and the
 settings it would have to be written into are the ones the daemon reads.
 

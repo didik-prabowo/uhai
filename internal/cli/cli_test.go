@@ -801,6 +801,31 @@ func TestAttachedSaysWhatTheDaemonPickedUp(t *testing.T) {
 	}
 }
 
+// The row names the daemon's model and has to price the daemon's model. It
+// named one and priced the other: the local provider is what settings.json
+// says here, and attached that is not what answered. Both directions are
+// wrong and the money is the visible half — a gateway turn quoted at a list
+// price uhai must never put on a gateway, or a real bill shown as nothing.
+func TestAttachedPricesTheModelThatAnswered(t *testing.T) {
+	attached = daemon.DialFor(filepath.Join(t.TempDir(), "d.sock"), t.TempDir())
+	attachedModel = "anthropic/claude-sonnet-5"
+	t.Cleanup(func() { attached, attachedModel = nil, "" })
+
+	// The local provider is real and unpriced, so a figure can only have come
+	// from the model that actually answered.
+	m := newTeaModel(agent.New(stubProvider{}), nil)
+	m.width = 80
+	m.started = time.Now()
+	m.usage = provider.Usage{Input: 1_000_000, Output: 100_000}
+
+	if got := plain(m.turnSummary()); !strings.Contains(got, "$") {
+		t.Fatalf("the turn has to be priced against the daemon's model: %q", got)
+	}
+	if got := plain(m.workingHint()); !strings.Contains(got, "$") {
+		t.Fatalf("the status row has to be priced against the daemon's model: %q", got)
+	}
+}
+
 type stubProvider struct{}
 
 func (stubProvider) Name() string { return "stub/stub" }
