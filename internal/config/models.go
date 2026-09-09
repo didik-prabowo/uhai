@@ -171,6 +171,30 @@ func lookup(modelSetting string) (modelInfo, string) {
 		}
 	}
 
+	// Nothing matched from the front, so look for a family inside the name.
+	// A gateway may put its own tag there first: 9router answered a turn as
+	// "openrouter/dpe-glm-5.2", which is glm-5.2 with two letters in front of
+	// it, and the prefix pass gave it the 32k default — so a conversation with
+	// a 128k window was summarised away every 27k tokens.
+	//
+	// The figures are taken and the name is not: match stays empty, so a hit
+	// here can never make a gateway Known and can never put a vendor's price
+	// on one. That rule is absolute in this file and this is the cheapest way
+	// to keep it — we recognised the family well enough to size it, not well
+	// enough to say which model it is.
+	//
+	// Loose in the direction that costs least. Being wrong here means a window
+	// too large, and a request refused for length is recovered once by the
+	// agent, which says so; being wrong the other way is a silent summary
+	// every few turns, which is what this fixes.
+	if match == "" {
+		for prefix, info := range models {
+			if strings.Contains(family, prefix) && len(prefix) > longest {
+				best, longest = info, len(prefix)
+			}
+		}
+	}
+
 	// models.dev overlays the table wherever it has the model itself, since
 	// its figures are maintained and these were read off pricing pages by
 	// hand. Three things stay the table's: Retired, which models.dev does not

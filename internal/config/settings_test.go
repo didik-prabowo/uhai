@@ -598,3 +598,32 @@ func TestCachedTokensArePricedPerModel(t *testing.T) {
 		t.Errorf("fresh input million = %v, want 0.15", got)
 	}
 }
+
+// A gateway may put its own tag in front of the model's name. 9router answered
+// a turn as "openrouter/dpe-glm-5.2" — glm-5.2 with two letters ahead of it —
+// and the prefix match gave it the 32k default, so a conversation with a 128k
+// window was being summarised away every 27k tokens with nothing on screen
+// saying why.
+func TestAFamilyIsFoundInsideAGatewaysOwnName(t *testing.T) {
+	if got := ContextWindow("openrouter/dpe-glm-5.2"); got != 128_000 {
+		t.Errorf("dpe-glm-5.2 is a glm, got a %d window", got)
+	}
+	if got := ContextWindow("cc/anthropic-claude-opus-5"); got != 1_000_000 {
+		t.Errorf("a tagged claude is still a claude, got a %d window", got)
+	}
+
+	// And it must not turn a gateway into a model uhai can price. Only family
+	// keys are searched for, and a family key is never Known.
+	if KnownModel("openrouter/dpe-glm-5.2") {
+		t.Error("a family found inside a name is not the model itself")
+	}
+	if got := ModelSummary("openrouter/dpe-glm-5.2"); strings.Contains(got, "$") {
+		t.Errorf("a gateway may never be priced: %q", got)
+	}
+
+	// An exact match still wins: the loose pass only runs when nothing was
+	// found from the front.
+	if got := ContextWindow("anthropic/claude-opus-4-5"); got != 200_000 {
+		t.Errorf("a model with its own entry keeps it, got %d", got)
+	}
+}
