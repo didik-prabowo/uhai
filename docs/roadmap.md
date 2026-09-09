@@ -83,7 +83,16 @@ against servers we wrote ourselves.
 
 - [ ] One turn through Anthropic and one through Gemini on a live key. A fake
       endpoint proves the shape of a request, never that the vendor agrees
-      with it.
+      with it. Not blocked: the credentials are in `auth.json`, which is where
+      uhai reads them from — an unset environment variable says nothing.
+
+      It is a bigger claim than it was. The Anthropic client now sends
+      adaptive thinking and replays the signed thinking blocks that come back,
+      so the turn has to make **two** provider calls — a tool call, then the
+      answer — or it tests nothing new. A replay that is wrong in the order,
+      the signature or a dropped empty block is a 400 on the second call, and
+      it is structurally invisible from here: the fake endpoint is the side
+      that would have refused.
 - [x] Fix the model registry against what the APIs actually list. Anthropic
       and Gemini report their own limits, and the table now carries theirs:
       Haiku answers 64k rather than the 8k it was capped at, and Opus 4.5 and
