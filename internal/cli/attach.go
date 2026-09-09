@@ -198,3 +198,38 @@ func (m *teaModel) answerDaemon(id string, allowed bool) {
 func (m *teaModel) askDaemon(ctx context.Context, prompt string) tea.Msg {
 	return teaDoneMsg{err: attached.Prompt(ctx, prompt)}
 }
+
+// contextFill is the left half of the status row: how much of the window the
+// conversation has taken, so compaction is something you saw coming.
+//
+// Attached it read the local agent, whose history is empty — so a daemon
+// holding 59 messages against a 32k window, half full and a few turns from
+// being summarised, was drawn as "ctx 4%": the size of the system prompt and
+// nothing else. It is the one indicator whose whole purpose is warning, and
+// it was reassuring instead.
+//
+// The tokens are the provider's own count of the last request, which is a
+// better number than the estimate the local path uses and is already crossing
+// the socket with every usage event.
+//
+// ponytail: no percentage attached, because the window is the daemon's and it
+// is not on the wire — health reports the model it was built with, not the
+// one a gateway may have routed to since. Put the daemon's MaxContextTokens on
+// health and the percentage comes back; it needs a lock first, since OnModel
+// writes it from the turn.
+func (m *teaModel) contextFill() string {
+	if attached != nil {
+		if m.usage.Input == 0 {
+			return ""
+		}
+		return "ctx " + fmtTokens(m.usage.Input)
+	}
+	limit := m.agent.MaxContextTokens
+	if limit <= 0 {
+		return ""
+	}
+	if used := m.agent.Tokens() * 100 / limit; used > 0 {
+		return fmt.Sprintf("ctx %d%%", used)
+	}
+	return ""
+}

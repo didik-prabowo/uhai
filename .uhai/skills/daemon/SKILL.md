@@ -344,6 +344,7 @@ What it looked like each time:
     the opening line    counted a local history that is always empty
     /clear, /compact    emptied a local agent that answers nothing
     the price           priced the daemon's tokens at the local model's rate
+    ctx %               measured a local history that is always empty
 
 So, before touching anything the front end draws or any command it answers:
 ask whether the fact belongs to the conversation or to this process. If it is

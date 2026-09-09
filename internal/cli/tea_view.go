@@ -177,10 +177,8 @@ func (m *teaModel) modelHint() string {
 	hint := "model: " + m.answeringModel()
 	// How full the window is, so compaction is something you saw coming
 	// rather than something that happened to you.
-	if limit := m.agent.MaxContextTokens; limit > 0 {
-		if used := m.agent.Tokens() * 100 / limit; used > 0 {
-			hint = fmt.Sprintf("ctx %d%% · %s", used, hint)
-		}
+	if fill := m.contextFill(); fill != "" {
+		hint = fill + " · " + hint
 	}
 	if width := m.width - 12; width > 0 {
 		return truncate(hint, width)

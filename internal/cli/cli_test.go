@@ -2773,3 +2773,48 @@ func TestAnUnclosedThinkBlockKeepsItsWorkingOut(t *testing.T) {
 		t.Fatalf("an open block keeps its marker and its text:\n%s", out)
 	}
 }
+
+// The one indicator whose whole purpose is warning was reassuring instead.
+// Attached, it read the local agent's history — which is empty — so a daemon
+// holding a nearly full window was drawn as "ctx 4%": the system prompt and
+// nothing else. Compaction would have arrived as a surprise, which is the
+// thing the row exists to prevent.
+func TestTheContextRowAttachedReadsTheConversationThatExists(t *testing.T) {
+	attached = daemon.DialFor(filepath.Join(t.TempDir(), "d.sock"), t.TempDir())
+	attachedModel = "9router/plan-deep"
+	t.Cleanup(func() { attached, attachedModel = nil, "" })
+
+	m := newTeaModel(agent.New(stubProvider{}), nil)
+	m.width = 120
+
+	// Nothing has been asked yet, so there is nothing to claim.
+	if got := m.contextFill(); got != "" {
+		t.Fatalf("no turn has run, so no fill is known: %q", got)
+	}
+
+	// The provider's own count of the last request, which crosses the socket
+	// with every usage event and is better than the local estimate.
+	m.Update(teaUsageMsg(provider.Usage{Input: 16_000, Output: 40}))
+	if got := m.contextFill(); !strings.Contains(got, "16") {
+		t.Fatalf("the fill has to be the daemon's conversation, got %q", got)
+	}
+	// And never the local agent's, which is empty however long the daemon's is.
+	if strings.Contains(m.contextFill(), "%") {
+		t.Fatalf("a percentage needs a window, and the daemon's is not on the wire: %q", m.contextFill())
+	}
+}
+
+// Not attached, nothing changes: the agent is the conversation, so the
+// percentage is real and stays.
+func TestTheContextRowLocallyIsStillAPercentage(t *testing.T) {
+	a := agent.New(stubProvider{})
+	a.MaxContextTokens = 1000
+	a.History = []provider.Message{{Role: provider.RoleUser,
+		Content: []provider.ContentBlock{{Type: provider.BlockText, Text: strings.Repeat("x", 2000)}}}}
+
+	m := newTeaModel(a, nil)
+	m.width = 120
+	if got := m.contextFill(); !strings.HasPrefix(got, "ctx ") || !strings.Contains(got, "%") {
+		t.Fatalf("the local path keeps its percentage, got %q", got)
+	}
+}
