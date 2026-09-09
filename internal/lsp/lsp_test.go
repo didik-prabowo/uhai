@@ -199,3 +199,44 @@ func TestAFileNamesItsOwnLanguage(t *testing.T) {
 		t.Fatal("a language nobody here speaks must say so rather than guess")
 	}
 }
+
+// A server that refuses the arguments it was given says so on stderr and
+// nowhere else. That output used to be thrown away, so the only symptom was a
+// call that never answered — a failure with no cause written down anywhere,
+// which is the kind nobody can act on.
+func TestAServerThatRefusesToStartSaysWhy(t *testing.T) {
+	_, err := start(context.Background(), t.TempDir(),
+		[]string{"sh", "-c", "echo 'unknown flag: --stdio' >&2; exit 1"})
+	if err == nil {
+		t.Fatal("a server that exits immediately did not start")
+	}
+	if !strings.Contains(err.Error(), "unknown flag: --stdio") {
+		t.Fatalf("the error has to carry what the server said, got %v", err)
+	}
+	// Once, not twice: the handshake and the dead pipe both know about it.
+	if strings.Count(err.Error(), "unknown flag") != 1 {
+		t.Fatalf("said once, got %v", err)
+	}
+}
+
+func TestTailKeepsTheEndAndOffersTheFirstLine(t *testing.T) {
+	var tl tail
+	if got := tl.hint(); got != "" {
+		t.Fatalf("a server that said nothing trails no clause, got %q", got)
+	}
+	tl.Write([]byte("\n\n  first line  \nsecond\n"))
+	if got := tl.hint(); got != " — it said: first line" {
+		t.Fatalf("got %q", got)
+	}
+
+	// A server that logs steadily must not grow it without bound.
+	for i := 0; i < 100; i++ {
+		tl.Write(make([]byte, 1024))
+	}
+	tl.mu.Lock()
+	held := len(tl.buf)
+	tl.mu.Unlock()
+	if held > tailMax {
+		t.Fatalf("the tail grew to %d, past the %d it keeps", held, tailMax)
+	}
+}

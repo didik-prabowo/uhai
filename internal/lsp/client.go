@@ -42,8 +42,9 @@ var (
 
 // client is one running language server and the pipe to it.
 type client struct {
-	cmd *exec.Cmd
-	in  io.WriteCloser
+	cmd  *exec.Cmd
+	in   io.WriteCloser
+	said *tail // what the server printed, for when it stops saying anything else
 
 	mu      sync.Mutex
 	nextID  int
@@ -75,13 +76,22 @@ func start(ctx context.Context, root string, argv []string) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Its own errors are not ours to interpret and not the model's to read.
-	cmd.Stderr = nil
+	// Kept, not read. Thrown away it was worse than useless: a server that
+	// refuses the flags it was given, or dies on its third question, says why
+	// on stderr and only there — and discarding it left a failure whose only
+	// symptom was a timeout, with nothing anywhere naming a cause.
+	//
+	// Kept as a tail rather than forwarded: the local front end's stderr is
+	// the terminal it has drawn a screen on. Only the first line of it ever
+	// travels, into the error that reports the failure — a stack trace in a
+	// tool result is tokens the model pays for and cannot act on.
+	said := &tail{}
+	cmd.Stderr = said
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("could not start %s: %w", argv[0], err)
 	}
 
-	c := &client{cmd: cmd, in: stdin, pending: map[int]chan reply{}}
+	c := &client{cmd: cmd, in: stdin, said: said, pending: map[int]chan reply{}}
 	go c.read(bufio.NewReader(stdout))
 
 	ctx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -97,7 +107,15 @@ func start(ctx context.Context, root string, argv []string) (*client, error) {
 		},
 	}, nil); err != nil {
 		c.close()
-		return nil, err
+		// Not twice: a server that exited during the handshake fails the
+		// pending call through fail, which has already added what it said.
+		// This one covers the other shape — a server that started, printed a
+		// complaint and then never answered.
+		hint := said.hint()
+		if strings.Contains(err.Error(), hint) {
+			hint = ""
+		}
+		return nil, fmt.Errorf("%s did not start: %w%s", argv[0], err, hint)
 	}
 	if err := c.notify("initialized", map[string]any{}); err != nil {
 		c.close()
@@ -233,13 +251,59 @@ func frameSize(r *bufio.Reader) (int, error) {
 // their timeouts: a server that has exited will not answer, and twenty seconds
 // of silence per call is a worse way to learn that.
 func (c *client) fail(err error) {
+	// Read before the lock: a server that has just died is the one case where
+	// what it printed is the whole answer, and hint takes a lock of its own.
+	hint := ""
+	if c.said != nil {
+		hint = c.said.hint()
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closed = true
 	for id, ch := range c.pending {
-		ch <- reply{err: fmt.Errorf("the language server stopped: %w", err)}
+		ch <- reply{err: fmt.Errorf("the language server stopped: %w%s", err, hint)}
 		delete(c.pending, id)
 	}
+}
+
+// tail keeps the last of what a server printed. A ring in all but name: the
+// interesting part of a crash is the end, and the interesting part of a
+// refusal is the beginning, so it keeps enough to hold both and no more.
+type tail struct {
+	mu  sync.Mutex
+	buf []byte
+}
+
+// tailMax is what is kept. Large enough for a panic's first frames, small
+// enough that a server logging steadily cannot grow it.
+const tailMax = 4 << 10
+
+func (t *tail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > tailMax {
+		t.buf = t.buf[len(t.buf)-tailMax:]
+	}
+	return len(p), nil
+}
+
+// hint is the one line worth putting in an error: the first thing the server
+// said, which for a refusal is the refusal. Empty when it said nothing, so the
+// error reads normally rather than trailing an empty clause.
+func (t *tail) hint() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, line := range strings.Split(string(t.buf), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			if len(line) > 200 {
+				line = line[:200] + "..."
+			}
+			return " — it said: " + line
+		}
+	}
+	return ""
 }
 
 // close ends the server. Closing its stdin is what a language server watches
