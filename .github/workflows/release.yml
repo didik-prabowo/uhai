@@ -27,9 +27,23 @@ jobs:
       - name: the tests, before anything is published
         run: make check
 
+      # GoReleaser pushes the Homebrew formula after the archives are built,
+      # so a missing token is discovered at the end of a release that
+      # otherwise worked — and a tag cannot be reused. Ten seconds here saves
+      # deleting one.
+      - name: the tap token is set
+        run: |
+          if [ -z "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not set on this repository."
+            echo "Create a PAT with write access to didik-prabowo/homebrew-tap,"
+            echo "then: gh secret set HOMEBREW_TAP_TOKEN --repo didik-prabowo/uhai"
+            exit 1
+          fi
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

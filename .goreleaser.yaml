@@ -16,7 +16,6 @@ before:
 builds:
   - id: uhai
     main: ./cmd/uhai
-    binary: uhai
     env:
       # The same reason the Makefile says it: nothing here needs cgo, and
       # without it the binary is static and runs on a machine that has
@@ -73,34 +72,42 @@ release:
     Built without cgo, so the binary is static. macOS will quarantine a
     downloaded one — see the README for the one command that clears it.
 
-# Homebrew, written out and switched off. Two things have to exist before it
-# can be turned on, and neither can be done from here:
+# Homebrew. The cask is written and pushed on every tag, so
+# `brew install didik-prabowo/tap/uhai` is always the newest release.
 #
-#   1. a public repository `didik-prabowo/homebrew-tap` — the `homebrew-`
-#      prefix is dropped in use, which is why people type
-#      `brew install didik-prabowo/tap/uhai`
-#   2. a Personal Access Token with write access to it, saved on THIS
-#      repository as the secret HOMEBREW_TAP_TOKEN, and passed to the release
-#      job as an env var. The built-in GITHUB_TOKEN cannot do this: it may
-#      only write to the repository it is running in.
+# A cask and not a formula: `brews:` is deprecated, because Homebrew moved
+# pre-built binaries out of formulae. A formula is meant to be something brew
+# compiles; this is an archive with a binary in it, which is what a cask is
+# for. So there is no `test do` block here — that belongs to formulae — and
+# the checks a release needs are the ones CI already ran before publishing.
 #
-# Then delete the `#` from the block below and tag. Do not enable it before
-# the tap exists: GoReleaser pushes the formula *after* building the
-# archives, so a missing tap turns a release that otherwise worked into a
-# failed one.
-#
-# brews:
-#   - name: uhai
-#     repository:
-#       owner: didik-prabowo
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-#     homepage: https://github.com/didik-prabowo/uhai
-#     description: A coding agent that lives in the terminal
-#     license: MIT
-#     # Not `depends_on: go`: the binary is static and needs nothing.
-#     test: |
-#       assert_match version.to_s, shell_output("#{bin}/uhai -version")
-#     caveats: |
-#       uhai opens without a provider. Type /connect to add one; the key is
-#       kept in ~/.uhai/auth.json, mode 0600.
+# The token is a Personal Access Token with write access to the tap, saved on
+# THIS repository as the secret HOMEBREW_TAP_TOKEN. The built-in GITHUB_TOKEN
+# cannot stand in for it: it may only write to the repository it is running
+# in, which is the part that surprises people. The release workflow checks
+# the secret is set before building anything, because the cask is pushed
+# *after* the archives and a missing token would otherwise waste a whole
+# release to discover.
+homebrew_casks:
+  - name: uhai
+    repository:
+      owner: didik-prabowo
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/didik-prabowo/uhai
+    description: A coding agent that lives in the terminal
+    license: MIT
+    # Homebrew quarantines what a cask installs, and these binaries are not
+    # notarised — notarising costs an Apple developer account. Without this
+    # hook macOS refuses to open what brew just installed, which reads as a
+    # broken package rather than as Gatekeeper doing its job. The README says
+    # the same thing for a binary downloaded by hand.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/uhai"]
+          end
+    caveats: |
+      uhai opens without a provider. Type /connect to add one; the key is
+      kept in ~/.uhai/auth.json, mode 0600.

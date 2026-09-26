@@ -53,8 +53,22 @@ parts that are interesting only once you have hit the problem they solve.
 
 ## Installation
 
-One static binary with no runtime to install beside it, so all three routes
-end in the same file on your `PATH`.
+One static binary with no runtime to install beside it, so every route below
+ends in the same file on your `PATH`.
+
+> **No version has been tagged yet.** `go install` works today; Homebrew and
+> the prebuilt archives go live with the first release.
+
+### With Homebrew
+
+```sh
+brew install didik-prabowo/tap/uhai
+```
+
+A cask rather than a formula, because there is nothing to compile — the
+archive holds a binary. Homebrew quarantines what a cask installs and these
+are not notarised, so the cask clears the flag on install; without that,
+macOS would refuse to open what `brew` had just put there.
 
 ### With Go
 
