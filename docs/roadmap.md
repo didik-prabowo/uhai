@@ -87,14 +87,24 @@ against servers we wrote ourselves.
 
 - [ ] One turn through Anthropic and one through Gemini on a live key. A fake
       endpoint proves the shape of a request, never that the vendor agrees
-      with it. It needs a key that can spend, and `auth.json` rather than the
-      environment is enough — uhai reads both, and an unset `ANTHROPIC_API_KEY`
-      says nothing about whether one is configured.
+      with it.
 
-      It is a bigger claim than it was. The Anthropic client now sends
-      adaptive thinking and replays the signed thinking blocks that come back,
-      so the turn has to make **two** provider calls — a tool call, then the
-      answer — or it tests nothing new. A replay that is wrong in the order,
+      **Half of it is now done, and the half that is left is money.** On
+      2026-09-26 the Anthropic client reached the real API for the first
+      time: `/v1/models` answered with twelve model ids, and a turn came back
+      `HTTP 400 — Your credit balance is too low`. So the credentials, the
+      identity-linked workspace header and the request shape are all right,
+      and the vendor's own sentence reached the user in one line after one
+      second, with no retry — which is the behaviour a wallet error is
+      supposed to get, observed rather than assumed.
+
+      What is still unproven needs credit, not code.
+
+      And what is left is the bigger half. The Anthropic client sends
+      adaptive thinking — `claude-sonnet` carries `Thinking: true` in the
+      table — and replays the signed thinking blocks that come back, so the
+      turn has to make **two** provider calls: a tool call, then the answer.
+      One call tests nothing new. A replay that is wrong in the order,
       the signature or a dropped empty block is a 400 on the second call, and
       it is structurally invisible from here: the fake endpoint is the side
       that would have refused.
