@@ -16,6 +16,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/didik-prabowo/uhai" alt="MIT licence"></a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="uhai reading a project, then asking before it edits a file" width="100%">
+</p>
+
 It reads and writes your files, runs commands, and asks before doing anything
 it cannot take back.
 

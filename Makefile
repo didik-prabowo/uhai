@@ -47,11 +47,26 @@ check: vet windows test ## what /check runs: formatting, vet, the Windows build,
 release-snapshot: ## build the release artefacts locally, publishing nothing
 	goreleaser release --snapshot --clean
 
-# Records demo.tape against your real provider, into local/ which is
-# gitignored. Read the warnings at the top of the tape first. Needs VHS:
-# `brew install vhs`.
-demo: build ## record the README demo
-	vhs demo.tape
+# Records the README demo against demo/mock, a scripted endpoint, so it costs
+# nothing and names no real provider. Needs VHS: `brew install vhs`.
+#
+# The GIF is regenerated in place at docs/assets/demo.gif and committed with
+# the rest — it is under a megabyte, which is cheaper than asking a reader to
+# fetch it from somewhere that may go away. The recording makes one real edit
+# to cmd/uhai/main.go; the last line puts it back.
+demo: build ## record the README demo against the scripted endpoint
+	@mkdir -p local/demo-home/.uhai
+	@printf '{"model":"demo/demo-model","baseUrls":{"demo":"http://127.0.0.1:8977/v1"}}\n' > local/demo-home/.uhai/settings.json
+	@printf '{"demo":{"key":"not-a-real-key"}}\n' > local/demo-home/.uhai/auth.json
+	@chmod 600 local/demo-home/.uhai/auth.json
+	@# Built rather than `go run`: go run's pid is a wrapper, and killing it
+	@# leaves the server holding the port.
+	$(ENV) $(GO) build -o local/demo-mock ./demo/mock
+	./local/demo-mock & echo $$! > local/demo-mock.pid
+	@sleep 1
+	-vhs demo/demo.tape
+	@kill `cat local/demo-mock.pid` 2>/dev/null; rm -f local/demo-mock.pid
+	git checkout -- cmd/uhai/main.go
 
 clean:
 	rm -f $(BINARY)
