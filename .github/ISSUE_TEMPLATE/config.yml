@@ -1,0 +1,25 @@
+# Blank issues stay on. A question — which model to point this at, why a
+# permission rule does what it does — is neither a bug nor a trigger, and
+# forcing it through the bug form produces a bug report that is not one.
+blank_issues_enabled: true
+
+contact_links:
+  - name: A security problem
+    url: https://github.com/didik-prabowo/uhai/security/advisories/new
+    about: >-
+      An advisory, not an issue, and keep the details out of any issue. SECURITY.md
+      says what counts here — and what does not, which is the shorter list to read
+      first.
+
+  - name: Deliberately not built
+    url: https://github.com/didik-prabowo/uhai/blob/main/docs/roadmap.md
+    about: >-
+      Things considered and left out, each with the trigger that would justify
+      building it. If yours is there, the issue worth opening is evidence that the
+      trigger fired.
+
+  - name: How it actually works
+    url: https://github.com/didik-prabowo/uhai/blob/main/docs/guide/features.md
+    about: >-
+      Everything it does, at length — including the parts that are only interesting
+      once you have hit the problem they solve.
