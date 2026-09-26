@@ -52,7 +52,9 @@ outside the tests, small enough to read in a sitting or two.
   no agent core hidden in a dependency
 
 [**Everything it does**](docs/guide/features.md), at length — including the
-parts that are interesting only once you have hit the problem they solve.
+parts that are interesting only once you have hit the problem they solve. If
+you are here to point it at a particular model, [**models**](docs/guide/models.md)
+is the page for that.
 
 ## Installation
 
