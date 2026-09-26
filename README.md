@@ -20,53 +20,25 @@ outside the tests, small enough to read in a sitting or two.
 
 ## Features
 
-- **Multi-model:** point it at Anthropic, OpenAI, or anything else speaking
-  either wire format — a gateway, your company's endpoint, Ollama on
-  localhost. Two ship with an endpoint; everything else is a name, a base URL
-  and a key, and needs no code
-- **Switch without starting over:** `/model` changes the model in the middle of
-  a conversation and keeps everything said so far, and a saved session reopens
-  with the model it was actually held with rather than today's default
-- **Knows which model actually answered:** behind a router whose name is not a
-  model, uhai reads the one that replied and sizes the turn from *that* — the
-  difference between a million-token model working, and the same conversation
-  being summarised away every 27k tokens with nothing on screen saying why
-- **LSP-enhanced:** `find_symbol` asks the project's language server what a
-  symbol *is* — where it is defined, who uses it, what implements it — rather
-  than matching how it is spelled. gopls, typescript-language-server, pyright
-  and rust-analyzer, started on first use and kept warm; none installed is an
-  answer, not an error
-- **Work that outlives the terminal:** a daemon holds the conversation and
-  `uhai -attach` joins it from anywhere, so closing the window does not end the
-  job. One daemon serves every project and stops itself when nobody is there
-- **Background work, in its own process:** `/bg` runs a prompt read-only,
-  `/check` runs your tests, and `spawn_task` hands the model a job whose
-  findings come back without the file dumps. One that crashes takes nothing
-  else with it
-- **Asks before it acts:** writing, running a command and anything leaving the
-  machine ask first — an edit shows its diff, a command shows itself, so there
-  is something to judge rather than something to trust
-- **Permission per tool:** `allow`, `ask` and `deny` in `.uhai/settings.json`,
-  the project's or your own, and a chained shell line is judged part by part —
-  allowing `git` does not allow `git status && rm -rf /`
-- **Two front ends, one binary:** a full-screen prompt in a terminal, a
-  prompt-per-line on stdout in a pipe. The thing you talk to and the thing a
-  script calls are the same program
-- **Reads the web:** `search_web` finds an address and `fetch_url` opens it,
-  and neither can be walked onto a private network or a metadata endpoint
-- **Sessions on disk:** `-resume` reopens one by id, and a history that fills
-  the window compacts itself instead of failing the turn
-- **Knows your project:** `AGENTS.md`, `CLAUDE.md` or `UHAI.md` read every
-  session, and skills from `.uhai/skills` or `.claude/skills` — of which only
-  the names cost anything until the model opens one. A repository already
-  written for another agent needs nothing added for this one
-- **The bill on screen:** tokens and price per turn against a registry of real
-  context windows, with Anthropic's prompt cache and every OpenAI-shaped
-  vendor's cached-token discount taken off rather than billed as fresh — and
-  no price at all for a gateway, because it cannot know one
+- **Multi-model:** Anthropic, OpenAI, or any endpoint speaking either wire
+  format — a gateway, your company's, Ollama on localhost
+- **Switches mid-conversation:** `/model` changes the model without losing
+  what has been said
+- **Knows what answered:** behind a router it reads the model that actually
+  replied, and sizes the turn from that rather than from the alias
+- **LSP-enhanced:** `find_symbol` asks the language server what a symbol *is*,
+  not how it is spelled
+- **Asks before it acts:** writing, running and anything leaving the machine
+  ask first, and an edit shows its diff
+- **Outlives the terminal:** a daemon holds the conversation, and
+  `uhai -attach` joins it from anywhere
+- **Knows your project:** `AGENTS.md` and skills, in the layout Claude Code
+  already uses — a repository written for one needs nothing added
 - **Small enough to read:** about 14,000 lines of Go outside the tests, with
-  no agent core hidden in a dependency. The loop that makes it an agent is one
-  file you can sit down with
+  no agent core hidden in a dependency
+
+[**Everything it does**](docs/guide/features.md), at length — including the
+parts that are interesting only once you have hit the problem they solve.
 
 ## Installation
 

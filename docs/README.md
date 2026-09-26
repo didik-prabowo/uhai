@@ -6,6 +6,10 @@ the same person on the same day.
 
 ## If you are using uhai
 
+[`guide/features.md`](guide/features.md) — everything uhai does, at length.
+The README keeps the eight lines worth scanning; this is the rest, most of it
+interesting only once you have hit the problem it solves.
+
 [`guide/tools.md`](guide/tools.md) — every tool the model can call, with its
 parameters, its limits, what it refuses and why. It opens with the table of
 which ones act without asking, which is the security claim this project makes
