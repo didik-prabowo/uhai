@@ -170,7 +170,7 @@ const (
 var customLabels = [3]string{"name", "endpoint", "key"}
 
 var customHints = [3]string{
-	"one word, e.g. acme or 9router",
+	"one word — it becomes the prefix before the model",
 	"base URL, the part before /chat/completions",
 	"the token the endpoint expects",
 }

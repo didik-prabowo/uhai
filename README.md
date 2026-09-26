@@ -53,7 +53,8 @@ endpoint  https://acme.example.com/v1
 key       ••••••••
 ```
 
-The model is then written `acme/sonnet-4.5`, and `/model` lists what the
+The name is yours to pick — one word, and it becomes the prefix — so the
+model above is then written `acme/sonnet-4.5`, and `/model` lists what the
 endpoint reports. A model it forgets to list can still be typed by name.
 
 Gemini, Z.ai, OpenRouter and Ollama shipped with the binary once and do not any

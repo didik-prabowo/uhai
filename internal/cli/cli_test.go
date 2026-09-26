@@ -2376,7 +2376,7 @@ func TestConnectAddsACustomEndpoint(t *testing.T) {
 		want           int
 	}{
 		{"my gw", "https://x.id", "k", customName},                 // a space
-		{"ACME/x", "https://x.id", "k", customName},               // a slash
+		{"ACME/x", "https://x.id", "k", customName},                // a slash
 		{"anthropic", "https://x.id", "k", customName},             // built in
 		{strings.Repeat("a", 21), "https://x.id", "k", customName}, // too long to be a name
 		// The boxes are next to each other and one of them is masked, so this
