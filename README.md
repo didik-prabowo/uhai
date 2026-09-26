@@ -18,6 +18,41 @@ one `/connect` away: a gateway, a company endpoint, Gemini, Z.ai, OpenRouter,
 Ollama on your own machine. The whole of it is about 14,000 lines of Go
 outside the tests, small enough to read in a sitting or two.
 
+## Features
+
+- **Two front ends, one binary.** A full-screen prompt with the input pinned to
+  the bottom when a terminal is attached; a prompt-per-line on stdout when
+  stdin is a pipe. The same program is the thing you talk to and the thing a
+  script calls.
+- **Whatever model you point it at.** Anthropic and OpenAI ship with an
+  endpoint; anything else speaking either wire format is a name, a base URL and
+  a key. Behind a gateway it reads the model that actually *answered* and sizes
+  the turn from that, rather than from the alias it was handed.
+- **It asks before it changes anything.** The tools that write, run commands or
+  leave the machine ask first — an edit shows its diff, a command shows itself.
+  `allow`, `ask` and `deny` are per tool in `.uhai/settings.json`, and a chained
+  shell line is judged part by part, so allowing `git` does not allow
+  `git status && rm -rf /`.
+- **Looking things up by meaning, not by spelling.** `find_symbol` asks the
+  project's language server where something is defined and who uses it, where
+  `grep` can only match the word. `search_web` finds an address and `fetch_url`
+  opens it. No language server installed is an answer, not an error.
+- **Work that outlives the window.** A daemon holds the conversation and
+  `uhai -attach` joins it from anywhere; one daemon serves every project and
+  stops itself when nobody is there. Background tasks run in processes of their
+  own, so one that crashes takes nothing else with it.
+- **Conversations that come back.** Every session is a file, and `-resume`
+  reopens one with the model it was held with rather than whatever the settings
+  say today. The history compacts itself when the window fills.
+- **It reads the project, not just the prompt.** `AGENTS.md`, `CLAUDE.md` or
+  `UHAI.md` at the start of every session, and skills from `.uhai/skills` or
+  `.claude/skills` — of which only the name and description cost anything until
+  the model decides to open one.
+- **The bill is on the screen.** Tokens and cost per turn in the status row,
+  against a model registry that carries each model's real context window and
+  price — and that refuses to quote a price for a gateway, because it cannot
+  know one.
+
 ## Getting started
 
 ```sh
