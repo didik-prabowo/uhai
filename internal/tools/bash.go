@@ -1,13 +1,15 @@
-// Running commands. One shell, one command, killed with everything it started.
+// Running commands. One shell, one command, killed with everything it started,
+// and only ever the tail of what it printed.
 package tools
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -19,6 +21,51 @@ import (
 // input dies instead of hanging the turn; /check is the way to run something
 // that takes longer than this.
 const bashTimeout = 2 * time.Minute
+
+// maxBashOutput is how much of a command's output is kept, and it is the tail
+// that is kept: a suite says what passed before it says what failed, so the end
+// is the half worth having.
+//
+// It is also the memory ceiling, which there was none of. One second of `yes`
+// put 868 MiB into a bytes.Buffer, and Execute's truncation only happens once
+// the whole of it is already there — in the daemon, the process that runs out
+// of memory is holding every project's conversation on the machine.
+//
+// Below maxResultLen rather than equal to it, so the lines this file puts in
+// front of the output — an exit status, a note that the command was killed —
+// cannot push the result past Execute's cut, which takes from the front and
+// would take the end with it.
+const maxBashOutput = maxResultLen - 512
+
+// HiddenEnv are the variables uhai alone owns, removed from what a command
+// inherits. A key left in reaches a tool result, then the history, then the
+// provider, and then the session on disk — from one `env` that nobody thought
+// twice about approving.
+//
+// Two names, and deliberately not the vendors'. ANTHROPIC_API_KEY and
+// OPENAI_API_KEY are the *user's* environment: uhai reads them as a
+// convenience, and the project being worked on may need the same variable for
+// its own tests. Stripping those would make an authentication failure that
+// nothing explains — the shape of failure this repository treats as the worst
+// one — to close an exposure the user's own shell already has.
+//
+// So this is not a secret filter, and must not be read as one:
+// AWS_SECRET_ACCESS_KEY, GITHUB_TOKEN and DATABASE_URL all still reach a
+// command, and from there a provider. Redacting tool results in general is a
+// different and much larger question; see the issue, not this list.
+//
+// Exported so a test outside this package can name them.
+var HiddenEnv = []string{
+	"UHAI_API_KEY",
+	SearchKeyEnv,
+}
+
+// noTerminal is what a command is told about the terminal it does not have.
+// Colour escapes are tokens paid for on every turn that carries them and read
+// by nobody, and a pager is a command waiting for a keypress that will never
+// come. Appended last because exec takes the last value for a duplicate key,
+// so these win over whatever the environment already said.
+var noTerminal = []string{"NO_COLOR=1", "TERM=dumb", "GIT_PAGER=cat", "PAGER=cat"}
 
 // bashTool is the run_bash tool: what the model is told about it, and the
 // thing that runs.
@@ -51,21 +98,39 @@ func (bashTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 	defer cancel()
 
 	out, err := Shell(ctx, root, args.Command, nil)
-	switch ctx.Err() {
-	case context.DeadlineExceeded:
-		return "timeout: the command took too long", true
-	case context.Canceled:
-		return "the user interrupted this command", true
+
+	// Binary is nothing a model can read, and 8,000 characters of it is a
+	// turn's worth of tokens spent on noise. grep refuses it for this reason
+	// and says so in the same words.
+	if strings.IndexByte(out, 0) >= 0 {
+		return fmt.Sprintf("the command printed %d bytes of binary output, which is not shown", len(out)), true
 	}
-	if err != nil {
+
+	// The output goes back however the command ended. It was paid for, it was
+	// on the screen, and for a suite killed at the two-minute mark the failures
+	// it had already printed are the only part worth having — this used to
+	// return the sentence alone and throw them away. searchNote does the same
+	// thing for a grep that runs out of time.
+	switch {
+	case ctx.Err() == context.Canceled:
+		// Authoritative whatever the command did: the person asked for it to
+		// stop, and a command that squeezed past that is not a reason to
+		// report success.
+		return "the user interrupted this command. Output up to then:\n" + out, true
+	case ctx.Err() == context.DeadlineExceeded && err != nil:
+		return fmt.Sprintf("timeout: killed after %s. Output up to then:\n%s", bashTimeout, out), true
+	case err != nil:
 		return fmt.Sprintf("exit error: %v\noutput:\n%s", err, out), true
 	}
+	// Not the clock: a command that finished as the deadline passed has
+	// finished, and reporting a timeout over a complete answer sends the model
+	// to run it again.
 	return out, false
 }
 
-// Shell runs one command and returns everything it printed, whether it
-// succeeded or not. onLine, when given, is called with each line as it is
-// printed, so a long command can be watched rather than waited for.
+// Shell runs one command and returns the tail of everything it printed,
+// whether it succeeded or not. onLine, when given, is called with each line as
+// it is printed, so a long command can be watched rather than waited for.
 //
 // It sets no deadline of its own: a tool call and a run of the whole test
 // suite want very different ones, and the caller knows which it is. dir is
@@ -77,15 +142,17 @@ func Shell(ctx context.Context, dir, command string, onLine func(string)) (strin
 	// so without this a command ran — and wrote — in whichever project
 	// happened to wake the daemon first. Empty keeps the process's own.
 	cmd.Dir = dir
+	cmd.Env = commandEnv()
 
 	// Its own process group, so cancelling kills what the command started as
 	// well as the command. Killing the shell alone leaves "go test" compiling
 	// happily in the background, which is not what stopping means.
 	ownGroup(cmd)
 
+	out := &tailBuffer{keep: maxBashOutput}
+
 	if onLine == nil {
-		var out bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &out, &out
+		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			return "", err
 		}
@@ -107,13 +174,80 @@ func Shell(ctx context.Context, dir, command string, onLine func(string)) (strin
 	}
 	defer killGroup(ctx, cmd)()
 
-	var out strings.Builder
-	sc := bufio.NewScanner(pipe)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // one line can be long
-	for sc.Scan() {
-		line := sc.Text()
-		out.WriteString(line + "\n")
-		onLine(line)
+	// ReadSlice rather than a bufio.Scanner. A Scanner has a maximum token
+	// size, and a line past it ended the loop with ErrTooLong — which nothing
+	// read — and then blocked in Wait forever, because the pipe it had stopped
+	// draining filled up and the child could no longer write to it. A single
+	// 2 MiB line therefore returned *nothing at all* and hung until the
+	// deadline: ten minutes of it under /check. ReadSlice hands back what it
+	// has and says the line is still going, so a line of any length costs one
+	// fixed buffer and never stalls.
+	r := bufio.NewReaderSize(pipe, 64*1024)
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(chunk) > 0 {
+			out.Write(chunk)
+			onLine(strings.TrimRight(string(chunk), "\n"))
+		}
+		if err == bufio.ErrBufferFull {
+			continue // the same line, still arriving
+		}
+		if err != nil {
+			break
+		}
 	}
 	return out.String(), cmd.Wait()
+}
+
+// commandEnv is the environment a command runs in: the one uhai was started
+// with, less the keys uhai reads for itself, plus the few variables that say
+// there is no terminal on the other end.
+func commandEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env)+len(noTerminal))
+	for _, kv := range env {
+		if name, _, ok := strings.Cut(kv, "="); ok && slices.Contains(HiddenEnv, name) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, noTerminal...)
+}
+
+// tailBuffer keeps the last keep bytes written to it and counts what it drops.
+// A command's output has no ceiling of its own, and the end of it is the half
+// worth keeping.
+type tailBuffer struct {
+	buf     []byte
+	keep    int
+	dropped int
+}
+
+// Write never fails, the way a bytes.Buffer never fails: there is nowhere for
+// the bytes to fail to go.
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	// Trimmed at twice the ceiling rather than on every write, so a command
+	// printing one line at a time does not copy the whole buffer per line.
+	// Memory is bounded at twice keep plus one write either way.
+	if over := len(t.buf) - 2*t.keep; over > 0 {
+		t.dropped += over
+		t.buf = append(t.buf[:0], t.buf[over:]...)
+	}
+	return len(p), nil
+}
+
+// String is the tail, headed by a line saying what was dropped. The count is
+// there because silence reads as "this is all of it", and a model that
+// believes it is looking at a whole test run draws conclusions from the part
+// it was handed.
+func (t *tailBuffer) String() string {
+	buf, dropped := t.buf, t.dropped
+	if over := len(buf) - t.keep; over > 0 {
+		buf, dropped = buf[over:], dropped+over
+	}
+	if dropped == 0 {
+		return string(buf)
+	}
+	return fmt.Sprintf("...[%d earlier bytes dropped]\n", dropped) + string(buf)
 }
