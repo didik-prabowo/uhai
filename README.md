@@ -20,38 +20,53 @@ outside the tests, small enough to read in a sitting or two.
 
 ## Features
 
-- **Two front ends, one binary.** A full-screen prompt with the input pinned to
-  the bottom when a terminal is attached; a prompt-per-line on stdout when
-  stdin is a pipe. The same program is the thing you talk to and the thing a
-  script calls.
-- **Whatever model you point it at.** Anthropic and OpenAI ship with an
-  endpoint; anything else speaking either wire format is a name, a base URL and
-  a key. Behind a gateway it reads the model that actually *answered* and sizes
-  the turn from that, rather than from the alias it was handed.
-- **It asks before it changes anything.** The tools that write, run commands or
-  leave the machine ask first — an edit shows its diff, a command shows itself.
-  `allow`, `ask` and `deny` are per tool in `.uhai/settings.json`, and a chained
-  shell line is judged part by part, so allowing `git` does not allow
-  `git status && rm -rf /`.
-- **Looking things up by meaning, not by spelling.** `find_symbol` asks the
-  project's language server where something is defined and who uses it, where
-  `grep` can only match the word. `search_web` finds an address and `fetch_url`
-  opens it. No language server installed is an answer, not an error.
-- **Work that outlives the window.** A daemon holds the conversation and
-  `uhai -attach` joins it from anywhere; one daemon serves every project and
-  stops itself when nobody is there. Background tasks run in processes of their
-  own, so one that crashes takes nothing else with it.
-- **Conversations that come back.** Every session is a file, and `-resume`
-  reopens one with the model it was held with rather than whatever the settings
-  say today. The history compacts itself when the window fills.
-- **It reads the project, not just the prompt.** `AGENTS.md`, `CLAUDE.md` or
-  `UHAI.md` at the start of every session, and skills from `.uhai/skills` or
-  `.claude/skills` — of which only the name and description cost anything until
-  the model decides to open one.
-- **The bill is on the screen.** Tokens and cost per turn in the status row,
-  against a model registry that carries each model's real context window and
-  price — and that refuses to quote a price for a gateway, because it cannot
-  know one.
+- **Multi-model:** point it at Anthropic, OpenAI, or anything else speaking
+  either wire format — a gateway, your company's endpoint, Ollama on
+  localhost. Two ship with an endpoint; everything else is a name, a base URL
+  and a key, and needs no code
+- **Switch without starting over:** `/model` changes the model in the middle of
+  a conversation and keeps everything said so far, and a saved session reopens
+  with the model it was actually held with rather than today's default
+- **Knows which model actually answered:** behind a router whose name is not a
+  model, uhai reads the one that replied and sizes the turn from *that* — the
+  difference between a million-token model working, and the same conversation
+  being summarised away every 27k tokens with nothing on screen saying why
+- **LSP-enhanced:** `find_symbol` asks the project's language server what a
+  symbol *is* — where it is defined, who uses it, what implements it — rather
+  than matching how it is spelled. gopls, typescript-language-server, pyright
+  and rust-analyzer, started on first use and kept warm; none installed is an
+  answer, not an error
+- **Work that outlives the terminal:** a daemon holds the conversation and
+  `uhai -attach` joins it from anywhere, so closing the window does not end the
+  job. One daemon serves every project and stops itself when nobody is there
+- **Background work, in its own process:** `/bg` runs a prompt read-only,
+  `/check` runs your tests, and `spawn_task` hands the model a job whose
+  findings come back without the file dumps. One that crashes takes nothing
+  else with it
+- **Asks before it acts:** writing, running a command and anything leaving the
+  machine ask first — an edit shows its diff, a command shows itself, so there
+  is something to judge rather than something to trust
+- **Permission per tool:** `allow`, `ask` and `deny` in `.uhai/settings.json`,
+  the project's or your own, and a chained shell line is judged part by part —
+  allowing `git` does not allow `git status && rm -rf /`
+- **Two front ends, one binary:** a full-screen prompt in a terminal, a
+  prompt-per-line on stdout in a pipe. The thing you talk to and the thing a
+  script calls are the same program
+- **Reads the web:** `search_web` finds an address and `fetch_url` opens it,
+  and neither can be walked onto a private network or a metadata endpoint
+- **Sessions on disk:** `-resume` reopens one by id, and a history that fills
+  the window compacts itself instead of failing the turn
+- **Knows your project:** `AGENTS.md`, `CLAUDE.md` or `UHAI.md` read every
+  session, and skills from `.uhai/skills` or `.claude/skills` — of which only
+  the names cost anything until the model opens one. A repository already
+  written for another agent needs nothing added for this one
+- **The bill on screen:** tokens and price per turn against a registry of real
+  context windows, with Anthropic's prompt cache and every OpenAI-shaped
+  vendor's cached-token discount taken off rather than billed as fresh — and
+  no price at all for a gateway, because it cannot know one
+- **Small enough to read:** about 14,000 lines of Go outside the tests, with
+  no agent core hidden in a dependency. The loop that makes it an agent is one
+  file you can sit down with
 
 ## Installation
 
