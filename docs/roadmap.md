@@ -50,7 +50,10 @@ instead, so the agent loop is exercised rather than replaced.
 - A shared `provider.Post` with backoff, because two copies of a retry loop is
   one too many.
 - `config/models.go`: context window, max output, tool support, price per
-  million tokens, matched by family prefix.
+  million tokens, matched by family prefix — and, since a gateway answered as
+  `openrouter/dpe-glm-5.2`, by a family found inside the name when the prefix
+  misses. That second pass takes the figures and never the identity, so a
+  gateway cannot become `Known` and cannot be quoted a vendor's price.
 
 **Declared done because** the third format landed without changing a neutral
 type. It cost one map — Gemini matches a tool result by *name* where everyone
@@ -69,8 +72,9 @@ fake endpoints. See Phase 4.
 - The question shows what will happen: a path and a diff for an edit, the
   command itself for a shell call.
 - `docs/tools.md` and `docs/permissions.md`, held to the code by
-  `internal/tools/rules_test.go` — a tool without a section, or a table that
-  disagrees with `NeedsConfirm`, fails the build.
+  `internal/tools/rules_test.go` — a tool without a section, a table that
+  disagrees with `NeedsConfirm`, or a tool count written out in prose and left
+  behind, fails the build.
 - A project written for Claude Code is read as it is: `CLAUDE.md`/`AGENTS.md`
   with `@imports`, and skills under `.claude/skills`.
 
@@ -193,16 +197,23 @@ order. Each is small; the point is that *use* picks which.
 - **Editing more than one place at a time.** `edit_file` replaces one unique
   match. A refactor across six files is six confirmations.
   *Build it when a single change routinely takes more than three edits.*
-- **Reading the web** *(built)*. `fetch_url` opens an address, so a stack trace
-  mentioning a library's docs no longer ends the trail. Finding one still does
-  — see the search item in Phase 4.
+- **Reading the web** *(built)*. `fetch_url` opens an address and `search_web`
+  finds one, so a stack trace mentioning a library's docs no longer ends the
+  trail at either end. Searching needs a key; without one the tool says where
+  to get it rather than failing, and `fetch_url` still works on an address you
+  already have.
 - **Images.** No tool takes one, no client sends one, and the model picker no
   longer claims otherwise — it advertised "images" on models uhai had no way
   to show an image to. A screenshot of a broken layout is the case that would
   earn it. *Build it when a bug is being described in words that a picture
   would have settled.*
-- **A visible plan.** Long jobs are a wall of tool calls with no shape.
-  *Build it when a turn's steps stop fitting in the status row.*
+- **A visible plan.** Half of this arrived as `set_plan`: the model has
+  somewhere to keep a plan, and re-stating it each call is what keeps it
+  alive. The half still missing is the screen — a long job is still a wall of
+  tool calls to the person watching it. Drawing it costs what `set_plan`
+  deliberately refused: state on the Agent, a lock around it, and a route
+  across the daemon's socket. *Build it when the person watching needs to know
+  where a turn has got to, rather than the model needing to remember.*
 - **Incremental task output.** `/tasks t1` keeps the last 8,000 characters, and
   a task that fails keeps them too rather than reporting nothing. *Build the
   incremental version when a task prints thousands of lines and the tail stops
