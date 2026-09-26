@@ -20,11 +20,12 @@ import (
 	"github.com/didik-prabowo/uhai/internal/provider"
 )
 
-// A session is one conversation, written to ~/.uhai/sessions after every turn
-// so a closed terminal — or a crash — does not take the work with it.
+// A session is one conversation, saved after every turn so a closed terminal
+// — or a crash — does not take the work with it.
 //
-// ponytail: whole history rewritten each turn, one file per session. Fine for
-// conversations that fit in a model's context; revisit if they ever do not.
+// How it is saved is not this package's business: this holds the contract and
+// filestore holds the answer, which is why the cost of that answer — the
+// whole history rewritten each turn — is marked there and not here.
 
 // Session is what gets saved and what -resume brings back.
 type Session struct {
