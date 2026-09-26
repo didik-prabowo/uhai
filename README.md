@@ -43,6 +43,9 @@ outside the tests, small enough to read in a sitting or two.
   ask first, and an edit shows its diff
 - **Outlives the terminal:** a daemon holds the conversation, and
   `uhai -attach` joins it from anywhere
+- **Sessions that come back:** every conversation is a file — `-resume`
+  reopens one with the model it was actually held with, and a history that
+  fills the window compacts itself instead of failing the turn
 - **Knows your project:** `AGENTS.md` and skills, in the layout Claude Code
   already uses — a repository written for one needs nothing added
 - **Small enough to read:** about 14,000 lines of Go outside the tests, with
