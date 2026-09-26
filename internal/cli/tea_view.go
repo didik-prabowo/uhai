@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/didik-prabowo/uhai/internal/build"
 	"github.com/didik-prabowo/uhai/internal/config"
 	"github.com/didik-prabowo/uhai/internal/provider"
 )
@@ -186,9 +187,19 @@ func (m *teaModel) modelHint() string {
 	return hint
 }
 
-// builtAt is when the running binary was built, so a session started before
-// the last build is obvious rather than mysterious.
+// builtAt says which binary is running, and the useful answer depends on
+// where it came from.
+//
+// A released or `go install`ed one says its version: the file's timestamp is
+// when it was downloaded, which describes the network and not the program.
+// Anything else says when it was built, which is the thing worth knowing
+// while working on it — a session started before the last build behaves like
+// the build it was started with, and this is the one glance that catches it.
 func builtAt() string {
+	if build.Released() {
+		return build.Version()
+	}
+
 	path, err := os.Executable()
 	if err != nil {
 		return ""

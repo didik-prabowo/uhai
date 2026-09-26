@@ -7,7 +7,7 @@ BINARY := uhai
 ENV := CGO_ENABLED=0
 SOURCES := $(shell git ls-files '*.go')
 
-.PHONY: build install run test race vet windows fmt check clean
+.PHONY: build install run test race vet windows fmt check clean release-snapshot
 
 build: ## the binary, here
 	$(ENV) $(GO) build -o $(BINARY) ./cmd/uhai
@@ -42,5 +42,11 @@ check: vet windows test ## what /check runs: formatting, vet, the Windows build,
 	@unformatted=$$(gofmt -l $(SOURCES)); \
 	if [ -n "$$unformatted" ]; then echo "not gofmt'd:"; echo "$$unformatted"; exit 1; fi
 
+# A release without tagging one, so .goreleaser.yaml is proved before a tag
+# has to be deleted to fix it. Needs goreleaser: `brew install goreleaser`.
+release-snapshot: ## build the release artefacts locally, publishing nothing
+	goreleaser release --snapshot --clean
+
 clean:
 	rm -f $(BINARY)
+	rm -rf dist

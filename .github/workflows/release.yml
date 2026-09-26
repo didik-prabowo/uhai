@@ -1,0 +1,35 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # creating the release and uploading its archives
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The whole history, because the changelog is built from the commits
+          # since the last tag and a shallow clone has neither.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # A tag that does not build is a tag that has to be deleted and pushed
+      # again, and a deleted tag is the one thing git users cannot be asked to
+      # forget. Cheaper to find out here.
+      - name: the tests, before anything is published
+        run: make check
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

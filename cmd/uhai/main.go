@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/didik-prabowo/uhai/internal/build"
 	"github.com/didik-prabowo/uhai/internal/orchestrator"
 )
 
@@ -19,7 +20,13 @@ func main() {
 	attach := flag.Bool("attach", false, "talk to the conversation the daemon holds, not a new one here")
 	stop := flag.Bool("daemon-stop", false, "stop the running daemon, ending every project's background work")
 	taskPrompt := flag.String("task", "", "answer one prompt as a background worker, reporting on stdout")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("uhai", build.Version())
+		return
+	}
 
 	if *taskPrompt != "" {
 		// The daemon spawns this; a person has no reason to. It is here
