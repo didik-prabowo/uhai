@@ -7,7 +7,20 @@ BINARY := uhai
 ENV := CGO_ENABLED=0
 SOURCES := $(shell git ls-files '*.go')
 
-.PHONY: build install run test race vet windows fmt check clean release-snapshot demo
+.PHONY: help build install run test race vet windows fmt check clean release-snapshot demo
+
+# The `## ` comments below were already here, which is the marker for a
+# self-documenting help target — and there was no help target, so they
+# described the file to nobody.
+#
+# DEFAULT_GOAL rather than putting help after build: make takes the first
+# target as the default, so the order of this file would be load-bearing and
+# nothing would say so. Adding help at the top silently changed what a bare
+# `make` does, which is how this line came to be written.
+.DEFAULT_GOAL := build
+
+help: ## this list
+	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t18
 
 build: ## the binary, here
 	$(ENV) $(GO) build -o $(BINARY) ./cmd/uhai
@@ -19,7 +32,7 @@ install: ## the binary, onto your PATH
 run: build ## build it and open it
 	./$(BINARY)
 
-test:
+test: ## the tests
 	$(ENV) $(GO) test ./...
 
 # The one target that must not have CGO_ENABLED=0 in front of it: the race
@@ -29,7 +42,7 @@ test:
 race: ## the tests again, watching for data races (needs cgo)
 	CGO_ENABLED=1 $(GO) test -race ./...
 
-vet:
+vet: ## go vet
 	$(ENV) $(GO) vet ./...
 
 windows: ## check the build nobody here can run
@@ -68,6 +81,6 @@ demo: build ## record the README demo against the scripted endpoint
 	@kill `cat local/demo-mock.pid` 2>/dev/null; rm -f local/demo-mock.pid
 	git checkout -- cmd/uhai/main.go
 
-clean:
+clean: ## remove the binary and the release artefacts
 	rm -f $(BINARY)
 	rm -rf dist
