@@ -157,8 +157,11 @@ against servers we wrote ourselves.
 - [ ] Use it for a day of ordinary work and fix what that breaks, in the order
       it breaks.
 
-What was read from crush, zot and zero — what was taken, what was refused, and
-what the daemon still lacks against them — is in [references.md](references.md).
+crush, zot and zero were read through over 2026-09-06/07, and several
+decisions here changed because of them — the model registry's figures, the
+cached-token accounting, the shape of `find_symbol`. Each of those says so in
+its own commit; the notes the comparison was written from are not in this
+repository.
 
 **Done when** a working day goes by without dropping back to another tool.
 Everything below waits for what this phase teaches: a roadmap written before

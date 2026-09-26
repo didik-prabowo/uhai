@@ -1,3 +1,9 @@
 /uhai
+
+# Notes that are about this project without being part of it: reading of other
+# repositories, comparisons, whatever is worth keeping and not worth
+# publishing. Tracked once, and taken back out — a judgement of somebody
+# else's project is not something to ship in a public repository.
+/local/
 .uhai/settings.local.json
 .DS_Store
