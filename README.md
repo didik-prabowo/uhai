@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/didik-prabowo/uhai/actions/workflows/ci.yml"><img src="https://github.com/didik-prabowo/uhai/actions/workflows/ci.yml/badge.svg" alt="check"></a>
-  <a href="https://github.com/didik-prabowo/uhai/releases"><img src="https://img.shields.io/github/v/release/didik-prabowo/uhai?display_name=tag&amp;sort=semver" alt="latest release"></a>
+  <a href="https://github.com/didik-prabowo/uhai/releases"><img src="https://img.shields.io/github/v/release/didik-prabowo/uhai?display_name=tag&amp;sort=semver&amp;include_prereleases" alt="latest release"></a>
   <a href="https://pkg.go.dev/github.com/didik-prabowo/uhai"><img src="https://pkg.go.dev/badge/github.com/didik-prabowo/uhai.svg" alt="go reference"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/didik-prabowo/uhai" alt="MIT licence"></a>
 </p>
@@ -61,8 +61,10 @@ is the page for that.
 One static binary with no runtime to install beside it, so every route below
 ends in the same file on your `PATH`.
 
-> **No version has been tagged yet.** `go install` works today; Homebrew and
-> the prebuilt archives go live with the first release.
+> **The releases so far are betas.** `go install` and the prebuilt archives
+> work today. Homebrew deliberately does not: a tap serves the version its
+> author stands behind, and `brew upgrade` would move people onto a beta
+> without asking. It starts with the first stable tag.
 
 ### With Homebrew
 

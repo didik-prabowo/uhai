@@ -31,10 +31,18 @@ jobs:
       # so a missing token is discovered at the end of a release that
       # otherwise worked — and a tag cannot be reused. Ten seconds here saves
       # deleting one.
-      - name: the tap token is set
+      # A prerelease does not push to the tap (skip_upload: auto), so it does
+      # not need the token — and refusing to release a beta over a secret it
+      # will never use would be the check getting in the way of the thing it
+      # protects.
+      - name: the tap token is set, for a release that will use it
         run: |
-          if [ -z "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
-            echo "::error::HOMEBREW_TAP_TOKEN is not set on this repository."
+          if [ -n "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
+            echo "token present"
+          elif printf '%s' "$GITHUB_REF_NAME" | grep -q -- '-'; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set. $GITHUB_REF_NAME is a prerelease, which does not push to the tap, so this is fine for now."
+          else
+            echo "::error::HOMEBREW_TAP_TOKEN is not set, and $GITHUB_REF_NAME is not a prerelease."
             echo "Create a PAT with write access to didik-prabowo/homebrew-tap,"
             echo "then: gh secret set HOMEBREW_TAP_TOKEN --repo didik-prabowo/uhai"
             exit 1

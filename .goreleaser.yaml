@@ -93,10 +93,15 @@ homebrew_casks:
     repository:
       owner: didik-prabowo
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      token: "{{ envOrDefault \"HOMEBREW_TAP_TOKEN\" \"\" }}"
     homepage: https://github.com/didik-prabowo/uhai
     description: A coding agent that lives in the terminal
     license: MIT
+    # "auto" means: skip the tap for a prerelease. Somebody typing
+    # `brew install` is asking for the version you stand behind, and a beta
+    # landing there would upgrade them into one without being asked. A
+    # prerelease still gets its archives — it is the tap that stays behind.
+    skip_upload: auto
     # Homebrew quarantines what a cask installs, and these binaries are not
     # notarised — notarising costs an Apple developer account. Without this
     # hook macOS refuses to open what brew just installed, which reads as a
