@@ -6,8 +6,8 @@ commands, and asks before doing anything it cannot take back.
 It talks to whichever model you point it at. Two providers ship with an
 endpoint — Anthropic and OpenAI — and anything else speaking either format is
 one `/connect` away: a gateway, a company endpoint, Gemini, Z.ai, OpenRouter,
-Ollama on your own machine. The whole of it is about 4,800 lines of Go, small
-enough to read in an afternoon.
+Ollama on your own machine. The whole of it is about 14,000 lines of Go
+outside the tests, small enough to read in a sitting or two.
 
 ## Getting started
 
@@ -169,14 +169,16 @@ thing that was asked.
 
 ## What it can do to your machine
 
-Six tools: read a file, write one, edit part of one, find files by name, search
-their contents, and run a shell command. Writing, editing and running ask first
-— the question shows the path and a diff of what changes, or the command
+Eleven tools: read a file, write one, edit part of one, find files by name,
+list a folder, search their contents, ask the language server about a symbol,
+run a shell command, read a page, search the web, and write down a plan.
+Writing, editing, running a command and anything that leaves the machine ask
+first — the question shows the path and a diff of what changes, or the command
 itself, so there is something to judge rather than something to trust. `a`
 allows that tool for the rest of the session; `allow` in the settings makes the
 answer permanent for the commands you name.
 
-A seventh, `spawn_task`, lets the model hand a self-contained job to a fresh
+A twelfth, `spawn_task`, lets the model hand a self-contained job to a fresh
 agent and get back only its report, which keeps a long search out of the
 conversation.
 
@@ -253,11 +255,8 @@ environment fails to build the test binaries, and says nothing useful about why.
 
 `AGENTS.md` is the guide to the source — which front end runs when, why the
 terminal behaves as it does, and which decisions were made deliberately and
-should not be quietly undone.
-
-<!-- - crush — untuk UI. Dan untuk melihat bagaimana permission, skills, session, lsp dipisah; mereka juga punya hooks dan lsp yang belum ada di uhai.
-- zot — untuk pembanding yang sepadan ukuran. Yang lain semuanya jauh lebih besar; zot mengaku "lightweight harness", jadi perbandingannya paling adil.
-- zero — bukan untuk ditiru, tapi sebagai peringatan. Tujuh puluh package di internal/, termasuk terminalpet. Itu ujung lain dari spektrum yang uhai duduki. -->
+should not be quietly undone. [`CONTRIBUTING.md`](CONTRIBUTING.md) is the
+shorter answer to "how do I send a change".
 
 ## License
 

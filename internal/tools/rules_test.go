@@ -67,6 +67,19 @@ func TestTheToolCountOnThePageIsRight(t *testing.T) {
 	if want := "uhai has " + words[n] + ","; !strings.Contains(docs(t), want) {
 		t.Errorf("the page has to say %q", want)
 	}
+
+	// The README says it too, and had drifted further: "Six tools" while the
+	// code offered eleven. Only the count is held here — the sentence after
+	// it numbers spawn_task as the one past them, and whoever comes to fix
+	// this line will be looking straight at it.
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("the README must exist: %v", err)
+	}
+	want := strings.ToUpper(words[n][:1]) + words[n][1:] + " tools:"
+	if !strings.Contains(string(readme), want) {
+		t.Errorf("the README has to say %q", want)
+	}
 }
 
 // The defaults table on that page is the security claim this project makes: it

@@ -83,8 +83,9 @@ against servers we wrote ourselves.
 
 - [ ] One turn through Anthropic and one through Gemini on a live key. A fake
       endpoint proves the shape of a request, never that the vendor agrees
-      with it. Not blocked: the credentials are in `auth.json`, which is where
-      uhai reads them from — an unset environment variable says nothing.
+      with it. It needs a key that can spend, and `auth.json` rather than the
+      environment is enough — uhai reads both, and an unset `ANTHROPIC_API_KEY`
+      says nothing about whether one is configured.
 
       It is a bigger claim than it was. The Anthropic client now sends
       adaptive thinking and replays the signed thinking blocks that come back,
