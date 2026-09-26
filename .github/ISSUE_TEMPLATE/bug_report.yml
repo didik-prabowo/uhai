@@ -1,0 +1,99 @@
+name: Something is broken
+description: uhai did something other than what it says it does
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Not here:** a security problem. Open a
+        [security advisory](https://github.com/didik-prabowo/uhai/security/advisories/new)
+        instead and keep the details out of any issue. `SECURITY.md` says what is
+        and is not a vulnerability here.
+
+        Each field below is asked because it has been the answer before. The
+        version and the front end are the two that decide whether a report can
+        be reproduced at all.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        `uhai -version`. If you built it yourself, the welcome box prints the
+        build time — a session started before a build behaves like the build it
+        was started with, and that has looked like a bug more than once.
+      placeholder: "v0.3.1 — or: built from 7148d6c, welcome box says 14:22"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: Which front end
+      description: >-
+        They are not the same program. A pipe refuses the tools that write and
+        answers slash commands itself; a daemon holds several projects at once.
+      options:
+        - a terminal, the full UI
+        - a pipe — echo … | uhai
+        - uhai -p, one-shot
+        - uhai -attach, talking to the daemon
+        - uhai -task, a background worker
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: >-
+        What you did, what you expected, and what happened instead. A transcript
+        beats a description of one.
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Provider and model
+      description: >-
+        What you configured, and — when they differ — what the status row says
+        actually answered. Behind a gateway one alias can route to a different
+        model every turn, and that difference has been the bug rather than the
+        background to it.
+      placeholder: configured anthropic/claude-sonnet-4-5; answered by …
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal, multiplexer, OS
+      description: >-
+        Needed for anything about drawing, the mouse, selection or keys: an
+        escape sequence can be swallowed by the terminal, by tmux or by
+        terminfo, and which one ate it decides where the fix goes. Skip it
+        otherwise.
+      placeholder: iTerm2 + tmux 3.6, macOS 15.4
+
+  - type: checkboxes
+    id: narrowed
+    attributes:
+      label: What you already ruled out
+      description: Tick only what you actually checked. A blank box is more useful than a guess.
+      options:
+        - label: The session was started *after* the build I am reporting on
+        - label: It happens in a fresh conversation too, not only a long one
+        - label: It happens with this project's skills switched off (`/skills`)
+        - label: This is Windows, where the build is checked but nothing has been run
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output, if there is any
+      description: >-
+        The error as it was printed, not retyped. A turn that stopped early says
+        why on its last line, and that line names the cause more often than the
+        status code does.
+      render: text

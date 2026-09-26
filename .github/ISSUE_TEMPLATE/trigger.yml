@@ -1,0 +1,68 @@
+name: A trigger fired
+description: Something got in the way of real work — including a thing the roadmap deliberately left out
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/roadmap.md` ends with things that were considered and left out, each
+        with the **trigger** that would justify building it. `CONTRIBUTING.md` puts
+        it plainly:
+
+        > If your idea is on that list, the useful contribution is evidence that
+        > its trigger has fired.
+
+        So this form asks about the work, not about the feature. A feature request
+        is a guess about what would help; a trigger is a fact about what did not.
+        The second one is much harder to argue with.
+
+  - type: textarea
+    id: work
+    attributes:
+      label: What you were doing
+      description: >-
+        The actual task, in enough detail that the shape of the gap is visible.
+        Not the feature you want — the work that ran into something.
+    validations:
+      required: true
+
+  - type: textarea
+    id: cost
+    attributes:
+      label: How often, and what it cost
+      description: >-
+        This is the evidence. Count something: how many times, how long, how many
+        confirmations, how many tokens. "It would be nice if" is the version of
+        this that cannot be acted on.
+      placeholder: >-
+        Six confirmations for one rename across four files, and I did it twice this
+        week — about ten minutes each time, most of it pressing y.
+    validations:
+      required: true
+
+  - type: input
+    id: roadmap
+    attributes:
+      label: Is it already on the roadmap?
+      description: >-
+        If you know which item, name it — that turns this into evidence against a
+        specific decision, which is the most useful thing it can be. If you do not,
+        leave it blank; nobody expects you to have read the file.
+      placeholder: Phase 5, "Editing more than one place at a time"
+
+  - type: textarea
+    id: instead
+    attributes:
+      label: What you did instead
+      description: >-
+        The workaround is the measure of the gap. One that is merely annoying says
+        something different from no workaround at all — say which it was.
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What you would expect it to look like
+      description: >-
+        Optional on purpose. The trigger is the contribution; the shape is this
+        project's to decide, and a good trigger has been answered by something
+        smaller than what was asked for more than once.
