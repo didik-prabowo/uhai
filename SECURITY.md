@@ -19,7 +19,7 @@ without you saying so**. A report is most useful when it shows one of these
 being false:
 
 - A tool that changes something, or leaves the machine, running without a
-  confirmation. `docs/tools.md` has the defaults table and
+  confirmation. `docs/guide/tools.md` has the defaults table and
   `internal/tools/rules_test.go` fails the build if it and the code disagree.
 - A permission rule being bypassed — a `deny` that does not deny, a shell
   line whose parts are not judged separately, a tool reachable under a name

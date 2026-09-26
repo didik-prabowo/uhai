@@ -87,7 +87,7 @@ one folder deep before going quiet — and `permission.go` — five lines saying
 both halves in one place, because an answer is worth nothing if what it
 approves cannot be read.
 
-`docs/tools.md` is the page for users, and `internal/tools/rules_test.go` holds
+`docs/guide/tools.md` is the page for users, and `internal/tools/rules_test.go` holds
 it to the code: a tool added without a section, or a permission table that
 disagrees with `NeedsConfirm`, fails the build. Change the behaviour and the
 page in the same commit, because the tests will make you anyway.

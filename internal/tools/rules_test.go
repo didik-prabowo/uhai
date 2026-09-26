@@ -18,7 +18,7 @@ func timeAfter(ms int) <-chan time.Time { return time.After(time.Duration(ms) * 
 
 // docsPath is the page these tests hold to the code. A tool the model can call
 // and nobody documented is how a surprise gets shipped.
-const docsPath = "../../docs/tools.md"
+const docsPath = "../../docs/guide/tools.md"
 
 func docs(t *testing.T) string {
 	t.Helper()
@@ -40,7 +40,7 @@ func TestDocumentedToolsMatchTheCode(t *testing.T) {
 	for _, spec := range Definitions() {
 		defined[spec.Name] = true
 		if !strings.Contains(page, "### "+spec.Name) {
-			t.Errorf("%s is offered to the model but has no section in docs/tools.md", spec.Name)
+			t.Errorf("%s is offered to the model but has no section in docs/guide/tools.md", spec.Name)
 		}
 	}
 
@@ -48,7 +48,7 @@ func TestDocumentedToolsMatchTheCode(t *testing.T) {
 	// identifier; the prose ones ("Configure", "Internals") do not.
 	for _, m := range regexp.MustCompile(`(?m)^### ([a-z_]+)$`).FindAllStringSubmatch(page, -1) {
 		if !defined[m[1]] {
-			t.Errorf("docs/tools.md documents %q, which no longer exists", m[1])
+			t.Errorf("docs/guide/tools.md documents %q, which no longer exists", m[1])
 		}
 	}
 }
@@ -361,7 +361,7 @@ func TestShellKillsWhatItStarted(t *testing.T) {
 // applies to it: every tool has to appear in its key table, or a capability
 // exists that nobody can find the setting for.
 func TestPermissionsPageListsEveryTool(t *testing.T) {
-	page, err := os.ReadFile("../../docs/permissions.md")
+	page, err := os.ReadFile("../../docs/guide/permissions.md")
 	if err != nil {
 		t.Fatalf("the permissions page must exist: %v", err)
 	}

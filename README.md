@@ -153,7 +153,7 @@ the code holds what the project needs, and wins.
 - **check** — how this project verifies itself, for `/check`. Guessed from
   `go.mod`, `package.json` or a `Makefile` when absent.
 - **permissions** — what each tool may do without asking; see
-  [`docs/permissions.md`](docs/permissions.md).
+  [`docs/guide/permissions.md`](docs/guide/permissions.md).
 
 Environment wins over both: `UHAI_MODEL`, `UHAI_BASE_URL`, `UHAI_API_KEY`.
 
@@ -197,10 +197,10 @@ allowing `git` does not quietly allow `git status && rm -rf /`:
 { "permissions": { "allow": ["Bash(git:*)"], "deny": ["Bash(git push:*)"] } }
 ```
 
-[`docs/tools.md`](docs/tools.md) has each tool in full — parameters, limits,
+[`docs/guide/tools.md`](docs/guide/tools.md) has each tool in full — parameters, limits,
 what is refused and why — [`docs/roadmap.md`](docs/roadmap.md) has what is
 built and what each unbuilt thing is waiting for, and
-[`docs/permissions.md`](docs/permissions.md) has
+[`docs/guide/permissions.md`](docs/guide/permissions.md) has
 the rules. Tests hold both pages to the code, so a tool nobody documented fails
 the build.
 

@@ -71,7 +71,7 @@ fake endpoints. See Phase 4.
   command that builds itself with `$(...)` is never allowed silently.
 - The question shows what will happen: a path and a diff for an edit, the
   command itself for a shell call.
-- `docs/tools.md` and `docs/permissions.md`, held to the code by
+- `docs/guide/tools.md` and `docs/guide/permissions.md`, held to the code by
   `internal/tools/rules_test.go` — a tool without a section, a table that
   disagrees with `NeedsConfirm`, or a tool count written out in prose and left
   behind, fails the build.

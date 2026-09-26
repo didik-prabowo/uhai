@@ -48,10 +48,10 @@ That is how a known limit stops being a surprise to the next person.
   higher than most Go, deliberately, because this project keeps its decisions
   in the source rather than in a wiki that drifts.
 - **Documents are held to the code by tests.** `internal/tools/rules_test.go`
-  fails the build if a tool has no section in `docs/tools.md`, if the defaults
-  table disagrees with `NeedsConfirm`, or if the tool count in the README and
-  the docs has gone stale. Adding a tool means documenting it in the same
-  commit; you will not be reminded politely.
+  fails the build if a tool has no section in `docs/guide/tools.md`, if the
+  defaults table disagrees with `NeedsConfirm`, or if the tool count in the
+  README and the docs has gone stale. Adding a tool means documenting it in
+  the same commit; you will not be reminded politely.
 - **A test that waits for a goroutine polls at 5ms for five seconds**
   (`waitTries`, `waitFor`). The answer arrives in milliseconds; the budget is
   for a machine busy with something else.
