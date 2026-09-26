@@ -73,11 +73,34 @@ release:
     Built without cgo, so the binary is static. macOS will quarantine a
     downloaded one — see the README for the one command that clears it.
 
-# Homebrew is deliberately not here yet. Turning it on needs a second
-# repository called `homebrew-tap` and a token that may write to it, and a
-# `brews:` block naming both. Enabling it before that repository exists turns
-# the first tag into a failed release, which is the opposite of the point.
+# Homebrew, written out and switched off. Two things have to exist before it
+# can be turned on, and neither can be done from here:
 #
-# Add it when somebody asks for `brew install`; GoReleaser will then write
-# and push the formula on every tag, and the README's install table gains a
-# row it can honestly fill.
+#   1. a public repository `didik-prabowo/homebrew-tap` — the `homebrew-`
+#      prefix is dropped in use, which is why people type
+#      `brew install didik-prabowo/tap/uhai`
+#   2. a Personal Access Token with write access to it, saved on THIS
+#      repository as the secret HOMEBREW_TAP_TOKEN, and passed to the release
+#      job as an env var. The built-in GITHUB_TOKEN cannot do this: it may
+#      only write to the repository it is running in.
+#
+# Then delete the `#` from the block below and tag. Do not enable it before
+# the tap exists: GoReleaser pushes the formula *after* building the
+# archives, so a missing tap turns a release that otherwise worked into a
+# failed one.
+#
+# brews:
+#   - name: uhai
+#     repository:
+#       owner: didik-prabowo
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     homepage: https://github.com/didik-prabowo/uhai
+#     description: A coding agent that lives in the terminal
+#     license: MIT
+#     # Not `depends_on: go`: the binary is static and needs nothing.
+#     test: |
+#       assert_match version.to_s, shell_output("#{bin}/uhai -version")
+#     caveats: |
+#       uhai opens without a provider. Type /connect to add one; the key is
+#       kept in ~/.uhai/auth.json, mode 0600.

@@ -9,6 +9,13 @@
   <em>A coding agent that lives in the terminal.</em>
 </p>
 
+<p align="center">
+  <a href="https://github.com/didik-prabowo/uhai/actions/workflows/ci.yml"><img src="https://github.com/didik-prabowo/uhai/actions/workflows/ci.yml/badge.svg" alt="check"></a>
+  <a href="https://github.com/didik-prabowo/uhai/releases"><img src="https://img.shields.io/github/v/release/didik-prabowo/uhai?display_name=tag&amp;sort=semver" alt="latest release"></a>
+  <a href="https://pkg.go.dev/github.com/didik-prabowo/uhai"><img src="https://pkg.go.dev/badge/github.com/didik-prabowo/uhai.svg" alt="go reference"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/didik-prabowo/uhai" alt="MIT licence"></a>
+</p>
+
 It reads and writes your files, runs commands, and asks before doing anything
 it cannot take back.
 
