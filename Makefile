@@ -22,8 +22,12 @@ run: build ## build it and open it
 test:
 	$(ENV) $(GO) test ./...
 
-race: ## the tests again, watching for data races
-	$(ENV) $(GO) test -race ./...
+# The one target that must not have CGO_ENABLED=0 in front of it: the race
+# detector is built out of cgo and refuses outright without it. It therefore
+# cannot run in the sandbox the rest of this file exists for — it is here for
+# CI, and for anyone whose linker will build a cgo test binary.
+race: ## the tests again, watching for data races (needs cgo)
+	CGO_ENABLED=1 $(GO) test -race ./...
 
 vet:
 	$(ENV) $(GO) vet ./...

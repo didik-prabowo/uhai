@@ -1,0 +1,3 @@
+# One person, two spellings of the same name in the history. Git reads this
+# so `git shortlog` and every forge's contributor list show one, not two.
+Didik Prabowo <didikprab@gmail.com> <didikprab@gmail.com>

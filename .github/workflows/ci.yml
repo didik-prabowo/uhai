@@ -1,0 +1,30 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # go-version-file rather than a version here: go.mod already says which
+      # Go this needs, and a second copy of the number is one that goes stale.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The same target a contributor runs locally: gofmt, vet, the Windows
+      # build nobody here can run, and the tests. CGO_ENABLED=0 is inside it.
+      - run: make check
+
+      # Not folded into `make check`: the race detector is built out of cgo,
+      # and everything above deliberately runs without it.
+      - name: the tests again, watching for data races
+        run: make race
