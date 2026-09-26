@@ -1,7 +1,16 @@
-# uhai
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/uhai-cli.png">
+    <img src="docs/assets/uhai-cli-light.png" alt="uhai" width="168" height="168">
+  </picture>
+</p>
 
-A coding agent that lives in the terminal. It reads and writes files, runs
-commands, and asks before doing anything it cannot take back.
+<p align="center">
+  <em>A coding agent that lives in the terminal.</em>
+</p>
+
+It reads and writes your files, runs commands, and asks before doing anything
+it cannot take back.
 
 It talks to whichever model you point it at. Two providers ship with an
 endpoint — Anthropic and OpenAI — and anything else speaking either format is
