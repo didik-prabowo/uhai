@@ -1,9 +1,9 @@
 # Tools
 
 Tools are what let the model do something rather than only say something: read
-your files, search them, change them, run a command, read a page. uhai has
-seven, and the model is given exactly that list — there is no hidden
-capability, and nothing reaches the network without you saying so.
+your files, search them, change them, run a command, read a page, search the
+web. uhai has eleven, and the model is given exactly that list — there is no
+hidden capability, and nothing reaches the network without you saying so.
 
 Everything on this page is enforced in `internal/tools` and checked by
 `internal/tools/rules_test.go`, which fails the build if the page and the code
@@ -28,8 +28,8 @@ that only look inside it do not:
 
 | default | tools |
 |---|---|
-| `allow` | [`read_file`](#read_file), [`glob`](#glob), [`grep`](#grep), [`find_symbol`](#find_symbol) |
-| `ask` | [`write_file`](#write_file), [`edit_file`](#edit_file), [`run_bash`](#run_bash), [`fetch_url`](#fetch_url) |
+| `allow` | [`read_file`](#read_file), [`glob`](#glob), [`grep`](#grep), [`list_directory`](#list_directory), [`find_symbol`](#find_symbol), [`set_plan`](#set_plan) |
+| `ask` | [`write_file`](#write_file), [`edit_file`](#edit_file), [`run_bash`](#run_bash), [`fetch_url`](#fetch_url), [`search_web`](#search_web) |
 
 A chained command line is judged part by part, so allowing `Bash(git:*)` does
 not quietly allow `git status && rm -rf /`.
@@ -94,6 +94,23 @@ rest matched against the file name, so `**/*.go` finds Go files at any depth.
 There is no brace expansion and no `**` in the middle of a pattern —
 `src/**/test/*.go` will not work. Use `grep`, or a command, for more than that.
 
+### list_directory
+
+Lists one folder: its files, and its subfolders with a trailing slash.
+
+```json
+{ "path": "internal/tools" }
+```
+
+One level, and `glob` for anything deeper. It exists because `glob` cannot
+name a directory at all — the walk both searches share hands its visitor files
+only, so the shape of a tree was reachable only through `run_bash ls`, which
+asks permission for the least dangerous thing here.
+
+`.gitignore` is read from the project root rather than from the folder being
+listed, so listing a subfolder hides what listing the root hides. A folder
+whose entries were all ignored says so rather than saying it is empty.
+
 ### grep
 
 Searches file contents with a Go regular expression, returning
@@ -134,6 +151,27 @@ turn goes on.
 
 Servers are started on first use and kept warm for the rest of the session,
 because starting one costs an index of the whole project.
+
+### set_plan
+
+Writes down the plan for a job of several steps.
+
+```json
+{ "steps": [
+  { "step": "read internal/tools", "status": "done" },
+  { "step": "add the tool", "status": "doing" },
+  { "step": "update the docs" }
+] }
+```
+
+`status` is `todo` (the default), `doing` or `done`, and the whole plan is
+sent every time — the newest call is the plan, not a patch to it.
+
+It stores nothing. The plan is the tool result, and the tool result is in the
+history the next request carries, so re-stating it is what keeps it alive.
+That is why there is no plan on screen and nothing survives `/compact`: the
+model is the only reader so far. A stored one can be built the day something
+else needs to read it.
 
 ### run_bash
 
@@ -204,3 +242,36 @@ too: it would be a second `read_file` with none of its rules.
 
 Markup is stripped rather than parsed — scripts and styles go whole, tags go,
 entities come back as characters. Enough for prose; not for structure.
+
+### search_web
+
+Searches the web and returns titles, addresses and short descriptions.
+
+```json
+{ "query": "go 1.25 release notes", "count": 5 }
+```
+
+It returns descriptions, not pages: `fetch_url` is still what opens the one
+that looked right. `count` is 1 to 20 and defaults to 5.
+
+It asks first, and one step earlier than `fetch_url` does. The query itself
+leaves the machine, and what somebody is searching for is often more telling
+than the page they end up reading — the model writes that query out of
+whatever is in the conversation.
+
+**It needs a key.** Every keyless source was tried and none of them answer:
+DuckDuckGo does not reply to this machine at all, Mojeek returns a captcha. A
+free Brave key from <https://brave.com/search/api/> goes in `~/.uhai/auth.json`:
+
+```json
+{ "brave": { "key": "BSA..." } }
+```
+
+or in `BRAVE_API_KEY`, which wins over the file. `UHAI_API_KEY` deliberately
+does **not** apply here, unlike everywhere else: it is a wildcard that fills
+in every provider's key, and here it would send the key paying for the
+conversation to a search engine that never asked for one.
+
+No key is an answer, not an error — a note saying so, and the turn goes on.
+That is the ordinary state of most machines and it must not cost a turn to
+find out.

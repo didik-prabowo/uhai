@@ -88,10 +88,13 @@ actually do is not in the text, so there is nothing to judge.
 | `Glob` | `glob` | finding files by name | path |
 | `Grep` | `grep` | searching file contents | path |
 | `find_symbol` | — | asking the language server about a symbol | — |
+| `list_directory` | — | listing one folder | path |
+| `set_plan` | — | writing down a multi-step plan | — |
 | `Write` | `write_file` | creating or overwriting a file | path |
 | `Edit` | `edit_file` | replacing part of a file | path |
 | `Bash` | `run_bash` | running a shell command | command |
 | `Fetch` | `fetch_url` | fetching a page over http(s) | url |
+| `search_web` | — | searching the web | query |
 | `*` | | every tool | |
 
 ## Defaults
@@ -101,8 +104,8 @@ only look inside it do not.
 
 | default | tools |
 |---|---|
-| `allow` | `Read`, `Glob`, `Grep` |
-| `ask` | `Write`, `Edit`, `Bash`, `Fetch` |
+| `allow` | `Read`, `Glob`, `Grep`, `list_directory`, `find_symbol`, `set_plan` |
+| `ask` | `Write`, `Edit`, `Bash`, `Fetch`, `search_web` |
 
 `Fetch` is in the asking half for the direction that is easy to miss: it reads
 by sending, and the URL it sends is the model's to choose.

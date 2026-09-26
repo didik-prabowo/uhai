@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // isolate gives a test a home of its own and takes the environment out of the
@@ -146,5 +148,45 @@ func TestSaveMergesFields(t *testing.T) {
 	// A workspace without a key is not a connection.
 	if err := Save("openai", Creds{FieldWorkspace: "w"}); err == nil {
 		t.Error("saving credentials with no key must be refused")
+	}
+}
+
+// The search tool cannot import this package, so the key reaches it through a
+// variable this package sets in init. The wire is the part that breaks
+// silently: nothing fails to compile when it is gone, search simply answers
+// "no key" to everyone who did not export one.
+func TestTheSearchToolIsToldWhereTheKeyIs(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv(tools.SearchKeyEnv, "")
+
+	if err := Save(SearchProvider, Creds{FieldKey: "BSA-stored"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tools.SearchKey(); got != "BSA-stored" {
+		t.Errorf("the tool read %q, want the key from auth.json", got)
+	}
+
+	// The environment still wins, the way it does for every other credential.
+	t.Setenv(tools.SearchKeyEnv, "BSA-exported")
+	if got := tools.SearchKey(); got != "BSA-exported" {
+		t.Errorf("the tool read %q, want the exported one", got)
+	}
+}
+
+// UHAI_API_KEY fills in every provider's key field here, which is right for a
+// gateway and would be a leak for search: the key paying for the conversation
+// sent to a search engine that never asked for one.
+func TestTheWildcardKeyDoesNotReachTheSearchEngine(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(tools.SearchKeyEnv, "")
+	t.Setenv("UHAI_API_KEY", "sk-the-expensive-one")
+
+	if got := tools.SearchKey(); got != "" {
+		t.Errorf("the tool read %q; the wildcard must not reach it", got)
+	}
+	// The wildcard still does what it is for.
+	if got := APIKey("anthropic"); got != "sk-the-expensive-one" {
+		t.Errorf("the wildcard stopped working for a provider: %q", got)
 	}
 }

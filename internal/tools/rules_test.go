@@ -53,6 +53,22 @@ func TestDocumentedToolsMatchTheCode(t *testing.T) {
 	}
 }
 
+// The page opens by saying how many tools there are, and that sentence went
+// stale the first time one was added: it said seven while the code offered
+// eight. A number in prose is a claim like any other on this page.
+func TestTheToolCountOnThePageIsRight(t *testing.T) {
+	words := []string{"zero", "one", "two", "three", "four", "five", "six",
+		"seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen"}
+
+	n := len(Definitions())
+	if n >= len(words) {
+		t.Skipf("no word for %d tools; spell it in the table above", n)
+	}
+	if want := "uhai has " + words[n] + ","; !strings.Contains(docs(t), want) {
+		t.Errorf("the page has to say %q", want)
+	}
+}
+
 // The defaults table on that page is the security claim this project makes: it
 // says which tools act without asking. It has to agree with the code that
 // enforces it, or it is worse than nothing.
@@ -107,14 +123,17 @@ func TestOnlyChangingToolsAskFirst(t *testing.T) {
 // field the model cannot see is a call it will get wrong every time.
 func TestSchemasAreValidAndRequireWhatIsUsed(t *testing.T) {
 	required := map[string][]string{
-		"read_file":   {"path"},
-		"write_file":  {"path", "content"},
-		"edit_file":   {"path", "old", "new"},
-		"glob":        {"pattern"},
-		"fetch_url":   {"url"},
-		"grep":        {"pattern"},
-		"find_symbol": {"name"},
-		"run_bash":    {"command"},
+		"read_file":      {"path"},
+		"write_file":     {"path", "content"},
+		"edit_file":      {"path", "old", "new"},
+		"glob":           {"pattern"},
+		"fetch_url":      {"url"},
+		"grep":           {"pattern"},
+		"find_symbol":    {"name"},
+		"run_bash":       {"command"},
+		"set_plan":       {"steps"},
+		"search_web":     {"query"},
+		"list_directory": nil,
 	}
 
 	for _, spec := range Definitions() {

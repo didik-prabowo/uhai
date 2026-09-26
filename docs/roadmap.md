@@ -101,22 +101,29 @@ against servers we wrote ourselves.
 - [ ] Size `glm-5`, `glm-5.1`, `glm-5.2` and `gpt-5`, which Z.ai and OpenAI
       list but do not measure. Needs a key with credit on it: an account that
       cannot spend cannot be asked where its ceilings are.
-- [ ] A way to search the web. `fetch_url` opens an address; nothing finds
-      one, so a model asked to look something up invents URLs — seven
-      cookpad ids in a row, all 404. Every keyless source tried is blocked:
-      DuckDuckGo does not answer this machine at all and Mojeek returns a
-      captcha. A real one needs a key (Brave, Tavily, Serper) or a
-      self-hosted SearXNG, which is a decision about dependencies.
+- [x] A way to search the web. `search_web` asks Brave: one GET, one header,
+      no SDK and no provider interface behind it. The keyless sources stay
+      unavailable — DuckDuckGo does not answer this machine and Mojeek
+      returns a captcha — so a key is the price, and a machine without one
+      gets a note rather than an error. It asks permission one step earlier
+      than `fetch_url` does, because the query leaves the machine before any
+      page does. `UHAI_API_KEY` deliberately does not reach it.
 - [x] Let an attached terminal change the model. The model is the daemon's to
       report and the daemon's to change: /v1/health carries what its
       conversation answers with, POST /v1/model is the switch, and it is taken
       under the turn lock. /connect is still refused — it writes a credential
       into the settings the daemon reads.
-- [ ] A tool that lists a directory. Reading a folder is as harmless as
-      `glob`, but the only way to do it is `run_bash ls`, which asks
-      permission. crush has `ls`, zero has `list_directory`.
-- [ ] A plan or todo tool, so multi-step work does not lose its thread.
-      All three references have one.
+- [x] A tool that lists a directory. `list_directory`, one level, no
+      permission. The gap was wider than the item said: `walk` hands its
+      visitor files only, so `glob` cannot name a directory under any
+      pattern — the shape of a tree was reachable only through `run_bash ls`.
+      A test holds that premise, and fails if glob ever learns to.
+- [x] A plan or todo tool. `set_plan` takes the whole plan each call and
+      returns it drawn. It stores nothing: the tool result is in the history
+      the next request carries, so re-stating the plan is what keeps it
+      alive, and there is no field on Agent, no lock and nothing crossing the
+      daemon's socket. Showing it on screen is the version to build when
+      something other than the model needs to read it.
 - [x] Worker processes for the daemon. A background task is a process now, not
       a goroutine with a `recover` around it that could not have caught the
       failures worth surviving anyway — a concurrent map write is fatal, not a

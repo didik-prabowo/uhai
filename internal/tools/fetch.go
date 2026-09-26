@@ -49,10 +49,9 @@ func (fetchTool) Description() string {
 	return "Fetch a web page or document over http(s) and return it as text. " +
 		"Use it to read documentation, a changelog, or an API reference the answer depends on. " +
 		"Markup is stripped; only addresses on the public internet can be reached. " +
-		"This is not a search engine and there is no search tool here: it can only " +
-		"open an address you already have, from the user, from a file, or from a page " +
-		"already fetched. Never invent or guess a URL — if you do not have one, say so " +
-		"and ask for a link."
+		"This is not a search engine: it can only open an address you already have, from " +
+		"the user, from a file, from a page already fetched, or from search_web. Never " +
+		"invent or guess a URL — search for it instead."
 }
 func (fetchTool) Schema() json.RawMessage {
 	return json.RawMessage(`{
@@ -131,8 +130,8 @@ func (fetchTool) Run(ctx context.Context, _ string, input json.RawMessage) (stri
 func statusMessage(status int, target string) string {
 	msg := fmt.Sprintf("HTTP %d from %s", status, target)
 	if status == http.StatusNotFound {
-		msg += ". That address does not exist. Do not guess another: there is " +
-			"no search tool here, so ask the user for a link instead."
+		msg += ". That address does not exist. Do not guess another: " +
+			"search_web for the right one, or ask the user for a link."
 	}
 	return msg
 }

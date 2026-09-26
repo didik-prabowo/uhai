@@ -1,5 +1,6 @@
 // Package tools defines the tools the model may call (read_file, write_file,
-// edit_file, glob, grep, run_bash, fetch_url) and runs them. It knows nothing about which provider is in use —
+// edit_file, glob, grep, list_directory, run_bash, fetch_url, search_web,
+// find_symbol, set_plan) and runs them. It knows nothing about which provider is in use —
 // the tools behave identically for every vendor.
 package tools
 
@@ -91,6 +92,9 @@ var all = []Tool{
 	bashTool{},
 	fetchTool{},
 	symbolTool{},
+	listTool{},
+	planTool{},
+	searchTool{},
 }
 
 // find is the one lookup. A name nobody defined finds nothing, which is what

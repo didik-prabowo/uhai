@@ -16,6 +16,9 @@ const (
 	NameBash       = "run_bash"
 	NameFetch      = "fetch_url"
 	NameFindSymbol = "find_symbol"
+	NameList       = "list_directory"
+	NamePlan       = "set_plan"
+	NameSearch     = "search_web"
 
 	// NameSpawnTask is here although the tool is not: spawning a task needs an
 	// Agent, so it is built in internal/agent and never appears in Definitions.

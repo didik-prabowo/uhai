@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -276,7 +278,7 @@ func TestATimedOutSearchKeepsWhatItFound(t *testing.T) {
 // already has. A 404 is where it finds out, so the 404 says what to do.
 func TestA404TellsTheModelNotToGuessAgain(t *testing.T) {
 	got := statusMessage(404, "https://cookpad.com/id/recipe/13356818-donat-kentang")
-	for _, want := range []string{"does not exist", "Do not guess another", "no search tool"} {
+	for _, want := range []string{"does not exist", "Do not guess another", "search_web"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the 404 has to say %q, got %q", want, got)
 		}
@@ -292,8 +294,10 @@ func TestA404TellsTheModelNotToGuessAgain(t *testing.T) {
 	}
 }
 
-// The tool description is the only place the model learns there is no search,
-// and it learns it before spending four minutes finding out.
+// fetch_url opens an address and does not find one. Now that search_web
+// exists, the description has to send the model there rather than telling it
+// there is nowhere to go — the old sentence said "there is no search tool
+// here", which would have hidden the tool sitting next to it.
 func TestFetchSaysItCannotSearch(t *testing.T) {
 	var fetch Tool
 	for _, tl := range all {
@@ -304,7 +308,7 @@ func TestFetchSaysItCannotSearch(t *testing.T) {
 	if fetch == nil {
 		t.Fatal("fetch_url is not registered")
 	}
-	for _, want := range []string{"not a search engine", "Never invent or guess a URL"} {
+	for _, want := range []string{"not a search engine", "search_web", "Never invent or guess a URL"} {
 		if !strings.Contains(fetch.Description(), want) {
 			t.Errorf("the description has to say %q", want)
 		}
@@ -492,5 +496,225 @@ func TestFindSymbolWithoutAServerSendsTheModelToGrep(t *testing.T) {
 func TestFindSymbolRefusesAnEmptyName(t *testing.T) {
 	if out, isErr := Execute(context.Background(), t.TempDir(), NameFindSymbol, json.RawMessage(`{"name":"  "}`)); !isErr {
 		t.Fatalf("an empty name is a bad call, not a search: %q", out)
+	}
+}
+
+// run is the short way to call a tool the way the agent does.
+func run(t *testing.T, root, name string, args map[string]any) (string, bool) {
+	t.Helper()
+	in, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Execute(context.Background(), root, name, in)
+}
+
+// The premise of list_directory, checked rather than asserted: walk hands its
+// visitor files only, so glob cannot name a directory however the pattern is
+// written. If that ever changes this test fails and the tool is redundant.
+func TestGlobCannotNameADirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "internal", "tools", "tool.go"), []byte("package tools\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, pattern := range []string{"*", "internal/*", "**", "**/tools"} {
+		got, _ := run(t, dir, NameGlob, map[string]any{"pattern": pattern})
+		for _, line := range strings.Split(got, "\n") {
+			if line == "internal" || line == "internal/tools" {
+				t.Errorf("glob %q named a directory: %q", pattern, got)
+			}
+		}
+	}
+}
+
+func TestListDirectoryMarksFoldersAndObeysTheProjectsIgnores(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"cmd", "node_modules", "dist"} {
+		if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"go.mod", "uhai", ".gitignore"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("/uhai\ndist/\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, isErr := run(t, dir, NameList, nil)
+	if isErr {
+		t.Fatalf("listing a folder must not fail: %q", got)
+	}
+	lines := strings.Split(got, "\n")
+	want := []string{".gitignore", "cmd/", "go.mod"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("listed %q, want %q", lines, want)
+	}
+	// node_modules is never walked, dist/ and /uhai are the project's own
+	// rules, and the trailing slash is the only thing telling the two kinds
+	// of entry apart.
+	for _, gone := range []string{"node_modules", "dist", "uhai"} {
+		if slices.Contains(lines, gone) || slices.Contains(lines, gone+"/") {
+			t.Errorf("%s should not have been listed: %q", gone, got)
+		}
+	}
+}
+
+// A folder whose every entry is ignored is not an empty folder, and saying so
+// is the difference between the model looking again and the model believing
+// there is nothing there.
+func TestAnIgnoredFolderDoesNotClaimToBeEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "hidden"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "hidden", "secret.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, isErr := run(t, dir, NameList, map[string]any{"path": "hidden"})
+	if isErr {
+		t.Fatalf("an ignored folder is not an error: %q", got)
+	}
+	if !strings.Contains(got, "ignored") {
+		t.Errorf("the note has to say the folder may not really be empty, got %q", got)
+	}
+}
+
+func TestListDirectorySaysWhyItCannotList(t *testing.T) {
+	got, isErr := run(t, t.TempDir(), NameList, map[string]any{"path": "nowhere"})
+	if !isErr {
+		t.Errorf("a folder that is not there is an error the model can act on, got %q", got)
+	}
+}
+
+func TestSetPlanDrawsTheStatuses(t *testing.T) {
+	got, isErr := run(t, "", NamePlan, map[string]any{"steps": []map[string]string{
+		{"step": "read the package", "status": "done"},
+		{"step": "add the tool", "status": "doing"},
+		{"step": "update the docs"},
+	}})
+	if isErr {
+		t.Fatalf("a valid plan must not fail: %q", got)
+	}
+	for _, want := range []string{"[x] read the package", "[>] add the tool", "[ ] update the docs", "1/3 done"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the plan has to contain %q, got %q", want, got)
+		}
+	}
+}
+
+// A status the tool cannot draw is refused rather than drawn as a blank box:
+// silently turning "blocked" into "todo" is the model being told its plan says
+// something it does not.
+func TestSetPlanRefusesWhatItCannotDraw(t *testing.T) {
+	got, isErr := run(t, "", NamePlan, map[string]any{"steps": []map[string]string{
+		{"step": "wait for the key", "status": "blocked"},
+	}})
+	if !isErr {
+		t.Fatalf("an unknown status must be refused, got %q", got)
+	}
+	if !strings.Contains(got, "todo, doing or done") {
+		t.Errorf("the refusal has to name the three, got %q", got)
+	}
+
+	if got, isErr := run(t, "", NamePlan, map[string]any{"steps": []map[string]string{}}); !isErr {
+		t.Errorf("an empty plan is not a plan, got %q", got)
+	}
+}
+
+// No key is the ordinary state of most machines. Finding out must not cost the
+// turn, so it comes back as an answer with instructions, not as an error the
+// model retries around.
+func TestSearchWithoutAKeyIsAnAnswer(t *testing.T) {
+	t.Setenv(SearchKeyEnv, "")
+
+	got, isErr := run(t, "", NameSearch, map[string]any{"query": "go 1.25 release notes"})
+	if isErr {
+		t.Errorf("a missing key is not an error: %q", got)
+	}
+	for _, want := range []string{"no search key", "Do not try again", "BRAVE_API_KEY"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the note has to say %q, got %q", want, got)
+		}
+	}
+}
+
+func TestSearchReadsTheResults(t *testing.T) {
+	var gotQuery, gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("q")
+		gotToken = r.Header.Get("X-Subscription-Token")
+		fmt.Fprint(w, `{"web":{"results":[
+			{"title":"Go 1.25 <strong>Release</strong> Notes","url":"https://go.dev/doc/go1.25","description":"What&#39;s new in <strong>Go 1.25</strong>."}
+		]}}`)
+	}))
+	defer server.Close()
+
+	braveEndpoint = server.URL
+	defer func() { braveEndpoint = "https://api.search.brave.com/res/v1/web/search" }()
+	t.Setenv(SearchKeyEnv, "BSA-test")
+
+	got, isErr := run(t, "", NameSearch, map[string]any{"query": "go 1.25 release notes"})
+	if isErr {
+		t.Fatalf("a good answer must not be an error: %q", got)
+	}
+	if gotQuery != "go 1.25 release notes" {
+		t.Errorf("the service was asked %q", gotQuery)
+	}
+	if gotToken != "BSA-test" {
+		t.Errorf("the key goes in the header, got %q", gotToken)
+	}
+	// Brave wraps the matched words in <strong> and escapes the rest; both
+	// are markup the model pays for and cannot use.
+	for _, want := range []string{"Go 1.25 Release Notes", "https://go.dev/doc/go1.25", "What's new in Go 1.25."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the result has to contain %q, got %q", want, got)
+		}
+	}
+	if strings.Contains(got, "<strong>") {
+		t.Errorf("markup survived: %q", got)
+	}
+}
+
+// The service's own sentence is the only thing that says whether this is an
+// expired key or a rate limit, and they need different things done about them.
+func TestSearchKeepsTheServicesOwnRefusal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"detail":"plan quota exceeded"}}`)
+	}))
+	defer server.Close()
+
+	braveEndpoint = server.URL
+	defer func() { braveEndpoint = "https://api.search.brave.com/res/v1/web/search" }()
+	t.Setenv(SearchKeyEnv, "BSA-test")
+
+	got, isErr := run(t, "", NameSearch, map[string]any{"query": "anything"})
+	if !isErr {
+		t.Fatal("a refused search is an error")
+	}
+	if !strings.Contains(got, "plan quota exceeded") {
+		t.Errorf("the service's own words have to survive, got %q", got)
+	}
+}
+
+// UHAI_API_KEY fills in every provider's key field in config, which is right
+// for a gateway and would be a leak here: the key paying for the conversation
+// sent to a search engine that never asked for one. Checked against the
+// default reader, which is what this package ships; config's replacement is
+// held to the same thing in its own test.
+func TestTheConversationsKeyIsNotSentToTheSearchEngine(t *testing.T) {
+	t.Setenv("UHAI_API_KEY", "sk-the-expensive-one")
+	t.Setenv(SearchKeyEnv, "")
+
+	if key := SearchKey(); key != "" {
+		t.Errorf("SearchKey answered %q; it must not read the wildcard", key)
 	}
 }

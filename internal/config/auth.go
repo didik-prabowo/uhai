@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 const (
@@ -39,6 +41,32 @@ var vendorEnv = map[string]map[string]string{
 	"openai": {
 		FieldKey: "OPENAI_API_KEY",
 	},
+}
+
+// SearchProvider is the entry in auth.json holding the web search key. The
+// search tool is in internal/tools, which cannot import this package — the
+// arrow already runs the other way — so the lookup is handed to it rather
+// than reached for.
+const SearchProvider = "brave"
+
+// init teaches the search tool where a stored key lives. In init rather than
+// in a startup function because there are four ways into this binary — the
+// terminal, the pipe, a worker process, a task — and a wire that has to be
+// remembered in each of them is a wire that will be missing from the fourth.
+// The failure would be silent in the way this project keeps finding: search
+// would work for the person who exported the variable and answer "no key" to
+// everyone else.
+func init() {
+	tools.SearchKey = func() string {
+		if v := strings.TrimSpace(os.Getenv(tools.SearchKeyEnv)); v != "" {
+			return v
+		}
+		all, err := LoadAuth()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(all[SearchProvider][FieldKey])
+	}
 }
 
 // AuthPath returns the credentials file location: ~/.uhai/auth.json.
