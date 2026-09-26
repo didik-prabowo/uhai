@@ -36,9 +36,32 @@ jobs:
       # will never use would be the check getting in the way of the thing it
       # protects.
       - name: the tap token is set, for a release that will use it
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          if [ -n "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
-            echo "token present"
+          if [ -n "$TAP_TOKEN" ]; then
+            # Present is not the same as usable. A fine-grained PAT expires,
+            # and a token that is merely set would pass this check and fail at
+            # the push — after the archives are built and the release is open,
+            # which is the failure this step exists to move earlier. So ask
+            # the tap whether this token may actually write to it.
+            body=$(curl -s -w '\n%{http_code}' \
+              -H "Authorization: Bearer $TAP_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/didik-prabowo/homebrew-tap)
+            code=$(printf '%s' "$body" | tail -n1)
+            if [ "$code" != "200" ]; then
+              echo "::error::HOMEBREW_TAP_TOKEN cannot read didik-prabowo/homebrew-tap (HTTP $code)."
+              echo "401 means expired or revoked; 404 means the token cannot see that repository."
+              echo "Recreate it with Contents: Read and write on the tap, then set it again."
+              exit 1
+            fi
+            if ! printf '%s' "$body" | grep -q '"push": *true'; then
+              echo "::error::HOMEBREW_TAP_TOKEN can read the tap but not write to it."
+              echo "It needs Contents: Read and write, not Read-only."
+              exit 1
+            fi
+            echo "token can write to the tap"
           elif printf '%s' "$GITHUB_REF_NAME" | grep -q -- '-'; then
             echo "::warning::HOMEBREW_TAP_TOKEN is not set. $GITHUB_REF_NAME is a prerelease, which does not push to the tap, so this is fine for now."
           else
