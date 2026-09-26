@@ -5,16 +5,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        `docs/roadmap.md` ends with things that were considered and left out, each
-        with the **trigger** that would justify building it. `CONTRIBUTING.md` puts
-        it plainly:
+        `docs/roadmap.md` ends with things that were considered and left out, each with the **trigger** that would justify building it. `CONTRIBUTING.md` puts it plainly:
 
-        > If your idea is on that list, the useful contribution is evidence that
-        > its trigger has fired.
+        > If your idea is on that list, the useful contribution is evidence that its trigger has fired.
 
-        So this form asks about the work, not about the feature. A feature request
-        is a guess about what would help; a trigger is a fact about what did not.
-        The second one is much harder to argue with.
+        So this form asks about the work, not about the feature. A feature request is a guess about what would help; a trigger is a fact about what did not. The second one is much harder to argue with.
 
   - type: textarea
     id: work
