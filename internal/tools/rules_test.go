@@ -190,21 +190,116 @@ func TestUnknownToolIsRefused(t *testing.T) {
 // A result is cut at the end, so what a command printed last — where a failure
 // explains itself — is what survives.
 func TestLongResultsAreTruncated(t *testing.T) {
+	// grep, and no longer read_file: a read now stops at its own budget and
+	// says which lines it gave, so it never reaches this cut. grep can — two
+	// hundred matches of two hundred characters is forty thousand — and the
+	// cut is still the backstop for every tool that has no budget of its own.
 	dir := t.TempDir()
-	path := filepath.Join(dir, "big.txt")
-	if err := os.WriteFile(path, []byte(strings.Repeat("x", maxResultLen*2)), 0o644); err != nil {
+	long := strings.Repeat("needle ", 30) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "many.txt"), []byte(strings.Repeat(long, 300)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	out, isErr := Execute(context.Background(), "", "read_file", json.RawMessage(fmt.Sprintf(`{"path":%q}`, path)))
+	out, isErr := Execute(context.Background(), "", NameGrep,
+		json.RawMessage(fmt.Sprintf(`{"pattern":"needle","path":%q}`, dir)))
 	if isErr {
-		t.Fatalf("reading a large file is not an error: %q", out)
+		t.Fatalf("a search with many hits is not an error: %q", out)
 	}
 	if !strings.HasSuffix(out, "...[output truncated]") {
-		t.Fatal("a truncated result must say so, or the model treats half a file as the whole one")
+		t.Fatal("a truncated result must say so, or the model treats half of it as the whole")
 	}
 	if len(out) > maxResultLen+len("\n...[output truncated]") {
 		t.Fatalf("result is %d characters, cap is %d", len(out), maxResultLen)
+	}
+}
+
+// A file larger than one result is the ordinary case, not the exception:
+// internal/cli/cli_test.go is 107,890 bytes against an 8,000-character cap, so
+// the model could reach the same 7% of it however many times it asked. A window
+// plus the offset to carry on is the whole fix; an empty result and a truncated
+// one both read as "this is the file".
+func TestReadFileGivesAWindowAndSaysHowToCarryOn(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "long.go")
+	var body strings.Builder
+	for i := 1; i <= 5000; i++ {
+		fmt.Fprintf(&body, "line %d\n", i)
+	}
+	if err := os.WriteFile(path, []byte(body.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(args string) string {
+		t.Helper()
+		out, isErr := Execute(context.Background(), "", NameRead, json.RawMessage(args))
+		if isErr {
+			t.Fatalf("%s: %s", args, out)
+		}
+		return out
+	}
+
+	// The first window starts at the start and names where to continue.
+	first := read(fmt.Sprintf(`{"path":%q}`, path))
+	if !strings.Contains(first, "line 1\n") {
+		t.Error("a read with no offset starts at the beginning")
+	}
+	if !strings.Contains(first, "more follow") || !strings.Contains(first, "offset") {
+		t.Errorf("it must say how to reach the rest:\n%s", first[max(0, len(first)-120):])
+	}
+
+	// And the offset it named actually continues from there, rather than
+	// handing back the same page again.
+	next := regexp.MustCompile(`offset (\d+)`).FindStringSubmatch(first)
+	if next == nil {
+		t.Fatal("no offset in the note")
+	}
+	second := read(fmt.Sprintf(`{"path":%q,"offset":%s}`, path, next[1]))
+	if strings.Contains(second, "line 1\n") {
+		t.Error("the second window is the same as the first")
+	}
+	if !strings.Contains(second, "line "+next[1]+"\n") {
+		t.Errorf("the window must start at the line it was asked for, not near it")
+	}
+
+	// limit is honoured, and a window that is not the start says where it sat —
+	// the text alone does not say which lines these are.
+	window := read(fmt.Sprintf(`{"path":%q,"offset":4990,"limit":3}`, path))
+	if !strings.Contains(window, "line 4990") || !strings.Contains(window, "line 4992") ||
+		strings.Contains(window, "line 4993") {
+		t.Errorf("limit must be exact:\n%s", window)
+	}
+
+	// Past the end is an error naming the length, since the useful next move is
+	// a smaller offset and a refusal alone does not suggest one.
+	out, isErr := Execute(context.Background(), "", NameRead,
+		json.RawMessage(fmt.Sprintf(`{"path":%q,"offset":99999}`, path)))
+	if !isErr || !strings.Contains(out, "5000 lines") {
+		t.Errorf("an offset past the end must say how long the file is: %q", out)
+	}
+
+	// One line longer than the whole budget must not come back empty: an empty
+	// result leaves the same offset as the only thing to try, which is a loop.
+	huge := filepath.Join(dir, "oneline.txt")
+	if err := os.WriteFile(huge, []byte(strings.Repeat("x", maxResultLen*2)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cut := read(fmt.Sprintf(`{"path":%q}`, huge))
+	if !strings.Contains(cut, "line cut") || len(cut) < 1000 {
+		t.Errorf("a single enormous line must come back cut, not missing: %q", truncate(cut))
+	}
+}
+
+// An empty file is a fact worth stating: an empty result reads as a tool that
+// failed quietly.
+func TestReadingAnEmptyFileSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.txt")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := Execute(context.Background(), "", NameRead, json.RawMessage(fmt.Sprintf(`{"path":%q}`, path)))
+	if isErr || !strings.Contains(out, "empty") {
+		t.Errorf("an empty file must say it is empty, got %q", out)
 	}
 }
 

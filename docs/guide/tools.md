@@ -41,14 +41,33 @@ wins when rules disagree, and what each answer at the prompt means.
 
 ### read_file
 
-Reads a file and returns it as text.
+Reads a file and returns it as text — a window of it, when the file is longer
+than one result can hold.
 
 ```json
 { "path": "internal/cli/tea.go" }
+{ "path": "internal/cli/cli_test.go", "offset": 1200, "limit": 400 }
 ```
 
-A path that cannot be read comes back as an error the model can act on, not as
-an empty result — otherwise it carries on believing the file was empty.
+`offset` is the first line, counting from 1, and `limit` how many lines. Neither
+is needed for an ordinary file: without them the read starts at the beginning and
+returns as much as fits.
+
+What it does when there is more says how to reach it:
+
+```
+…[lines 1-312, more follow — read on with offset 313]
+```
+
+That line is the whole point. A result cut at 8,000 characters with nothing to
+say about it reads exactly like a file that ends there, and `cli_test.go` in this
+repository is 107,890 bytes — the same 7% of it came back however many times it
+was asked for.
+
+An offset past the end is an error naming the file's length, since the useful
+next move is a smaller offset. An empty file says it is empty. And a path that
+cannot be read comes back as an error the model can act on, not as an empty
+result — otherwise it carries on believing the file was empty.
 
 ### write_file
 
@@ -219,6 +238,7 @@ they need no permission and behave the same everywhere.
 | | |
 |---|---|
 | result size | 8,000 characters, then `...[output truncated]` |
+| `read_file` | 7,488 characters a time, then the offset to carry on from |
 | `glob`, `grep` matches | 200, then the search stops |
 | `grep` line length | 200 characters, then `…` |
 | `run_bash` time | 2 minutes, or what `timeout` asks for, up to 10 |
