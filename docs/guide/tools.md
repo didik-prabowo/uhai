@@ -207,6 +207,20 @@ shell alone would leave `go test` compiling away with nothing to report to. A
 command that waits for input dies rather than hanging the turn, so there is no
 `vim`, no `git rebase -i`, no password prompt.
 
+A trailing `&` does not detach on its own. The command's output goes to a pipe
+this process reads, and a backgrounded job inherits it — so `npm run dev &`
+prints whatever it prints, returns nothing, and holds the call open until the
+timeout kills it along with the job. Send the job's output elsewhere and it
+detaches properly:
+
+```json
+{ "command": "npm run dev >/tmp/dev.log 2>&1 &" }
+```
+
+Nothing tracks what that leaves running, though: `/stop` will not reach it, and
+it outlives the turn. There is no long-lived process here yet — see
+`docs/roadmap.md` Phase 6.
+
 `timeout` asks for longer, in seconds, up to ten minutes — the same ceiling
 `/check` has, since the limit was never about duration. Anything above is
 clamped rather than refused. The confirmation says how long it is agreeing to

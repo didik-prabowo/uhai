@@ -863,3 +863,34 @@ func TestBashReportsTheLimitItWasGiven(t *testing.T) {
 		t.Errorf("and still keep what was printed: %q", out)
 	}
 }
+
+// A trailing & does not detach, and the tool's description has to say so: the
+// buffer is an io.Writer, so the child inherits a pipe that Wait waits on, and a
+// backgrounded job holds it open for its whole life. `npm run dev &` therefore
+// hangs the turn for the entire timeout and is then killed with the group — on a
+// command that looks like it returns at once.
+func TestATrailingAmpersandStillWaitsUnlessRedirected(t *testing.T) {
+	start := time.Now()
+	if _, err := Shell(context.Background(), "", "sleep 1 & echo started", nil); err != nil {
+		t.Fatal(err)
+	}
+	waited := time.Since(start)
+	if waited < 900*time.Millisecond {
+		t.Fatalf("this test exists because & does not detach; it returned in %s", waited)
+	}
+
+	// Redirecting the job's output releases the pipe, and then it does detach.
+	start = time.Now()
+	if _, err := Shell(context.Background(), "", "sleep 5 >/dev/null 2>&1 & echo started", nil); err != nil {
+		t.Fatal(err)
+	}
+	if free := time.Since(start); free > 900*time.Millisecond {
+		t.Errorf("a redirected job should not be waited for, took %s", free)
+	}
+
+	// Which is the difference the model is told about, since nothing else would
+	// tell it: the command looks instant either way.
+	if !strings.Contains(bashTool{}.Description(), "&") {
+		t.Error("the description must warn that & alone still waits")
+	}
+}
