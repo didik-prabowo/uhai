@@ -186,6 +186,12 @@ func Shell(ctx context.Context, dir, command string, onLine func(string)) (strin
 	out := &tailBuffer{keep: maxBashOutput}
 
 	if onLine == nil {
+		// ponytail: one stream for both, so the model cannot tell a build log
+		// from an error. Two buffers would separate them and lose the order they
+		// were printed in, which is how a failure is read — the line before it
+		// is usually the reason. Interleaving is the more useful half, and
+		// nothing has been seen mistaking a log line for a failure. Give them
+		// their own buffers, tagged, when something is.
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			return "", err
@@ -202,7 +208,7 @@ func Shell(ctx context.Context, dir, command string, onLine func(string)) (strin
 	if err != nil {
 		return "", err
 	}
-	cmd.Stderr = cmd.Stdout // one stream, in the order it was printed
+	cmd.Stderr = cmd.Stdout // one stream, for the reason above
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
