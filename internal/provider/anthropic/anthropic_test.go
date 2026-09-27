@@ -371,3 +371,98 @@ func TestThinkingAndEffortAreSentOnlyWhenAsked(t *testing.T) {
 		})
 	}
 }
+
+// The system breakpoint covers tools and prompt — the bytes that do not change
+// within a turn. The history is the half that does, and it was going out
+// uncached on every iteration of the tool loop: a turn that reached fifty
+// thousand tokens paid full price for all fifty thousand, twenty-five times
+// over. The second breakpoint has to sit on the newest message, so the next
+// request's marker can find this one by walking back from further along.
+func TestTheHistoryCarriesACacheBreakpoint(t *testing.T) {
+	var got wireRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, events(
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		))
+	}))
+	defer server.Close()
+
+	c, err := New(Options{Label: "anthropic", BaseURL: server.URL, APIKey: "k", Model: "claude-opus-5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A turn mid-loop: a prompt, an answer that called a tool, and the results
+	// going back. The results are the newest message, so the marker belongs on
+	// the last of them.
+	history := []provider.Message{
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "read the file"}}},
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{
+			{Type: provider.BlockText, Text: "reading it"},
+			{Type: provider.BlockToolUse, ToolUseID: "t1", ToolName: "read_file", ToolInput: []byte(`{"path":"a.go"}`)},
+		}},
+		{Role: provider.RoleUser, Content: []provider.ContentBlock{
+			{Type: provider.BlockToolResult, ToolResultForID: "t1", ToolResultText: "package a"},
+			{Type: provider.BlockToolResult, ToolResultForID: "t2", ToolResultText: "package b"},
+		}},
+	}
+	if _, err := c.Send(context.Background(), provider.Request{System: "be brief", Messages: history}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got.System) == 0 || got.System[0].Cache == nil {
+		t.Fatal("the system breakpoint must stay: it covers the tools and the prompt")
+	}
+
+	last := got.Messages[len(got.Messages)-1]
+	if last.Content[len(last.Content)-1].Cache == nil {
+		t.Error("the newest message carries no breakpoint, so the history is resent uncached every iteration")
+	}
+	if last.Content[0].Cache != nil {
+		t.Error("one breakpoint on the newest message, not one per block — there are only four")
+	}
+
+	// And nowhere else: an older message marked as well would spend a
+	// breakpoint on a prefix the newest one already covers.
+	for i, m := range got.Messages[:len(got.Messages)-1] {
+		for j, b := range m.Content {
+			if b.Cache != nil {
+				t.Errorf("message %d block %d is marked; only the newest message is", i, j)
+			}
+		}
+	}
+}
+
+// cache_control belongs on text, tool_use, tool_result, image and document — a
+// thinking block is none of them, and a marker the API refuses turns every
+// request into a 400 rather than a slow one. The last message is always a user
+// turn today, so this is a guard rather than a fix.
+func TestABreakpointNeverLandsOnThinking(t *testing.T) {
+	msgs := toWire([]provider.Message{
+		{Role: provider.RoleAssistant, Content: []provider.ContentBlock{
+			{Type: provider.BlockText, Text: "here is why"},
+			{Type: provider.BlockThinking, Text: "working out", Signature: "sig"},
+		}},
+	})
+	cacheHistory(msgs)
+
+	blocks := msgs[0].Content
+	if blocks[len(blocks)-1].Cache != nil {
+		t.Error("a thinking block must never carry the marker")
+	}
+	if blocks[0].Cache == nil {
+		t.Error("it should have gone on the text block behind it instead")
+	}
+}
+
+// Nothing to mark must not panic: a compaction that summarises everything can
+// leave no messages at all.
+func TestCachingAnEmptyHistoryIsSafe(t *testing.T) {
+	cacheHistory(nil)
+	cacheHistory([]wireMessage{{Role: "user"}})
+}
