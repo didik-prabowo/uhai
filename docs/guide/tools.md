@@ -227,6 +227,20 @@ detaches properly:
 { "command": "npm run dev >/tmp/dev.log 2>&1 &" }
 ```
 
+Watch it with `read_file` and the offset it hands back — the other half of the
+recipe, and the half that was missing until a read could carry on from where the
+last one stopped:
+
+```json
+{ "path": "/tmp/dev.log" }                    → …[lines 1-40, more follow — read on with offset 41]
+{ "path": "/tmp/dev.log", "offset": 41 }      → whatever it has printed since
+```
+
+Which is how a server is waited for rather than slept on: read, look for the line
+that says it is listening, read again from the offset. `run_bash` cannot do it —
+a command that waits is a command that holds the turn — and this is the pair that
+can.
+
 Nothing tracks what that leaves running, though: `/stop` will not reach it, and
 it outlives the turn. There is no long-lived process here yet — see
 `docs/roadmap.md` Phase 6.
