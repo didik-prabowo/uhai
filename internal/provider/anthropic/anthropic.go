@@ -105,6 +105,10 @@ type wireBlock struct {
 	// back, and dropping the field would edit it.
 	Thinking  string `json:"thinking,omitempty"`
 	Signature string `json:"signature,omitempty"`
+
+	// Cache marks this block as a breakpoint. On a message rather than only on
+	// the system prompt because the history is the half that grows.
+	Cache *wireCache `json:"cache_control,omitempty"`
 }
 
 type wireMessage struct {
@@ -212,11 +216,14 @@ type wireUsage struct {
 }
 
 func (c *Client) Send(ctx context.Context, req provider.Request) (*provider.Response, error) {
+	msgs := toWire(req.Messages)
+	cacheHistory(msgs)
+
 	body, err := json.Marshal(wireRequest{
 		Model:     c.opts.Model,
 		MaxTokens: c.opts.MaxTokens,
 		System:    systemBlocks(req.System),
-		Messages:  toWire(req.Messages),
+		Messages:  msgs,
 		Tools:     toWireTools(req.Tools),
 		Stream:    true,
 
@@ -317,6 +324,46 @@ func toWire(msgs []provider.Message) []wireMessage {
 		out = append(out, wireMessage{Role: string(m.Role), Content: blocks})
 	}
 	return out
+}
+
+// cacheHistory puts the second breakpoint on the last block of the last
+// message, which is the documented shape for a conversation that grows: the
+// next request's marker sits further along, and the entry this one wrote is
+// found by walking back from it. Hits accrue turn by turn without anything
+// having to remember where the last one was.
+//
+// The system breakpoint covers tools and prompt — every byte that does not
+// change within a turn. It did not cover the part that does. A turn here runs
+// the tool loop up to twenty-five times and resends the whole history each
+// time, so an exchange that reached fifty thousand tokens was paying full price
+// for all fifty thousand on every iteration after the first: the cost of one
+// turn grew with the square of its length. This is the other half of that bill.
+//
+// Only a text or tool_result block is marked. cache_control belongs on text,
+// image, tool_use, tool_result and document, and a thinking block is none of
+// them — the last message before a request is always a user turn today, so the
+// case cannot arise, but a marker the API refuses is a 400 on every request
+// rather than a slow one.
+//
+// ponytail: one moving breakpoint, and a breakpoint walks back at most twenty
+// content blocks to find the previous entry. A single iteration appends an
+// assistant turn plus its tool results — around ten blocks with four tools in
+// flight — so twenty is not reached in practice. A turn that batched ten tools
+// would reach it and quietly stop hitting. Add an intermediate breakpoint every
+// fifteen blocks if a batch ever gets that wide; there are four to spend and
+// two are in use.
+func cacheHistory(msgs []wireMessage) {
+	if len(msgs) == 0 {
+		return
+	}
+	last := &msgs[len(msgs)-1]
+	for i := len(last.Content) - 1; i >= 0; i-- {
+		switch last.Content[i].Type {
+		case "text", "tool_result", "tool_use":
+			last.Content[i].Cache = &wireCache{Type: "ephemeral"}
+			return
+		}
+	}
 }
 
 // orNoOutput keeps an empty result from vanishing on the wire.
