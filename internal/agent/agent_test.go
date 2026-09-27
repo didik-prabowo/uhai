@@ -261,7 +261,7 @@ func TestToolsFollowTheModel(t *testing.T) {
 // never told about — and is refused if it tries from memory anyway.
 func TestDeniedToolsAreNotOffered(t *testing.T) {
 	a := New(nil)
-	a.AllowTool = func(name string) bool { return name != "write_file" }
+	a.AllowTool = func(name, _ string) bool { return name != "write_file" }
 
 	for _, spec := range a.tools() {
 		if spec.Name == "write_file" {
@@ -441,7 +441,7 @@ func (plainProvider) Send(context.Context, provider.Request) (*provider.Response
 // is watching the prompt.
 func TestSpawnedAgentInheritsTheDenials(t *testing.T) {
 	a := New(&plainProvider{})
-	a.AllowTool = func(name string) bool { return name != "run_bash" }
+	a.AllowTool = func(name, _ string) bool { return name != "run_bash" }
 	a.Tasks = &task.Registry{}
 	a.OnNotice = func(string) {}
 	a.OnToolCall = func(string, string) {}
@@ -455,10 +455,10 @@ func TestSpawnedAgentInheritsTheDenials(t *testing.T) {
 	if sub == nil {
 		t.Fatal("no sub-agent was built")
 	}
-	if sub.AllowTool == nil || sub.AllowTool("run_bash") {
+	if sub.AllowTool == nil || sub.AllowTool("run_bash", "") {
 		t.Error("a denied tool must stay denied inside a spawned agent")
 	}
-	if !sub.AllowTool("read_file") {
+	if !sub.AllowTool("read_file", "") {
 		t.Error("denying one tool must not deny the rest")
 	}
 }

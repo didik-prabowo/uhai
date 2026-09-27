@@ -13,6 +13,8 @@
 package config
 
 import (
+	"encoding/json"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -109,6 +111,25 @@ func (r rule) matches(tool, subject string) bool {
 	return matchPath(r.spec, subject)
 }
 
+// Subject is what a rule about this call would be about: the command for a
+// shell call, the path for a file tool, "" for a tool with nothing to narrow
+// by. It is here rather than in the front end because two places now need the
+// same answer — the confirmation, and the check that runs before a tool is
+// offered at all — and two copies of it would drift in exactly the way that
+// leaves one of them ignoring a rule.
+func Subject(tool, input string) string {
+	var args struct {
+		Command string `json:"command"`
+		Path    string `json:"path"`
+	}
+	json.Unmarshal([]byte(input), &args)
+
+	if tool == tools.NameBash {
+		return args.Command
+	}
+	return args.Path
+}
+
 // Permission answers one call: the tool, and what it wants to act on — the
 // command for run_bash, the path for the file tools, "" when there is nothing
 // to narrow by.
@@ -119,7 +140,7 @@ func (r rule) matches(tool, subject string) bool {
 func Permission(tool, subject string) string {
 	s, err := LoadSettings()
 	if err != nil {
-		return defaultPermission(tool)
+		return defaultPermission(tool, subject)
 	}
 
 	// A chained command is only as safe as its least safe part.
@@ -135,7 +156,7 @@ func Permission(tool, subject string) string {
 	case bestMatch(s.Permissions.Allow, tool, subject) >= 0:
 		return PermAllow
 	}
-	return defaultPermission(tool)
+	return defaultPermission(tool, subject)
 }
 
 // commandPermission decides a whole command line, which may be several
@@ -145,7 +166,7 @@ func Permission(tool, subject string) string {
 func commandPermission(s Settings, command string) string {
 	parts := splitCommand(command)
 	if len(parts) == 0 {
-		return defaultPermission(tools.NameBash)
+		return defaultPermission(tools.NameBash, command)
 	}
 
 	answer := PermAllow
@@ -172,7 +193,7 @@ func onePart(s Settings, command string) string {
 	case bestMatch(s.Permissions.Allow, tools.NameBash, command) >= 0:
 		return PermAllow
 	}
-	return defaultPermission(tools.NameBash)
+	return defaultPermission(tools.NameBash, command)
 }
 
 // bestMatch returns the length of the longest matching rule, -1 for none. The
@@ -207,13 +228,87 @@ func ToolDenied(tool string) bool {
 	return false
 }
 
-// defaultPermission is what applies when no rule mentions a tool: the ones
-// that escape this process ask, the rest do not.
-func defaultPermission(tool string) string {
+// defaultPermission is what applies when no rule mentions a tool: the ones that
+// escape this process ask, the rest do not — except for reading a file that is
+// a credential by convention, which is refused.
+//
+// That exception is the only place a default looks at the subject, and it is
+// there because reading is the one capability with no confirmation in front of
+// it. A tool result goes four places — the model reads it, the history keeps
+// it, the next request sends it to the provider, and the session file writes it
+// to disk in plaintext — so `read_file .env` put a credential in all four
+// without anybody being asked anything. See the security issue for the half of
+// that problem this does not solve.
+//
+// Refused rather than asked: a question about reading a file needs a
+// confirmation for a tool that has none, and building one is a change to every
+// front end. A denial is one answer the model can read and act on, and anyone
+// who means it writes `"allow": ["Read(./.env)"]`, which is checked before this
+// and wins.
+func defaultPermission(tool, subject string) string {
+	if tool == tools.NameRead && secretPath(subject) {
+		return PermDeny
+	}
 	if tools.NeedsConfirm(tool) {
 		return PermAsk
 	}
 	return PermAllow
+}
+
+// secretNames are the files that hold a credential by convention, matched
+// against the base name of a path.
+//
+// A list rather than an inference. Detecting a secret by its entropy
+// false-positives on every hash, uuid and base64 blob in a repository, and
+// reading repositories is what this program is for; a name cannot be wrong
+// about what it matches. Documented in docs/guide/permissions.md, which a test
+// holds to this list.
+var secretNames = []string{
+	".env", ".env.*",
+	"*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore",
+	"id_rsa*", "id_dsa*", "id_ecdsa*", "id_ed25519*",
+	".netrc", ".npmrc", ".pypirc", ".dockercfg",
+	"credentials", // ~/.aws/credentials, and gcloud's
+	"auth.json",   // uhai's own
+	"hosts.yml",   // gh's
+	"*.kdbx",
+}
+
+// secretDirs hold nothing but keys, so the directory is the answer and the file
+// names inside it do not have to be guessed at.
+var secretDirs = []string{".ssh", ".gnupg"}
+
+// openSecrets look exactly like the list above and are checked into
+// repositories on purpose: a template with the values taken out, read constantly
+// and never sensitive. Without them ".env.*" would refuse .env.example, and a
+// default that fires on an ordinary file is how a person learns to override the
+// whole category.
+var openSecrets = []string{".env.example", ".env.sample", ".env.template", ".env.dist", ".env.defaults"}
+
+// secretPath reports whether a path is a credential by convention.
+func secretPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	clean := filepath.ToSlash(path)
+	base := filepath.Base(clean)
+
+	for _, open := range openSecrets {
+		if strings.EqualFold(base, open) {
+			return false
+		}
+	}
+	for _, dir := range secretDirs {
+		if strings.Contains(clean, "/"+dir+"/") || strings.HasPrefix(clean, dir+"/") {
+			return true
+		}
+	}
+	for _, name := range secretNames {
+		if matchPath(name, base) {
+			return true
+		}
+	}
+	return false
 }
 
 // splitCommand cuts a line into the commands it is made of, at the operators

@@ -37,17 +37,10 @@ const diffMaxLines = 40
 // session, and what a project allowed is not asked about again.
 func (m *teaModel) decide(name, input string) string {
 	// What the call wants to act on, so a rule can be about that rather than
-	// about the whole tool: the command for a shell call, the path for a file.
-	var args struct {
-		Command string `json:"command"`
-		Path    string `json:"path"`
-	}
-	json.Unmarshal([]byte(input), &args)
-
-	subject := args.Path
-	if name == tools.NameBash {
-		subject = args.Command
-	}
+	// about the whole tool. Asked of config rather than worked out here: the
+	// same answer is now needed before a tool is offered at all, and two copies
+	// of it drift into one of them ignoring a rule somebody wrote.
+	subject := config.Subject(name, input)
 
 	if rule := config.Permission(name, subject); rule != config.PermAsk {
 		return rule
