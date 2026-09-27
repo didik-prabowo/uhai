@@ -216,14 +216,71 @@ func defaultPermission(tool string) string {
 	return PermAllow
 }
 
-// shellOperators are where one command ends and the next begins. Splitting on
-// them is what stops "git status && rm -rf /" from being allowed because it
-// starts with git.
-var shellOperators = regexp.MustCompile(`&&|\|\||;|\||\n`)
-
+// splitCommand cuts a line into the commands it is made of, at the operators
+// that separate them — and only outside quotes. Inside them an operator is
+// text: `echo "a && b"` is one command, and a regexp split it into two parts
+// neither of which was anything that would run, so the answer became the least
+// permissive of two fictions.
+//
+// A lone `&` is not a separator. `2>&1` is the everyday case, and cutting there
+// left `go build 2>` and `1`, the second of which no rule names, so a line that
+// was allowed turned into a question.
+//
+// A backslash escapes the next byte, outside quotes as well as inside double
+// ones, and that branch is not cosmetic: without it `echo \" && rm -rf /` looked
+// like one quoted command to this function and two commands to bash — which is
+// the direction that matters, because thinking we are inside a quote is how a
+// separator goes unseen and the second half of a line rides in on the first
+// half's rule.
+//
+// Where this parse still differs from bash's, it differs by closing a quote
+// early, which splits into more parts rather than fewer — and more parts can
+// only make the answer stricter.
 func splitCommand(command string) []string {
-	var out []string
-	for _, part := range shellOperators.Split(command, -1) {
+	var parts []string
+	var b strings.Builder
+	var quote byte
+
+	cut := func() {
+		parts = append(parts, b.String())
+		b.Reset()
+	}
+
+	for i := 0; i < len(command); i++ {
+		c := command[i]
+		switch {
+		case c == '\\' && i+1 < len(command) && quote != '\'':
+			// Escaped, so whatever follows is a character and not syntax.
+			// Single quotes are the exception: a shell has no escape inside them.
+			b.WriteByte(c)
+			i++
+			b.WriteByte(command[i])
+
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+			b.WriteByte(c)
+
+		case c == '\'' || c == '"':
+			quote = c
+			b.WriteByte(c)
+
+		case c == ';' || c == '\n' || c == '|':
+			cut() // and `||` as well: the empty part between falls out below
+
+		case c == '&' && i+1 < len(command) && command[i+1] == '&':
+			i++
+			cut()
+
+		default:
+			b.WriteByte(c)
+		}
+	}
+	cut()
+
+	out := parts[:0]
+	for _, part := range parts {
 		if part = strings.TrimSpace(part); part != "" {
 			out = append(out, part)
 		}
@@ -231,14 +288,29 @@ func splitCommand(command string) []string {
 	return out
 }
 
-// buildsItself reports whether a command computes part of itself as it runs,
-// through substitution or an expansion of a variable. What such a command will
-// actually do cannot be read from the text, so it is never allowed silently.
+// computed is a `$` the shell will replace with something, or a substitution in
+// backticks. `$(`, `${` and a bare `$NAME` all qualify, because the text does
+// not say what the command will be — which is the whole premise the rules rest
+// on: they can only judge what they can read.
+//
+// A bare `$NAME` was the gap. The check named `$(`, backticks, `${` and `$((`
+// and let `$HOME` through, so `rm -rf $HOME/build` was waved past a
+// `Bash(rm:*)` allow rule in silence, while `rm -rf ${HOME}/build` asked. Same
+// expansion, same unreadable command, different answer.
+//
+// A digit or a `?` after the `$` deliberately does not qualify. `bash -c` is
+// given no positional arguments, so `$1` expands to nothing and can compose
+// nothing, and `awk '{print $1}'` is far too ordinary to spend a confirmation
+// on. Nor does a `$` before a quote: `grep 'x$'` and `sed 's/$//'` are anchors,
+// and `$'\x72\x6d'` cannot be *allowed* by a prefix rule in the first place,
+// since the text of it never begins with the command it decodes to.
+var computed = regexp.MustCompile("\\$[({A-Za-z_]|`")
+
+// buildsItself reports whether a command computes part of itself as it runs.
+// What such a command will actually do cannot be read from the text, so it is
+// never allowed silently.
 func buildsItself(command string) bool {
-	return strings.Contains(command, "$(") ||
-		strings.Contains(command, "`") ||
-		strings.Contains(command, "${") ||
-		strings.Contains(command, "$((")
+	return computed.MatchString(command)
 }
 
 // matchCommand matches a rule's specifier against one command. "git push:*"

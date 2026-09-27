@@ -627,3 +627,88 @@ func TestAFamilyIsFoundInsideAGatewaysOwnName(t *testing.T) {
 		t.Errorf("a model with its own entry keeps it, got %d", got)
 	}
 }
+
+// The rules can only judge what they can read, and a bare `$NAME` is not
+// readable. `$(...)`, backticks and `${...}` were all treated as such and
+// `$HOME` was not, so the same expansion asked or did not depending on whether
+// it was written with braces.
+func TestAVariableIsNotAllowedSilently(t *testing.T) {
+	home := isolate(t)
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rules := `{"permissions":{"allow":["Bash(rm:*)","Bash(echo:*)","Bash(go:*)","Bash(awk:*)","Bash(grep:*)"]}}`
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for command, want := range map[string]string{
+		"rm -rf ./build":         PermAllow, // readable, and allowed
+		"rm -rf $HOME/build":     PermAsk,   // the gap: same expansion as ${HOME}
+		"rm -rf ${HOME}/build":   PermAsk,
+		"rm -rf $(pwd)/build":    PermAsk,
+		"echo \"total: $count\"": PermAsk,
+
+		// Not expansions, and too ordinary to spend a confirmation on: `bash -c`
+		// gets no positional arguments, and `$` before a quote is an anchor.
+		"awk '{print $1}' f": PermAllow,
+		"grep 'needle$' f":   PermAllow,
+		"echo done":          PermAllow,
+	} {
+		if got := Permission("run_bash", command); got != want {
+			t.Errorf("%q → %q, want %q", command, got, want)
+		}
+	}
+}
+
+// An operator inside quotes is text, and one behind a backslash is a character.
+// The regexp this replaced split on both, which produced parts that were not
+// commands — harmless, since more parts only makes the answer stricter, but it
+// meant `echo "a && b"` was judged as two fictions.
+//
+// Reading quotes is what introduces the risk, and the last two rows are where
+// it lives: a parse that believes it is inside a quote when bash is not would
+// miss a separator, which is the one direction that loses safety rather than
+// convenience.
+func TestOperatorsAreOnlySeparatorsOutsideQuotes(t *testing.T) {
+	for command, want := range map[string][]string{
+		`echo "a && b"`:        {`echo "a && b"`},
+		`echo 'a; b'`:          {`echo 'a; b'`},
+		`go build 2>&1 | head`: {`go build 2>&1`, `head`},
+		`git status && ls`:     {`git status`, `ls`},
+		`a || b`:               {`a`, `b`},
+		`a; b`:                 {`a`, `b`},
+		`echo \" && rm -rf /`:  {`echo \"`, `rm -rf /`},
+	} {
+		got := splitCommand(command)
+		if len(got) != len(want) {
+			t.Errorf("%q → %d parts %q, want %d", command, len(got), got, len(want))
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("%q part %d → %q, want %q", command, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// This guards the new parser rather than fixing an old fault: the regexp
+// ignored quotes, so it could never be fooled by one. Reading them buys the
+// possibility, and the backslash branch is what closes it — without that
+// branch this line is one command to us and two to bash, and the `rm` rides in
+// on echo's rule.
+func TestAnEscapedQuoteDoesNotHideTheRestOfTheLine(t *testing.T) {
+	home := isolate(t)
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rules := `{"permissions":{"allow":["Bash(echo:*)"],"deny":["Bash(rm:*)"]}}`
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := Permission("run_bash", `echo \" && rm -rf /`); got != PermDeny {
+		t.Errorf("an escaped quote hid the rm: got %q, want %q", got, PermDeny)
+	}
+}
