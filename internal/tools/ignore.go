@@ -20,7 +20,7 @@ type ignoreList struct {
 	dirs  map[string]bool
 }
 
-// readIgnore reads .gitignore at the root of the search.
+// readIgnore reads .gitignore at the root of the project.
 //
 // The common forms and no more: a bare name, a trailing slash for
 // directory-only, a leading slash to anchor at the root, and the globs matcher
@@ -56,7 +56,16 @@ func readIgnore(root string) ignoreList {
 			continue
 		}
 		if dir := strings.TrimSuffix(rule, "/"); dir != rule {
-			list.dirs[strings.TrimPrefix(dir, "/")] = true
+			dir = strings.TrimPrefix(dir, "/")
+			// dirs is an exact-name lookup, so a wildcard in it is a key that
+			// nothing ever equals: "build*/" was a rule that matched nothing at
+			// all, neither build1/ nor build/. A pattern goes to the matchers
+			// instead, where the walk already consults it for directories.
+			if strings.ContainsAny(dir, "*?[") {
+				list.match = append(list.match, matcher("**/"+dir))
+			} else {
+				list.dirs[dir] = true
+			}
 			continue
 		}
 
@@ -71,7 +80,7 @@ func readIgnore(root string) ignoreList {
 			})
 			continue
 		}
-		if !strings.Contains(rule, "/") {
+		if !strings.Contains(rule, "/") && !strings.ContainsAny(rule, "*?[") {
 			list.dirs[rule] = true // a bare name can be a directory too
 		}
 		list.match = append(list.match, matcher("**/"+rule))
