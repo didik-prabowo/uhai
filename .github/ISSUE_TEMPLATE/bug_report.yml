@@ -5,14 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Not here:** a security problem. Open a
-        [security advisory](https://github.com/didik-prabowo/uhai/security/advisories/new)
-        instead and keep the details out of any issue. `SECURITY.md` says what is
-        and is not a vulnerability here.
+        **Not here:** a security problem. Open a [security advisory](https://github.com/didik-prabowo/uhai/security/advisories/new) instead and keep the details out of any issue. `SECURITY.md` says what is and is not a vulnerability here.
 
-        Each field below is asked because it has been the answer before. The
-        version and the front end are the two that decide whether a report can
-        be reproduced at all.
+        Each field below is asked because it has been the answer before. The version and the front end are the two that decide whether a report can be reproduced at all.
 
   - type: input
     id: version
