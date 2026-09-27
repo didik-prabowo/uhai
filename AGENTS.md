@@ -65,7 +65,9 @@ either.
 There used to be a third: a renderer that painted the terminal by hand, from
 before bubbletea. It was deleted once the new prompt could do everything it
 did. It is not in this history — the branch that built all this was squashed
-into one commit.
+into one commit — but the tag `backup/before-squash-1146` still points at those
+74 commits, so a decision can be checked even though `git log` here cannot show
+it.
 
 ## Where the rest is
 
