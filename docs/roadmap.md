@@ -232,6 +232,34 @@ order. Each is small; the point is that *use* picks which.
 - **Editing more than one place at a time.** `edit_file` replaces one unique
   match. A refactor across six files is six confirmations.
   *Build it when a single change routinely takes more than three edits.*
+- **A secret with no shape, in a file with an ordinary name** *(the half of
+  credential handling deliberately left)*. A tool result goes four places — the
+  model, the history, the next request to a provider, and the session file in
+  plaintext — and two of the three ways a credential gets there are closed. A
+  file that is a credential *by convention* is refused by name: `.env`, `*.pem`,
+  `id_rsa*`, anything under `.ssh/`. A credential with a *recognisable shape* is
+  taken out of every tool result, because `ghp_`, `AKIA` and `sk-ant-` are
+  prefixes their vendors reserve, so matching them is recognition and not
+  inference.
+
+  What is left is `password: hunter2` in `config/production.yaml`, and it leaks
+  through `read_file`, `run_bash` and `grep` — measured, not assumed.
+
+  It is not built because the obvious rule is worse than the gap.
+  `(?i)(password|token|secret)\s*[:=]\s*\S+` also matches
+  `password := getPassword()`, and those false positives land on source code,
+  which is what this program reads all day. A wrong redaction is not a harmless
+  over-reaction: the model reads a marker where a value was and sets about
+  repairing a file that is fine. That was observed while the shape-matching was
+  being built, before word boundaries went on the patterns — a CI URL ending
+  `/task-a1b2c3…` came back redacted as an OpenAI key.
+
+  *Build it when a secret has actually reached a provider through content with
+  no recognisable shape* — a real case, not a constructed one, since the
+  construction is easy and proves nothing about whether it happens. And when it
+  does, the first thing to reach for is **not** content inference: it is another
+  name on the refused-by-convention list, because a real case names a real file
+  and a name cannot be wrong about what it matches.
 - **Running a batch of tools at once** *(measured, not built)*. `runTools`
   walks one response's tool calls in a single loop, while the system prompt asks
   the model to batch the independent ones — so it does, and they run in series.
