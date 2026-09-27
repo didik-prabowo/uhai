@@ -224,6 +224,29 @@ out because `edit_file` already edits and the model can see what it is
 changing. *Build it when a rename across twenty files is being done by hand
 often enough to be worth not seeing.*
 
+**Call hierarchy** is the one gap here that neither `grep` nor `find_symbol`
+stands in for, and it was found by reading crush rather than by wanting it.
+crush exposes six LSP tools where this exposes one; five of those five extra are
+answered another way — `lsp_definition` and `lsp_symbols` are `find_symbol`,
+`lsp_restart` is a problem that only exists once a server holds document state,
+and rename is the entry above. `lsp_call_hierarchy` is not answered by anything:
+*"what breaks if I change this function"* is a tree, and `find_symbol
+references` gives one layer of it. Reading the second layer means asking again
+per caller, which is a turn each and the model has to decide when to stop.
+
+*Build it when a change is being sized by reading references one at a time.*
+The cost is small and known — `callHierarchy/incomingCalls` after
+`textDocument/prepareCallHierarchy`, no document sync, so the same shape
+`find_symbol` already has — which is what makes it the next thing here rather
+than diagnostics.
+
+**And the comparison the other way, since a table of missing features only runs
+one direction.** Six tools is six names a model has to keep straight, and 26
+server entries is 25 claims that a command spelled that way answers the
+protocol — where a wrong entry fails exactly like a server nobody installed.
+The list here is four because four can be checked by hand, and only one of them
+has been. That is a smaller promise, kept.
+
 ## Phase 5 — The gaps a day of use will name
 
 Written down now so they are recognised when they appear, not to be built in
