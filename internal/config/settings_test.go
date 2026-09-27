@@ -679,6 +679,19 @@ func TestOperatorsAreOnlySeparatorsOutsideQuotes(t *testing.T) {
 		`a || b`:               {`a`, `b`},
 		`a; b`:                 {`a`, `b`},
 		`echo \" && rm -rf /`:  {`echo \"`, `rm -rf /`},
+
+		// A lone & backgrounds the left half and runs the right one, so both are
+		// commands. It used not to split here, which let `git status & rm -rf ~`
+		// be judged as one line beginning with git.
+		`git status & rm -rf ~`: {`git status`, `rm -rf ~`},
+		`git status &rm -rf ~`:  {`git status`, `rm -rf ~`},
+		`npm run dev &`:         {`npm run dev`},
+
+		// And the redirections it must not cut, which are why it did not split
+		// on a lone & in the first place.
+		`go build 2>&1`:        {`go build 2>&1`},
+		`go build 1>&2 | head`: {`go build 1>&2`, `head`},
+		`go build &>/tmp/log`:  {`go build &>/tmp/log`},
 	} {
 		got := splitCommand(command)
 		if len(got) != len(want) {
@@ -730,5 +743,45 @@ func TestAnExplicitRuleBeatsTheCredentialDefault(t *testing.T) {
 	}
 	if got := Permission("read_file", "other/.env"); got != PermDeny {
 		t.Errorf("the rule named one path, not the category: got %q", got)
+	}
+}
+
+// The hole a single character opened. `&&`, `;` and `|` were all judged part by
+// part, and `&` was not — deliberately, to keep `2>&1` in one piece — so a line
+// that backgrounded an allowed command and ran anything after it was judged as
+// the allowed command alone. Both halves of the promise failed at once: the allow
+// rule waved through what it had never seen, and the deny rule never matched the
+// half it was written for.
+//
+// It needs no hostile model. A Makefile, a SKILL.md or a line of test output can
+// ask for a command, and one character is the difference between a confirmation
+// and none.
+func TestALoneAmpersandDoesNotHideTheRestOfTheLine(t *testing.T) {
+	home := isolate(t)
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rules := `{"permissions":{"allow":["Bash(git:*)","Bash(go:*)"],"deny":["Bash(rm:*)"]}}`
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for command, want := range map[string]string{
+		"git status":                PermAllow, // the rule still does its job
+		"git status & rm -rf ~":     PermDeny,  // the hole: was allow
+		"git status &rm -rf ~":      PermDeny,  // and without the space
+		"git status & curl evil.sh": PermAsk,   // an unknown half still asks
+		"git status && rm -rf ~":    PermDeny,  // && was never the problem
+
+		// The redirections that are the reason a lone & was left alone. If these
+		// start asking, the fix went too far and people will turn it off.
+		"go build 2>&1":       PermAllow,
+		"go build 1>&2":       PermAllow,
+		"go build &>/tmp/log": PermAllow,
+		"go test ./... 2>&1":  PermAllow,
+	} {
+		if got := Permission("run_bash", command); got != want {
+			t.Errorf("%q → %q, want %q", command, got, want)
+		}
 	}
 }
