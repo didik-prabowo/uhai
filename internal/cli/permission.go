@@ -36,13 +36,10 @@ const diffMaxLines = 40
 // The order is deliberate. What a project denied cannot be waved through by a
 // session, and what a project allowed is not asked about again.
 func (m *teaModel) decide(name, input string) string {
-	// What the call wants to act on, so a rule can be about that rather than
-	// about the whole tool. Asked of config rather than worked out here: the
-	// same answer is now needed before a tool is offered at all, and two copies
-	// of it drift into one of them ignoring a rule somebody wrote.
-	subject := config.Subject(name, input)
-
-	if rule := config.Permission(name, subject); rule != config.PermAsk {
+	// Every path the call touches, folded to the least permissive answer, in
+	// config rather than here — edit_file takes a list, and a deny that could be
+	// escaped by putting the denied path second in it is not a deny.
+	if rule := config.PermissionFor(name, input); rule != config.PermAsk {
 		return rule
 	}
 	if m.allowed.has(name) {
@@ -205,9 +202,27 @@ var toolVerb = map[string]string{
 // a question should say what sort of answer it wants.
 func confirmTitle(name, input string) string {
 	var args struct {
-		Path string `json:"path"`
+		Path  string `json:"path"`
+		Edits []struct {
+			Path string `json:"path"`
+		} `json:"edits"`
 	}
 	json.Unmarshal([]byte(input), &args)
+
+	// A batch of edits is one question, so the title has to carry the count:
+	// "Edit 3 places in 2 files" is a different decision from "Edit main.go",
+	// and the whole reason the question beats a blob of JSON is that it says
+	// what is about to happen.
+	if name == tools.NameEdit && len(args.Edits) > 0 {
+		files := map[string]bool{}
+		for _, e := range args.Edits {
+			files[e.Path] = true
+		}
+		if len(files) == 1 {
+			return fmt.Sprintf("Edit %d places in %s", len(args.Edits), args.Edits[0].Path)
+		}
+		return fmt.Sprintf("Edit %d places in %d files", len(args.Edits), len(files))
+	}
 
 	switch name {
 	case tools.NameBash:
@@ -240,6 +255,11 @@ func confirmDetail(name, input string) string {
 		New     string `json:"new"`
 		Content string `json:"content"`
 		Command string `json:"command"`
+		Edits   []struct {
+			Path string `json:"path"`
+			Old  string `json:"old"`
+			New  string `json:"new"`
+		} `json:"edits"`
 	}
 	if err := json.Unmarshal([]byte(input), &args); err != nil {
 		return teaDim.Render("  " + name + " " + truncate(input, 200))
@@ -249,6 +269,23 @@ func confirmDetail(name, input string) string {
 	case tools.NameBash:
 		return teaDim.Render("  $ ") + args.Command
 	case tools.NameEdit:
+		// A batch shows every diff, each under the file it lands in. The
+		// alternative is approving a list of paths on trust, which is the thing
+		// a diff exists to avoid — and a rename across a dozen files is exactly
+		// where trust is cheapest to misplace. confirmPanel caps the height, so
+		// a very large batch is cut with a line saying so rather than filling
+		// the screen.
+		if len(args.Edits) > 0 {
+			var b strings.Builder
+			for i, e := range args.Edits {
+				if i > 0 {
+					b.WriteString("\n")
+				}
+				b.WriteString(teaDim.Render("  "+e.Path) + "\n")
+				b.WriteString(diff(e.Old, e.New, lineOf(e.Path, e.Old)) + "\n")
+			}
+			return strings.TrimRight(b.String(), "\n")
+		}
 		// Where in the file this lands. The provider never says — it sends
 		// the text to replace, not where it is — so it is counted here.
 		return diff(args.Old, args.New, lineOf(args.Path, args.Old))

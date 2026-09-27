@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -783,5 +784,53 @@ func TestALoneAmpersandDoesNotHideTheRestOfTheLine(t *testing.T) {
 		if got := Permission("run_bash", command); got != want {
 			t.Errorf("%q → %q, want %q", command, got, want)
 		}
+	}
+}
+
+// A batch is only as permissive as its least permissive part. Without this, a
+// deny could be escaped by putting the denied path second in a list — the same
+// shape as the lone & that let an allowed command carry anything after it.
+func TestABatchOfEditsIsJudgedInFull(t *testing.T) {
+	home := isolate(t)
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rules := `{"permissions":{"allow":["Edit(./app/*.go)"],"deny":["Edit(./secret.go)"]}}`
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"), []byte(rules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	one := func(path string) string {
+		return fmt.Sprintf(`{"path":%q,"old":"a","new":"b"}`, path)
+	}
+	batch := func(paths ...string) string {
+		var edits []string
+		for _, p := range paths {
+			edits = append(edits, fmt.Sprintf(`{"path":%q,"old":"a","new":"b"}`, p))
+		}
+		return `{"edits":[` + strings.Join(edits, ",") + `]}`
+	}
+
+	for input, want := range map[string]string{
+		one("app/main.go"):                   PermAllow,
+		one("secret.go"):                     PermDeny,
+		batch("app/main.go"):                 PermAllow,
+		batch("app/main.go", "app/other.go"): PermAllow,
+		batch("app/main.go", "secret.go"):    PermDeny, // the denied half decides
+		batch("secret.go", "app/main.go"):    PermDeny, // whichever order it is in
+		batch("app/main.go", "elsewhere.go"): PermAsk,  // the unknown half decides
+	} {
+		if got := PermissionFor("edit_file", input); got != want {
+			t.Errorf("%s → %q, want %q", input, got, want)
+		}
+	}
+
+	// And every path is reported, so a confirmation can show them all.
+	if got := Subjects("edit_file", batch("a.go", "b.go")); len(got) != 2 {
+		t.Errorf("Subjects returned %q, want both paths", got)
+	}
+	// Never empty, or a caller that loops would allow everything by doing nothing.
+	if got := Subjects("edit_file", `{}`); len(got) != 1 {
+		t.Errorf("Subjects must always return at least one element, got %q", got)
 	}
 }

@@ -253,7 +253,7 @@ func newAgent() (*agent.Agent, error) {
 		if tools.NeedsConfirm(name) {
 			return true
 		}
-		return config.Permission(name, config.Subject(name, input)) != config.PermDeny
+		return config.PermissionFor(name, input) != config.PermDeny
 	}
 	// The project this agent works in. Right for both front ends because the
 	// daemon builds each project's agent inside inRoot, the same reason

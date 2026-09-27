@@ -915,3 +915,86 @@ func TestATrailingAmpersandStillWaitsUnlessRedirected(t *testing.T) {
 		t.Error("the description must warn that & alone still waits")
 	}
 }
+
+// A rename across files is one call and one question now. The old shape still
+// works, because a model that has learned it should not have to relearn it.
+func TestEditAppliesABatchOrNoneOfIt(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.go")
+	b := filepath.Join(dir, "b.go")
+	os.WriteFile(a, []byte("package p\n\nfunc OldName() {}\n"), 0o644)
+	os.WriteFile(b, []byte("package p\n\nfunc use() { OldName() }\n"), 0o644)
+
+	batch := func(edits ...map[string]string) (string, bool) {
+		in, err := json.Marshal(map[string]any{"edits": edits})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Execute(context.Background(), "", NameEdit, in)
+	}
+
+	// Two files, one call.
+	out, isErr := batch(
+		map[string]string{"path": a, "old": "func OldName()", "new": "func NewName()"},
+		map[string]string{"path": b, "old": "OldName()", "new": "NewName()"},
+	)
+	if isErr {
+		t.Fatalf("a batch of two good edits must apply: %s", out)
+	}
+	for _, p := range []string{a, b} {
+		got, _ := os.ReadFile(p)
+		if strings.Contains(string(got), "OldName") {
+			t.Errorf("%s still says OldName: %s", p, got)
+		}
+	}
+
+	// All or none. The second edit cannot apply, so the first must not either —
+	// a half-applied rename breaks the build in a way that looks like the
+	// model's last idea rather than like a tool that gave up.
+	before, _ := os.ReadFile(a)
+	out, isErr = batch(
+		map[string]string{"path": a, "old": "func NewName()", "new": "func Renamed()"},
+		map[string]string{"path": b, "old": "nowhere in this file", "new": "x"},
+	)
+	if !isErr {
+		t.Fatal("a batch with an impossible edit must be refused whole")
+	}
+	if !strings.Contains(out, "edit 2") {
+		t.Errorf("the failure must name which edit it was: %q", out)
+	}
+	if after, _ := os.ReadFile(a); string(after) != string(before) {
+		t.Error("the first edit was applied even though the batch failed")
+	}
+
+	// Two edits to one file: the second sees the first, which reading from disk
+	// twice would not give.
+	os.WriteFile(a, []byte("one\ntwo\n"), 0o644)
+	if out, isErr := batch(
+		map[string]string{"path": a, "old": "one", "new": "1"},
+		map[string]string{"path": a, "old": "two", "new": "2"},
+	); isErr {
+		t.Fatalf("two edits to one file must both apply: %s", out)
+	}
+	if got, _ := os.ReadFile(a); string(got) != "1\n2\n" {
+		t.Errorf("file is %q, want \"1\\n2\\n\"", got)
+	}
+
+	// And the single-edit spelling is untouched.
+	if out, isErr := tryEdit(t, a, "1", "uno"); isErr {
+		t.Fatalf("the old shape must still work: %s", out)
+	}
+
+	// Neither spelling, or both, is a mistake worth naming.
+	if out, isErr := Execute(context.Background(), "", NameEdit, json.RawMessage(`{}`)); !isErr ||
+		!strings.Contains(out, "nothing to do") {
+		t.Errorf("an empty call must say what is missing: %q", out)
+	}
+	both, _ := json.Marshal(map[string]any{
+		"path": a, "old": "x", "new": "y",
+		"edits": []map[string]string{{"path": a, "old": "x", "new": "y"}},
+	})
+	if out, isErr := Execute(context.Background(), "", NameEdit, both); !isErr ||
+		!strings.Contains(out, "not both") {
+		t.Errorf("both spellings at once must be refused: %q", out)
+	}
+}
