@@ -14,13 +14,44 @@ import (
 	"time"
 )
 
-// bashTimeout bounds one command the model runs. Two minutes so a test suite
-// finishes rather than being cut off at the interesting part — the old thirty
-// seconds meant the model could not verify its own work on any project bigger
-// than a toy. Long enough to be useful, short enough that a command waiting on
-// input dies instead of hanging the turn; /check is the way to run something
-// that takes longer than this.
-const bashTimeout = 2 * time.Minute
+// BashTimeout is what a command gets when it asks for nothing. Two minutes so a
+// test suite finishes rather than being cut off at the interesting part — the
+// old thirty seconds meant the model could not verify its own work on any
+// project bigger than a toy. Long enough to be useful, short enough that a
+// command waiting on input dies instead of hanging the turn.
+//
+// Exported because the confirmation has to say how long it is agreeing to, and
+// a second copy of the number is a second thing to keep true.
+const BashTimeout = 2 * time.Minute
+
+// maxBashTimeout is as long as a command may be given when it asks for more.
+//
+// Ten minutes is what /check already allows, so this is not a new ceiling — it
+// is the existing one made reachable by the model, which could not get past two
+// minutes by any route. /check stays what it is: its bargain was never about
+// duration but about permission, since the command there is the user's own.
+//
+// What it costs is a turn held open for ten minutes with nothing on the screen,
+// which is why the person approving it is told the number rather than the word
+// "command".
+const maxBashTimeout = 10 * time.Minute
+
+// BashLimit is how long one call may run: what it asked for, clamped, and the
+// default when it asked for nothing. Both the tool and the confirmation read it,
+// so the number a person approves is the number that is enforced.
+//
+// Clamped rather than refused. A model asking for an hour has made a recoverable
+// mistake, and spending a turn telling it so costs more than giving it ten
+// minutes and naming the limit in whatever the command reports back.
+func BashLimit(input string) time.Duration {
+	var args struct {
+		Timeout int `json:"timeout"`
+	}
+	if json.Unmarshal([]byte(input), &args) != nil || args.Timeout <= 0 {
+		return BashTimeout
+	}
+	return min(time.Duration(args.Timeout)*time.Second, maxBashTimeout)
+}
 
 // maxBashOutput is how much of a command's output is kept, and it is the tail
 // that is kept: a suite says what passed before it says what failed, so the end
@@ -74,13 +105,15 @@ type bashTool struct{}
 func (bashTool) Name() string       { return NameBash }
 func (bashTool) NeedsConfirm() bool { return true }
 func (bashTool) Description() string {
-	return "Run one shell (bash) command and return its stdout+stderr. It is killed after two minutes, so it must not wait for input."
+	return "Run one shell (bash) command and return its stdout+stderr. It must not wait for input: there is no terminal and nobody to type. " +
+		"It is killed after two minutes unless timeout says otherwise."
 }
 func (bashTool) Schema() json.RawMessage {
 	return json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"command": {"type": "string", "description": "Shell command to run"}
+				"command": {"type": "string", "description": "Shell command to run"},
+				"timeout": {"type": "integer", "description": "Seconds to allow, default 120, maximum 600. Ask for more only when a build or a test suite needs it; the turn waits with nothing on screen while it runs"}
 			},
 			"required": ["command"]
 		}`)
@@ -94,7 +127,8 @@ func (bashTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 		return err.Error(), true
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, bashTimeout)
+	limit := BashLimit(string(input))
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 
 	out, err := Shell(ctx, root, args.Command, nil)
@@ -118,7 +152,7 @@ func (bashTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 		// report success.
 		return "the user interrupted this command. Output up to then:\n" + out, true
 	case ctx.Err() == context.DeadlineExceeded && err != nil:
-		return fmt.Sprintf("timeout: killed after %s. Output up to then:\n%s", bashTimeout, out), true
+		return fmt.Sprintf("timeout: killed after %s. Output up to then:\n%s", limit, out), true
 	case err != nil:
 		return fmt.Sprintf("exit error: %v\noutput:\n%s", err, out), true
 	}

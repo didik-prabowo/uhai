@@ -2818,3 +2818,21 @@ func TestTheContextRowLocallyIsStillAPercentage(t *testing.T) {
 		t.Fatalf("the local path keeps its percentage, got %q", got)
 	}
 }
+
+// A command asking for longer than usual holds the turn open with nothing on the
+// screen for the whole of it, so the person approving is told the number. Only
+// then: a duration on every shell prompt is a duration that stops being read,
+// and the question only beats a blob of JSON because it is read.
+func TestConfirmSaysHowLongItIsAgreeingTo(t *testing.T) {
+	if got := confirmTitle("run_bash", `{"command":"go test ./..."}`); got != "Shell command" {
+		t.Errorf("the usual two minutes needs no number: %q", got)
+	}
+	if got := confirmTitle("run_bash", `{"command":"go build ./...","timeout":420}`); got != "Shell command, up to 7m0s" {
+		t.Errorf("a longer command must say how long: %q", got)
+	}
+	// Clamped, and the title says what will be enforced rather than what was
+	// asked for.
+	if got := confirmTitle("run_bash", `{"command":"sleep 9999","timeout":9999}`); got != "Shell command, up to 10m0s" {
+		t.Errorf("the title must name the limit that applies: %q", got)
+	}
+}

@@ -15,7 +15,7 @@ import (
 
 const maxMatches = 200
 
-// searchTimeout bounds one search, the way bashTimeout bounds one command.
+// searchTimeout bounds one search, the way BashTimeout bounds one command.
 // maxMatches already stops a search that finds too much; nothing stopped one
 // that finds too little in a tree too large, and a grep reads the contents of
 // every file it walks. A turn was hostage to it: the model asks, and the only
