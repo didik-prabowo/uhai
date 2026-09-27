@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // globTool is the glob tool: what the model is told about it, and the
@@ -55,17 +54,12 @@ func (globTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 		}
 		return len(found) < maxMatches
 	})
-	if note, isErr := searchNote(err, len(found)); note != "" {
-		if isErr {
-			return note, true
-		}
-		return strings.Join(found, "\n") + "\n\n" + note, false
+	note, isErr := searchNote(err, len(found))
+	if isErr {
+		return note, true
 	}
-	if err != nil {
+	if err != nil && note == "" {
 		return fmt.Sprintf("could not search: %v", err), true
 	}
-	if len(found) == 0 {
-		return "no files match " + args.Pattern, false
-	}
-	return strings.Join(found, "\n"), false
+	return searchResult("no files match "+args.Pattern, found, note), false
 }

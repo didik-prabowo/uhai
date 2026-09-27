@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -87,8 +89,8 @@ func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 			large++
 			return true
 		}
-		data, err := os.ReadFile(path)
-		if err != nil || bytes.IndexByte(data, 0) >= 0 {
+		data, ok := readText(path)
+		if !ok {
 			return true // unreadable, or binary: nothing to show a human
 		}
 		for i, line := range strings.Split(string(data), "\n") {
@@ -102,27 +104,54 @@ func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 		}
 		return true
 	})
-	if note, isErr := searchNote(err, len(hits)); note != "" {
-		if isErr {
-			return note, true
-		}
-		return strings.Join(hits, "\n") + "\n\n" + note, false
+	note, isErr := searchNote(err, len(hits))
+	if isErr {
+		return note, true
 	}
-	if err != nil {
+	if err != nil && note == "" {
 		return fmt.Sprintf("could not search: %v", err), true
 	}
-	// Said rather than silent: a search that quietly left files out reads as a
-	// search that found everything, and the count is what lets the model ask
-	// for one of them by name instead.
-	tail := ""
+
+	// Every note on every path. These used to be assembled after an early return
+	// that carried only one of them, so a search that both skipped a credential
+	// file and stopped at the limit reported the limit and lost the skip — and
+	// after the limit started being reported at all, that was the common case.
+	skipNote, largeNote := "", ""
 	if skipped > 0 {
-		tail = fmt.Sprintf("\n\n(%d file(s) skipped: credentials by convention — read one by name if you need it)", skipped)
+		skipNote = fmt.Sprintf("(%d file(s) skipped: credentials by convention — read one by name if you need it)", skipped)
 	}
 	if large > 0 {
-		tail += fmt.Sprintf("\n\n(%d file(s) skipped: larger than %d MiB — run_bash grep if one of them is the answer)", large, maxGrepFile>>20)
+		largeNote = fmt.Sprintf("(%d file(s) skipped: larger than %d MiB — run_bash grep if one of them is the answer)", large, maxGrepFile>>20)
 	}
-	if len(hits) == 0 {
-		return "no matches for " + args.Pattern + tail, false
+	return searchResult("no matches for "+args.Pattern, hits, note, skipNote, largeNote), false
+}
+
+// readText reads a file if it is text, and says so if it is not.
+//
+// Binary is decided from the first 8 KiB rather than from the whole file, which
+// is what git does and for the same reason: a repository of images under the size
+// ceiling was otherwise read in full and thrown away, one file at a time. A NUL
+// past the first 8 KiB now slips through — the check was always a heuristic, and
+// this is the cheaper end of the same one.
+func readText(path string) ([]byte, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
 	}
-	return strings.Join(hits, "\n") + tail, false
+	defer f.Close()
+
+	head := make([]byte, 8<<10)
+	n, err := f.Read(head)
+	if n == 0 {
+		return nil, err == nil || errors.Is(err, io.EOF) // an empty file is text
+	}
+	if bytes.IndexByte(head[:n], 0) >= 0 {
+		return nil, false
+	}
+
+	rest, err := io.ReadAll(f)
+	if err != nil {
+		return nil, false
+	}
+	return append(head[:n], rest...), true
 }

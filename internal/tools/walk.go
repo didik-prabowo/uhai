@@ -60,6 +60,52 @@ func searchNote(err error, found int) (string, bool) {
 	return "", false
 }
 
+// searchBudget is how much of a search's answer is kept. Below maxResultLen so
+// the notes explaining it cannot be the part Execute cuts — which is exactly
+// what happened: two hundred matches of long lines came to 8,022 characters, so
+// the cut took the tail and with it the sentence saying the limit had been
+// reached. The result said "output truncated" and not "there are probably more",
+// which is the half that tells a model what to do next.
+const searchBudget = maxResultLen - 512
+
+// searchResult assembles what a search found: as many results as fit, then every
+// note about why it stopped.
+//
+// The notes come last and are never dropped, and the results are cut instead.
+// That is the way round it has to be — a note is two lines and explains the
+// hundred results that are missing, where the hundredth result explains nothing.
+//
+// empty is what to say when nothing was found at all, because "" reads as a tool
+// that failed rather than a search that came back.
+func searchResult(empty string, found []string, notes ...string) string {
+	var b strings.Builder
+	kept := 0
+	for _, line := range found {
+		if b.Len()+len(line)+1 > searchBudget {
+			break
+		}
+		if kept > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
+		kept++
+	}
+
+	out := b.String()
+	if out == "" {
+		out = empty
+	}
+	if dropped := len(found) - kept; dropped > 0 {
+		notes = append(notes, fmt.Sprintf("(%d more result(s) did not fit — narrow it with a more specific pattern, or \"path\")", dropped))
+	}
+	for _, note := range notes {
+		if note != "" {
+			out += "\n\n" + note
+		}
+	}
+	return out
+}
+
 // walk visits every file under root, skipping the noise directories. The
 // callback stops the walk by returning false.
 //
@@ -186,7 +232,11 @@ func truncate(line string) string {
 	const max = 200
 	line = strings.TrimRight(line, "\r")
 	if len(line) > max {
-		return line[:max] + "…"
+		// ToValidUTF8 because the cut is in bytes and a rune is not one byte:
+		// 200 lands inside the 67th of a line of three-byte runes, so a Japanese
+		// comment came back ending in half a character. read.go had the same
+		// problem and this is the same answer, which is why it is this one.
+		return strings.ToValidUTF8(line[:max], "") + "…"
 	}
 	return line
 }

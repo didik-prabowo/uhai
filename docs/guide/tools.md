@@ -254,6 +254,7 @@ they need no permission and behave the same everywhere.
 | result size | 8,000 characters, then `...[output truncated]` |
 | `read_file` | 7,488 characters a time, then the offset to carry on from |
 | `glob`, `grep` matches | 200, then the search stops **and says it stopped** |
+| `glob`, `grep` result size | 7,488 characters of results, then the count that did not fit |
 | `grep` line length | 200 characters, then `…` |
 | `grep` file size | 4 MiB; a larger one is skipped, with the count said |
 | `run_bash` time | 2 minutes, or what `timeout` asks for, up to 10 |
