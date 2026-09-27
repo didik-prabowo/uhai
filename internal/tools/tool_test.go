@@ -718,3 +718,103 @@ func TestTheConversationsKeyIsNotSentToTheSearchEngine(t *testing.T) {
 		t.Errorf("SearchKey answered %q; it must not read the wildcard", key)
 	}
 }
+
+// A command killed by its deadline has usually printed the interesting half
+// already — a suite says what failed and then keeps going. Returning the
+// sentence alone threw that away, which is the one thing a timed-out test run
+// is good for.
+func TestBashKeepsWhatItPrintedWhenKilled(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	in, _ := json.Marshal(map[string]string{"command": "echo HELLO; sleep 5; echo NEVER"})
+	out, isErr := Execute(ctx, "", NameBash, in)
+	if !isErr {
+		t.Fatalf("a killed command is an error: %s", out)
+	}
+	if !strings.Contains(out, "HELLO") {
+		t.Errorf("the output it had already printed was dropped: %q", out)
+	}
+	if strings.Contains(out, "NEVER") {
+		t.Errorf("it was not actually killed: %q", out)
+	}
+}
+
+// A line longer than the read buffer used to end the loop with an error nobody
+// read, and then block in Wait until the deadline because the pipe had stopped
+// being drained: a 2 MiB line returned nothing at all and hung for the whole
+// timeout. Both halves are checked here — that it finishes early, and that what
+// came after the long line survived.
+func TestBashSurvivesALineLongerThanTheBuffer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	out, err := Shell(ctx, "", "head -c 2000000 /dev/zero | tr '\\0' 'x'; echo; echo DONE", func(string) {})
+	if err != nil {
+		t.Fatalf("a long line is not a failure: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("it hung on the long line: %s", elapsed)
+	}
+	if !strings.Contains(out, "DONE") {
+		t.Errorf("everything after the long line was lost: %.120q", out)
+	}
+}
+
+// Output has a ceiling now, and it is the tail that is kept. There was none:
+// one second of `yes` put 868 MiB in memory, and in the daemon that is every
+// project's conversation.
+func TestBashOutputHasACeiling(t *testing.T) {
+	out, err := Shell(context.Background(), "", "seq 1 20000", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > maxBashOutput+64 { // +64 for the line saying what was dropped
+		t.Errorf("output is %d bytes, over the %d ceiling", len(out), maxBashOutput)
+	}
+	if !strings.Contains(out, "20000") {
+		t.Errorf("the tail is what must be kept, and the last line is missing: %.120q", out)
+	}
+	if strings.Contains(out, "\n1\n") {
+		t.Errorf("the head should have been dropped, not kept: %.120q", out)
+	}
+	if !strings.Contains(out, "dropped") {
+		t.Errorf("silence reads as 'this is all of it': %.120q", out)
+	}
+}
+
+// The two variables uhai alone owns are kept from a command: one `env` put
+// them in a tool result, and from there into the history, the provider, and the
+// session file. A vendor's variable is deliberately left alone — it is the
+// user's environment, the project may need it, and stripping it would produce
+// an authentication failure that nothing explains.
+func TestBashHidesTheKeysUhaiOwns(t *testing.T) {
+	t.Setenv("UHAI_API_KEY", "uhai-must-not-appear")
+	t.Setenv(SearchKeyEnv, "bsa-must-not-appear")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-left-alone")
+
+	out, err := Shell(context.Background(), "", "env", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "must-not-appear") {
+		t.Error("a variable only uhai uses reached the command")
+	}
+	if !strings.Contains(out, "sk-ant-left-alone") {
+		t.Error("a vendor variable is the user's own and must still be inherited")
+	}
+	if !strings.Contains(out, "NO_COLOR=1") {
+		t.Error("a command is not being told there is no terminal here")
+	}
+}
+
+// grep refuses a file with a NUL byte in it; run_bash had no equivalent, so
+// `cat` of a binary spent a turn's tokens on mojibake.
+func TestBashRefusesBinaryOutput(t *testing.T) {
+	in, _ := json.Marshal(map[string]string{"command": `printf 'a\000b'`})
+	out, isErr := Execute(context.Background(), "", NameBash, in)
+	if !isErr || !strings.Contains(out, "binary") {
+		t.Fatalf("binary output should be refused with a reason: %q", out)
+	}
+}

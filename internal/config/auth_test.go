@@ -190,3 +190,16 @@ func TestTheWildcardKeyDoesNotReachTheSearchEngine(t *testing.T) {
 		t.Errorf("the wildcard stopped working for a provider: %q", got)
 	}
 }
+
+// UHAI_API_KEY is read by Get for every provider, so it is uhai's own name and
+// has to be kept from the commands run_bash runs. The vendors' variables are
+// not in that list on purpose — they are the user's environment and the project
+// may need them — which is why this checks one name rather than the table.
+func TestUhaiKeyIsHiddenFromCommands(t *testing.T) {
+	for _, name := range tools.HiddenEnv {
+		if name == "UHAI_API_KEY" {
+			return
+		}
+	}
+	t.Error("UHAI_API_KEY is read for every provider and is not in tools.HiddenEnv")
+}
