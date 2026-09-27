@@ -145,6 +145,36 @@ from memory anyway. A spawned agent inherits that function along with
 was handed tools the settings had refused. A denial is not a question asked
 again in a window nobody is watching.
 
+A rule naming a *path* is answered per call, and that is newer than it looks.
+`config.Permission` is reached through one route — `decide`, in the terminal's
+confirmation — and the agent asks that only when `tools.NeedsConfirm(name)`. For
+`read_file`, `grep`, `glob`, `list_directory`, `find_symbol` and `set_plan` it is
+false, so nothing ever asked config about them: `Read(*.env)`, the example three
+paragraphs up, parsed correctly and matched a rule that was never consulted. A
+deny that does not deny, failing in the way that names no cause — the file is
+read, the model answers, nothing is logged. `AllowTool` takes the call's
+arguments now, and answers a path rule for the tools that never reach a
+confirmation; the ones that do are left to it, since that route shows a diff and
+says *refused by this project's settings* where this one has only a blunter
+sentence. `config.Subject` is the shared answer to "what is this call about", in
+config rather than in the front end because two callers needed it and a second
+copy is how one of them ends up ignoring a rule.
+
+On top of that wiring, `read_file` refuses a file that holds a credential by
+convention with nothing configured — `.env`, `*.pem`, `id_rsa*`, `credentials`,
+everything under `.ssh/` — because a tool result goes four places: the model, the
+history, the next request to a provider, and the session file in plaintext, and
+reading was the one capability with nothing in front of it. A list of names, not
+an inference: entropy detection false-positives on every hash, uuid and base64
+blob in a repository, and reading repositories is the whole job. The templates
+are excluded by name for the reason `$1` is excluded from `buildsItself` — a
+default that fires on `.env.example` teaches people to override the category.
+Refused rather than asked because a question needs a confirmation `read_file`
+does not have, and `"allow": ["Read(./.env)"]` wins over it. The list lives in
+`docs/guide/permissions.md` and a test fails if the page and the code part.
+`run_bash` and `grep` are deliberately uncovered, and so is any secret whose name
+is not conventional; that is the open half, and its issue holds the reasoning.
+
 Two tests hold the wiring together, both added after a question exposed how
 little was holding it: every tool in `Definitions` must actually reach a case
 in `Execute` — the name in the schema and the name in the switch are two
