@@ -2836,3 +2836,36 @@ func TestConfirmSaysHowLongItIsAgreeingTo(t *testing.T) {
 		t.Errorf("the title must name the limit that applies: %q", got)
 	}
 }
+
+// What a background task inherits, asserted field by field. AllowTool was the
+// one missing from the inline version, and it is the field that answers what the
+// project refused — since the credential-by-convention default it is the *only*
+// thing refusing to read a .env, because the tools that merely look never reach a
+// confirmation. internal/agent/task.go had this exact fault once; this is the
+// other place the same copy is made.
+func TestABackgroundTaskInheritsTheDenials(t *testing.T) {
+	denied := func(name, input string) bool { return name != "read_file" }
+
+	sub := taskAgent(nil, "be brief", 200_000, true, denied)
+
+	if sub.AllowTool == nil {
+		t.Fatal("a task without AllowTool is a task the project's deny list does not reach")
+	}
+	if sub.AllowTool("read_file", `{"path":".env"}`) {
+		t.Error("the denial must travel into the task")
+	}
+	if !sub.AllowTool("grep", `{"pattern":"x"}`) {
+		t.Error("denying one tool must not deny the rest")
+	}
+
+	if sub.System != "be brief" || sub.MaxContextTokens != 200_000 || !sub.UseTools {
+		t.Errorf("the model's own facts must follow the task in: %q %d %v",
+			sub.System, sub.MaxContextTokens, sub.UseTools)
+	}
+
+	// And Confirm is deliberately not inherited: nobody is watching, so anything
+	// that would ask is refused instead.
+	if sub.Confirm("run_bash", `{"command":"rm -rf /"}`) {
+		t.Error("a task must refuse what it cannot ask about")
+	}
+}

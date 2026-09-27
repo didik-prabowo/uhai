@@ -554,18 +554,11 @@ func spawnBackground(a *agent.Agent, prompt string) error {
 	// replace the provider while the task is still running.
 	p, system := a.Provider, a.System
 	window, useTools := a.MaxContextTokens, a.UseTools
+	allow := a.AllowTool
 
 	go func() {
 		a.Tasks.Run(context.Background(), truncate(prompt, 40), func(ctx context.Context, t task.Task) (string, int, error) {
-			sub := agent.New(p)
-			sub.System = system
-			// The same model, so the same window and the same answer about
-			// tools: a task compacting at 32k on a 200k model throws away
-			// history for nothing.
-			sub.MaxContextTokens, sub.UseTools = window, useTools
-			// Nobody is watching to answer a confirmation, so anything that
-			// writes or runs commands is refused and the model is told why.
-			sub.Confirm = func(string, string) bool { return false }
+			sub := taskAgent(p, system, window, useTools, allow)
 
 			var report string
 			sub.OnText = func(text string) { report = text }
@@ -617,6 +610,33 @@ func spawnCheck(a *agent.Agent, command string) (string, error) {
 		})
 	}()
 	return command, nil
+}
+
+// taskAgent builds the agent a background task runs as, and exists so that what
+// a task inherits is written down in one place.
+//
+// It was five assignments inline, and one of them was missing: AllowTool, the
+// function that answers what the project has refused. `internal/agent/task.go`
+// had the same fault once and its skill notes record it — "a background task was
+// handed tools the settings had refused" — and this is the other place the same
+// copy is made. It matters more than it did: since the credential-by-convention
+// default, AllowTool is the *only* thing refusing to read a .env, because the
+// tools that merely look never reach a confirmation.
+//
+// Confirm is not inherited, deliberately: nobody is watching a task, so anything
+// that writes or runs commands is refused outright rather than asked about in a
+// window with no one in front of it.
+func taskAgent(p provider.Provider, system string, window int, useTools bool,
+	allow func(name, input string) bool) *agent.Agent {
+
+	sub := agent.New(p)
+	sub.System = system
+	// The same model, so the same window and the same answer about tools: a task
+	// compacting at 32k on a 200k model throws away history for nothing.
+	sub.MaxContextTokens, sub.UseTools = window, useTools
+	sub.AllowTool = allow
+	sub.Confirm = func(string, string) bool { return false }
+	return sub
 }
 
 // projectCheck is how this project verifies itself: what it says in its own
