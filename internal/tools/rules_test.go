@@ -139,9 +139,14 @@ func TestOnlyChangingToolsAskFirst(t *testing.T) {
 // field the model cannot see is a call it will get wrong every time.
 func TestSchemasAreValidAndRequireWhatIsUsed(t *testing.T) {
 	required := map[string][]string{
-		"read_file":      {"path"},
-		"write_file":     {"path", "content"},
-		"edit_file":      {"path", "old", "new"},
+		"read_file":  {"path"},
+		"write_file": {"path", "content"},
+		// edit_file requires nothing, and that is the one exception worth
+		// stating: it takes either path/old/new or a list in "edits", which
+		// JSON Schema can only express as a oneOf that not every provider
+		// honours. Run checks it instead, and the message names which spelling
+		// is missing. See TestEditRefusesWhatItCannotDoSafely.
+		"edit_file":      nil,
 		"glob":           {"pattern"},
 		"fetch_url":      {"url"},
 		"grep":           {"pattern"},

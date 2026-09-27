@@ -83,22 +83,32 @@ session that must not create anything.
 
 ### edit_file
 
-Replaces one exact piece of text, including its indentation.
+Replaces an exact piece of text in a file. The old text must appear exactly once,
+so a change is never applied to the wrong one of several matches.
 
 ```json
-{ "path": "main.go", "old": "\tprintln(\"halo\")", "new": "\tprintln(\"dunia\")" }
+{ "path": "internal/cli/tea.go", "old": "func (m *teaModel) View()", "new": "func (m *teaModel) Draw()" }
 ```
 
-Three refusals, each preventing a particular way of quietly corrupting a file:
+Several at once, across one file or many, as one question:
 
-- `old` empty → *use write_file to create a file*.
-- `old` not found → *read it again, it may have changed*. The file has moved on
-  since the model last looked at it.
-- `old` found more than once → *include surrounding lines to make it unique*.
-  Replacing the wrong one of several matches is the worst way to be wrong,
-  because nothing looks broken.
+```json
+{ "edits": [
+    { "path": "a.go", "old": "OldName(",   "new": "NewName(" },
+    { "path": "b.go", "old": "= OldName",  "new": "= NewName" }
+] }
+```
 
-A refused edit changes nothing.
+**All of them or none.** Every edit is checked against every file before any file
+is written, so a rename that cannot finish leaves nothing half-done — a
+half-applied rename breaks the build in a way that looks like the model's last
+idea rather than like a tool that gave up. Two edits to one file are applied in
+order, and the second sees the first.
+
+The confirmation shows every diff, under the file it lands in, and its title
+carries the count: `Edit 7 places in 3 files`. A batch is **only as permissive as
+its least permissive part** — `deny: ["Edit(./secret.go)"]` refuses a batch that
+contains `secret.go`, wherever it sits in the list.
 
 ### glob
 

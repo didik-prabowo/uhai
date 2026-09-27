@@ -110,26 +110,67 @@ func (r rule) matches(tool, subject string) bool {
 	return matchPath(r.spec, subject)
 }
 
-// Subject is what a rule about this call would be about: the command for a
-// shell call, the path for a file tool, "" for a tool with nothing to narrow
-// by. It is here rather than in the front end because two places now need the
-// same answer — the confirmation, and the check that runs before a tool is
-// offered at all — and two copies of it would drift in exactly the way that
-// leaves one of them ignoring a rule.
-func Subject(tool, input string) string {
+// Subjects is everything one call acts on: the command for a shell call, and
+// every path for a file tool — because edit_file takes a list, and a rule about
+// one of those paths has to be answered even when the call carries twenty.
+//
+// It is here rather than in the front end because two places need the same
+// answer — the confirmation, and the check that runs before a tool is offered —
+// and two copies of it would drift in exactly the way that leaves one of them
+// ignoring a rule somebody wrote.
+//
+// Always at least one element, "" when there is nothing to narrow by, so a
+// caller cannot accidentally skip the loop and allow everything.
+func Subjects(tool, input string) []string {
 	var args struct {
 		Command string `json:"command"`
 		Path    string `json:"path"`
+		Edits   []struct {
+			Path string `json:"path"`
+		} `json:"edits"`
 	}
 	json.Unmarshal([]byte(input), &args)
 
 	if tool == tools.NameBash {
-		return args.Command
+		return []string{args.Command}
 	}
-	return args.Path
+
+	var paths []string
+	if args.Path != "" {
+		paths = append(paths, args.Path)
+	}
+	for _, e := range args.Edits {
+		if e.Path != "" {
+			paths = append(paths, e.Path)
+		}
+	}
+	if len(paths) == 0 {
+		return []string{""}
+	}
+	return paths
 }
 
-// Permission answers one call: the tool, and what it wants to act on — the
+// PermissionFor answers a whole call, which is not the same as answering one
+// path. A batch is only as permissive as its least permissive part, the way a
+// chained shell line is — and for the same reason: a deny that can be escaped by
+// putting the denied path second in a list is not a deny.
+//
+// The folding lives here and nowhere else. Every time one decision was copied
+// into two places today, the second copy was the one that was wrong.
+func PermissionFor(tool, input string) string {
+	answer := PermAllow
+	for _, subject := range Subjects(tool, input) {
+		switch Permission(tool, subject) {
+		case PermDeny:
+			return PermDeny
+		case PermAsk:
+			answer = PermAsk
+		}
+	}
+	return answer
+}
+
+// Permission answers one call: the tool// Permission answers one call: the tool, and what it wants to act on — the
 // command for run_bash, the path for the file tools, "" when there is nothing
 // to narrow by.
 //
