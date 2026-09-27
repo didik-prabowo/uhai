@@ -253,12 +253,14 @@ they need no permission and behave the same everywhere.
 |---|---|
 | result size | 8,000 characters, then `...[output truncated]` |
 | `read_file` | 7,488 characters a time, then the offset to carry on from |
-| `glob`, `grep` matches | 200, then the search stops |
+| `glob`, `grep` matches | 200, then the search stops **and says it stopped** |
 | `grep` line length | 200 characters, then `…` |
+| `grep` file size | 4 MiB; a larger one is skipped, with the count said |
 | `run_bash` time | 2 minutes, or what `timeout` asks for, up to 10 |
 | `run_bash` output | the last 7,488 characters, headed by how many were dropped |
 | never walked | `.git`, `node_modules`, `vendor` |
 | never searched | files that are credentials by convention, with the count said |
+| never read whole | a file over 4 MiB — `grep` holds a file in memory to search it |
 | never returned | credentials whose shape is recognisable, replaced by a marker naming the kind |
 
 `run_bash` keeps the **end** of what a command printed, which is where a failure
