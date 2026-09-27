@@ -832,6 +832,15 @@ func TestBashTimeoutCanBeAskedForAndIsCapped(t *testing.T) {
 		`{"command":"x","timeout":600}`:  maxBashTimeout,  // exactly the ceiling
 		`{"command":"x","timeout":9999}`: maxBashTimeout,  // clamped, not refused
 		`not json at all`:                BashTimeout,     // and never zero, which would kill instantly
+
+		// A Duration is int64 nanoseconds, so anything above about 9.2e9 seconds
+		// overflows when it is multiplied — and 9999999999 is a hallucinated
+		// number, not an exotic one. The product wrapped negative, min chose it,
+		// and the command was killed the instant it started, reporting "killed
+		// after -2346317h47m54s". Clamped in seconds now, before the multiply.
+		`{"command":"x","timeout":9999999999}`:          maxBashTimeout,
+		`{"command":"x","timeout":10000000000}`:         maxBashTimeout,
+		`{"command":"x","timeout":9223372036854775807}`: maxBashTimeout,
 	} {
 		if got := BashLimit(input); got != want {
 			t.Errorf("%s → %s, want %s", input, got, want)
@@ -839,6 +848,18 @@ func TestBashTimeoutCanBeAskedForAndIsCapped(t *testing.T) {
 	}
 	if maxBashTimeout != 10*time.Minute {
 		t.Errorf("the ceiling is meant to be /check's ten minutes, got %s", maxBashTimeout)
+	}
+
+	// Whatever is asked for, the answer has to be a runnable limit. A
+	// non-positive one is the dangerous shape rather than merely a wrong one:
+	// context.WithTimeout reads it as a deadline already past and kills the
+	// command at once, which the model sees as a command that cannot be run
+	// rather than as a number it should not have sent.
+	for _, timeout := range []string{"1", "600", "601", "9999999999", "9223372036854775807"} {
+		got := BashLimit(`{"command":"x","timeout":` + timeout + `}`)
+		if got <= 0 || got > maxBashTimeout {
+			t.Errorf("timeout %s → %s, which is not a runnable limit", timeout, got)
+		}
 	}
 }
 

@@ -43,6 +43,15 @@ const maxBashTimeout = 10 * time.Minute
 // Clamped rather than refused. A model asking for an hour has made a recoverable
 // mistake, and spending a turn telling it so costs more than giving it ten
 // minutes and naming the limit in whatever the command reports back.
+//
+// Clamped in seconds, before the multiplication, which is the whole reason this
+// is not one expression. A Duration is int64 nanoseconds, so multiplying by
+// time.Second overflows above about 9.2e9 seconds — and a model writing
+// 9999999999 is a hallucinated number, not an exotic one. The product wrapped
+// negative, min picked the negative, and context.WithTimeout was handed a
+// deadline already in the past: the command was killed the instant it started
+// and the result said "killed after -2346317h47m54s". Clamping first cannot
+// overflow, because the value that survives is at most maxBashTimeout.
 func BashLimit(input string) time.Duration {
 	var args struct {
 		Timeout int `json:"timeout"`
@@ -50,7 +59,7 @@ func BashLimit(input string) time.Duration {
 	if json.Unmarshal([]byte(input), &args) != nil || args.Timeout <= 0 {
 		return BashTimeout
 	}
-	return min(time.Duration(args.Timeout)*time.Second, maxBashTimeout)
+	return time.Duration(min(args.Timeout, int(maxBashTimeout/time.Second))) * time.Second
 }
 
 // maxBashOutput is how much of a command's output is kept, and it is the tail
