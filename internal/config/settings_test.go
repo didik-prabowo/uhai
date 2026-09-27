@@ -4,6 +4,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -710,5 +712,87 @@ func TestAnEscapedQuoteDoesNotHideTheRestOfTheLine(t *testing.T) {
 
 	if got := Permission("run_bash", `echo \" && rm -rf /`); got != PermDeny {
 		t.Errorf("an escaped quote hid the rm: got %q, want %q", got, PermDeny)
+	}
+}
+
+// docs/guide/permissions.md prints the credential list, and a page that
+// disagrees with the code is worse than no page: somebody reads it, writes no
+// rule, and expects a file to be refused that is not. So the two are one list
+// with two spellings, and this fails if they part.
+func TestDocumentedCredentialListMatchesTheCode(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "..", "docs", "guide", "permissions.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	block := regexp.MustCompile("(?s)### Credentials are the exception.*?```\n(.*?)```")
+	found := block.FindSubmatch(page)
+	if found == nil {
+		t.Fatal("the page no longer prints the credential list")
+	}
+
+	documented := map[string]bool{}
+	for _, word := range strings.Fields(string(found[1])) {
+		documented[strings.TrimSuffix(word, "/")] = true
+	}
+
+	for _, name := range append(append([]string{}, secretNames...), secretDirs...) {
+		if !documented[name] {
+			t.Errorf("%s is refused by the code and not on the page", name)
+		}
+	}
+	for word := range documented {
+		if !slices.Contains(secretNames, word) && !slices.Contains(secretDirs, word) {
+			t.Errorf("the page promises %s is refused and the code does not refuse it", word)
+		}
+	}
+
+	// The exceptions are prose rather than a block, so they are checked by name.
+	for _, open := range openSecrets {
+		if !strings.Contains(string(page), "`"+open+"`") {
+			t.Errorf("%s is allowed by the code and the page does not say so", open)
+		}
+	}
+}
+
+// The list itself, and the two ways it is deliberately narrow: a template is not
+// a secret, and an explicit rule beats the default.
+func TestCredentialsByConvention(t *testing.T) {
+	for _, path := range []string{
+		".env", ".env.production", "app/.env.local", "deploy.pem", "server.key",
+		"id_rsa", "id_ed25519.pub", ".netrc", "/home/x/.ssh/known_hosts",
+		"/home/x/.aws/credentials", "/Users/x/.uhai/auth.json",
+	} {
+		if !secretPath(path) {
+			t.Errorf("%s holds a credential by convention and was not recognised", path)
+		}
+	}
+	for _, path := range []string{
+		".env.example", ".env.sample", "main.go", "README.md", "keyboard.go",
+		"internal/config/permission.go", "",
+	} {
+		if secretPath(path) {
+			t.Errorf("%s is an ordinary file and must not be refused", path)
+		}
+	}
+}
+
+// An explicit rule is checked before the default, so somebody who means it can
+// still read their own .env without editing the code.
+func TestAnExplicitRuleBeatsTheCredentialDefault(t *testing.T) {
+	home := isolate(t)
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"),
+		[]byte(`{"permissions":{"allow":["Read(./.env)"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := Permission("read_file", ".env"); got != PermAllow {
+		t.Errorf("an explicit allow must win: got %q", got)
+	}
+	if got := Permission("read_file", "other/.env"); got != PermDeny {
+		t.Errorf("the rule named one path, not the category: got %q", got)
 	}
 }

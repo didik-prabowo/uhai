@@ -110,6 +110,51 @@ only look inside it do not.
 `Fetch` is in the asking half for the direction that is easy to miss: it reads
 by sending, and the URL it sends is the model's to choose.
 
+### Credentials are the exception to `allow`
+
+Reading is the only capability with nothing in front of it, and a tool result
+goes four places: the model reads it, the history keeps it, the next request
+sends it to your provider, and the session file writes it to disk in plaintext.
+So `read_file` refuses a file that holds a credential by convention, with no
+rule written anywhere:
+
+```
+.env  .env.*
+*.pem  *.key  *.p12  *.pfx  *.jks  *.keystore
+id_rsa*  id_dsa*  id_ecdsa*  id_ed25519*
+.netrc  .npmrc  .pypirc  .dockercfg
+credentials  auth.json  hosts.yml
+*.kdbx
+.ssh/  .gnupg/
+```
+
+Matched on the file's name, so it holds wherever the file lives —
+`~/.aws/credentials` and `./credentials` are the same answer. The last row is a
+directory: everything inside it is refused, because those two hold nothing but
+keys.
+
+A list rather than a guess. Detecting a secret by how random it looks
+false-positives on every hash, uuid and base64 blob in a repository, and reading
+repositories is what this program does; a name cannot be wrong about what it
+matches.
+
+The templates are not refused — `.env.example`, `.env.sample`, `.env.template`,
+`.env.dist` and `.env.defaults` are checked in on purpose, with the values taken
+out, and are read constantly.
+
+`run_bash` is not covered: `cat .env` still works, and asks first the way every
+command does. Neither is `grep`, which would need the matching *lines* filtered
+rather than the file refused.
+
+To turn it off for one file, say so:
+
+```json
+{ "permissions": { "allow": ["Read(./.env)"] } }
+```
+
+An explicit rule is checked before any default, so that is all it takes.
+
+
 Settings are read fresh on every call, so editing them takes effect at once —
 there is no session to restart.
 

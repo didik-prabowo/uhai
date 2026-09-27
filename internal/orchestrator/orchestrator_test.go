@@ -137,10 +137,10 @@ func TestNewAgentComposesTheSession(t *testing.T) {
 		t.Error("a skill's body must not be paid for on every turn")
 	}
 
-	if a.AllowTool("run_bash") {
+	if a.AllowTool("run_bash", "") {
 		t.Error("a denied tool must never be offered to the model")
 	}
-	if !a.AllowTool("read_file") {
+	if !a.AllowTool("read_file", "") {
 		t.Error("denying one tool must not deny the rest")
 	}
 }
@@ -346,6 +346,62 @@ func TestLastLineIsTheResult(t *testing.T) {
 	} {
 		if got := lastLine([]byte(c.in)); got != c.want {
 			t.Errorf("lastLine(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// A rule naming a path used to match nothing on a tool that never asks.
+// `config.Permission` was reached only through `Confirm`, and `Confirm` is asked
+// only for tools whose effects escape the process — so `"deny": ["Read(./.env)"]`,
+// the example in config's own package comment, was inert. This is the wiring
+// that makes it mean something, tested where it is wired.
+func TestAPathRuleReachesTheToolsThatNeverAsk(t *testing.T) {
+	dir := workIn(t)
+	t.Setenv("OPENAI_API_KEY", "k")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
+	write(t, filepath.Join(dir, ".uhai", "settings.json"),
+		`{"permissions":{"deny":["Read(./secret.txt)"]}}`)
+
+	a, err := newAgent()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if a.AllowTool("read_file", `{"path":"secret.txt"}`) {
+		t.Error("a denied path must be refused, not read")
+	}
+	if !a.AllowTool("read_file", `{"path":"main.go"}`) {
+		t.Error("denying one path must not deny the rest")
+	}
+	// Reading is the tool with no confirmation in front of it, so the rule has
+	// to be answered here. Writing has one, and is left to it.
+	if !a.AllowTool("write_file", `{"path":"secret.txt"}`) {
+		t.Error("a tool that confirms must be left to its confirmation")
+	}
+}
+
+// The default half of the same thing: a file that is a credential by convention
+// is refused with no settings at all, because until now `read_file .env` put one
+// in the history, the request and the session file without anybody being asked.
+func TestCredentialFilesAreRefusedByDefault(t *testing.T) {
+	workIn(t)
+	t.Setenv("OPENAI_API_KEY", "k")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
+
+	a, err := newAgent()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{".env", "config/.env.production", "deploy.pem", "/home/x/.ssh/id_rsa"} {
+		if a.AllowTool("read_file", `{"path":"`+path+`"}`) {
+			t.Errorf("%s is a credential by convention and was read without a word", path)
+		}
+	}
+	// And the ones that look like it and are checked in on purpose.
+	for _, path := range []string{".env.example", "main.go", "docs/guide/tools.md"} {
+		if !a.AllowTool("read_file", `{"path":"`+path+`"}`) {
+			t.Errorf("%s is an ordinary file and must stay readable", path)
 		}
 	}
 }

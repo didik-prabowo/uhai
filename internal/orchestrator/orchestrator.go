@@ -24,6 +24,7 @@ import (
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/session"
 	"github.com/didik-prabowo/uhai/internal/session/filestore"
+	"github.com/didik-prabowo/uhai/internal/tools"
 )
 
 // Run assembles an interactive session and hands it to the terminal front end.
@@ -237,7 +238,23 @@ func newAgent() (*agent.Agent, error) {
 	if p != nil {
 		cli.UseProviderOn(a, p)
 	}
-	a.AllowTool = func(name string) bool { return !config.ToolDenied(name) }
+	// What a project refuses, checked before a tool is offered and again per
+	// call. The second check is what makes a rule about a path mean anything
+	// for the tools that never ask: a confirmation is where Permission used to
+	// be consulted, and the tools that only look never reach one.
+	//
+	// The tools that do confirm are left to that route, which shows a diff and
+	// says "refused by this project's settings" rather than this one's blunter
+	// answer.
+	a.AllowTool = func(name, input string) bool {
+		if config.ToolDenied(name) {
+			return false
+		}
+		if tools.NeedsConfirm(name) {
+			return true
+		}
+		return config.Permission(name, config.Subject(name, input)) != config.PermDeny
+	}
 	// The project this agent works in. Right for both front ends because the
 	// daemon builds each project's agent inside inRoot, the same reason
 	// AGENTS.md and the permission lists come out right — and the daemon

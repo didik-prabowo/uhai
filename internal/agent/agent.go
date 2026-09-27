@@ -192,7 +192,15 @@ type Agent struct {
 	// offers everything. It is a function rather than a list because the
 	// answer lives in settings, which this package must not know about — and
 	// because a project may change its mind between turns.
-	AllowTool func(name string) bool
+	//
+	// input is the call's arguments, so the answer can be about the file or the
+	// command rather than only about the tool. It used to take the name alone,
+	// which meant a rule naming a path could only be consulted through Confirm
+	// — and Confirm is asked only for tools that need confirming. So
+	// `"deny": ["Read(./.env)"]`, the example in config's own package comment,
+	// matched nothing that was ever asked. Empty when the question is whether to
+	// offer the tool at all, which has no arguments yet.
+	AllowTool func(name, input string) bool
 
 	// UseTools is whether the model is offered any. A model that cannot take
 	// them answers an error to every turn otherwise, which reads as the agent
@@ -417,7 +425,7 @@ func (a *Agent) runTools(ctx context.Context, blocks []provider.ContentBlock) []
 
 		result, isError := "", false
 		switch {
-		case a.AllowTool != nil && !a.AllowTool(block.ToolName):
+		case a.AllowTool != nil && !a.AllowTool(block.ToolName, string(block.ToolInput)):
 			// Denied, and called anyway — some models will try what they
 			// remember from another conversation.
 			result, isError = "this tool is switched off in this project", true
@@ -454,7 +462,9 @@ func (a *Agent) tools() []provider.ToolSpec {
 	for _, spec := range tools.Definitions() {
 		// A tool that is denied is not offered: a model cannot misuse what it
 		// was never told about, and refusing after the fact wastes a turn.
-		if a.AllowTool != nil && !a.AllowTool(spec.Name) {
+		// No arguments to judge yet, so this only answers a rule about the
+		// whole tool. One that names a path is answered per call, above.
+		if a.AllowTool != nil && !a.AllowTool(spec.Name, "") {
 			continue
 		}
 		specs = append(specs, spec)
