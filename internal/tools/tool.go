@@ -132,6 +132,11 @@ func Execute(ctx context.Context, root, name string, input json.RawMessage) (res
 	}
 	result, isError = t.Run(ctx, root, input)
 
+	// Here rather than in each tool: this is the one place every result passes
+	// through, so one pass covers read_file, grep, run_bash and fetch_url at
+	// once. Before the truncation, so a marker cannot be cut in half.
+	result = Redact(result)
+
 	if len(result) > maxResultLen {
 		result = result[:maxResultLen] + "\n...[output truncated]"
 	}

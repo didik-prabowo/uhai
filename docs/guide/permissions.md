@@ -142,9 +142,41 @@ The templates are not refused — `.env.example`, `.env.sample`, `.env.template`
 `.env.dist` and `.env.defaults` are checked in on purpose, with the values taken
 out, and are read constantly.
 
-`run_bash` is not covered: `cat .env` still works, and asks first the way every
-command does. Neither is `grep`, which would need the matching *lines* filtered
-rather than the file refused.
+`grep` skips the same files while it searches, and says how many it left out —
+a password with no shape is a matching line like any other, and `.env` is where
+it lives.
+
+`run_bash` is not covered by the list: `cat .env` still works, and asks first the
+way every command does. What covers it instead is the other half, below.
+
+### Credentials with a shape are taken out of every result
+
+A file name is not the only way a key travels. So every tool result — a file
+read, a matching line, a command's output, a fetched page — has the shapes it can
+*recognise* replaced with a marker naming the kind:
+
+```
+sk-ant-…   sk-proj-…   sk-…             AKIA… ASIA…
+ghp_ gho_ ghu_ ghs_ ghr_ github_pat_    glpat-
+AIza…   xoxb- xoxp- xoxa- xoxs- xapp-   sk_live_ rk_live_
+dop_v1_   SG.…   -----BEGIN … PRIVATE KEY-----
+```
+
+Every one of those is a prefix its vendor publishes and reserves, so this is
+recognition and not inference — which is the point. Detecting a secret by how
+random it looks flags every hash, uuid and base64 blob in a repository, and
+reading repositories is the whole job; a forty-character commit sha is not a
+credential and nothing here treats it as one.
+
+The marker is visible on purpose. A value silently swapped out makes the model
+reason about a file that does not exist, and it will try to repair the config it
+thinks is broken. **Nothing on disk changes** — it is the tool result that never
+carried the value, and `edit_file` says so if the marker is used as the text to
+replace.
+
+What is left uncovered, and is not solvable this way: a secret with no shape in a
+file with an ordinary name — `password: hunter2` in `config/production.yaml`.
+That needs guessing, and guessing costs more than it buys.
 
 To turn it off for one file, say so:
 

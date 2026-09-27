@@ -224,6 +224,8 @@ they need no permission and behave the same everywhere.
 | `run_bash` time | 2 minutes, or what `timeout` asks for, up to 10 |
 | `run_bash` output | the last 7,488 characters, headed by how many were dropped |
 | never walked | `.git`, `node_modules`, `vendor` |
+| never searched | files that are credentials by convention, with the count said |
+| never returned | credentials whose shape is recognisable, replaced by a marker naming the kind |
 
 `run_bash` keeps the **end** of what a command printed, which is where a failure
 explains itself, and says how many bytes went before it. Every other tool is cut

@@ -14,7 +14,6 @@ package config
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -246,69 +245,13 @@ func ToolDenied(tool string) bool {
 // who means it writes `"allow": ["Read(./.env)"]`, which is checked before this
 // and wins.
 func defaultPermission(tool, subject string) string {
-	if tool == tools.NameRead && secretPath(subject) {
+	if tool == tools.NameRead && tools.SecretPath(subject) {
 		return PermDeny
 	}
 	if tools.NeedsConfirm(tool) {
 		return PermAsk
 	}
 	return PermAllow
-}
-
-// secretNames are the files that hold a credential by convention, matched
-// against the base name of a path.
-//
-// A list rather than an inference. Detecting a secret by its entropy
-// false-positives on every hash, uuid and base64 blob in a repository, and
-// reading repositories is what this program is for; a name cannot be wrong
-// about what it matches. Documented in docs/guide/permissions.md, which a test
-// holds to this list.
-var secretNames = []string{
-	".env", ".env.*",
-	"*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore",
-	"id_rsa*", "id_dsa*", "id_ecdsa*", "id_ed25519*",
-	".netrc", ".npmrc", ".pypirc", ".dockercfg",
-	"credentials", // ~/.aws/credentials, and gcloud's
-	"auth.json",   // uhai's own
-	"hosts.yml",   // gh's
-	"*.kdbx",
-}
-
-// secretDirs hold nothing but keys, so the directory is the answer and the file
-// names inside it do not have to be guessed at.
-var secretDirs = []string{".ssh", ".gnupg"}
-
-// openSecrets look exactly like the list above and are checked into
-// repositories on purpose: a template with the values taken out, read constantly
-// and never sensitive. Without them ".env.*" would refuse .env.example, and a
-// default that fires on an ordinary file is how a person learns to override the
-// whole category.
-var openSecrets = []string{".env.example", ".env.sample", ".env.template", ".env.dist", ".env.defaults"}
-
-// secretPath reports whether a path is a credential by convention.
-func secretPath(path string) bool {
-	if path == "" {
-		return false
-	}
-	clean := filepath.ToSlash(path)
-	base := filepath.Base(clean)
-
-	for _, open := range openSecrets {
-		if strings.EqualFold(base, open) {
-			return false
-		}
-	}
-	for _, dir := range secretDirs {
-		if strings.Contains(clean, "/"+dir+"/") || strings.HasPrefix(clean, dir+"/") {
-			return true
-		}
-	}
-	for _, name := range secretNames {
-		if matchPath(name, base) {
-			return true
-		}
-	}
-	return false
 }
 
 // splitCommand cuts a line into the commands it is made of, at the operators

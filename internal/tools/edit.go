@@ -54,6 +54,14 @@ func (editTool) Run(_ context.Context, root string, input json.RawMessage) (stri
 	// one of several matches silently corrupts the file.
 	switch n := strings.Count(string(data), args.Old); n {
 	case 0:
+		// A redaction marker in the text to replace is not a stale read, and
+		// "read it again" would send the model round the same loop: reading it
+		// again returns the same marker. The value is on disk unchanged; it is
+		// the tool result that never carried it.
+		if strings.Contains(args.Old, redactedPrefix) {
+			return "the old text contains a redacted credential, which is a marker and not what the file holds — " +
+				"edit around it, or ask the user to make the change", true
+		}
 		return "the old text is not in the file — read it again, it may have changed", true
 	case 1:
 	default:
