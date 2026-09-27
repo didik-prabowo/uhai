@@ -106,13 +106,14 @@ func (bashTool) Name() string       { return NameBash }
 func (bashTool) NeedsConfirm() bool { return true }
 func (bashTool) Description() string {
 	return "Run one shell (bash) command and return its stdout+stderr. It must not wait for input: there is no terminal and nobody to type. " +
-		"It is killed after two minutes unless timeout says otherwise."
+		"It is killed after two minutes unless timeout says otherwise. " +
+		"A trailing & does not detach on its own: the call still waits for the job unless you send the job's output elsewhere too, as in \"npm run dev >/tmp/dev.log 2>&1 &\"."
 }
 func (bashTool) Schema() json.RawMessage {
 	return json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"command": {"type": "string", "description": "Shell command to run"},
+				"command": {"type": "string", "description": "Shell command to run. A trailing & alone still waits for the job: redirect its output as well, e.g. npm run dev >/tmp/dev.log 2>&1 &, or the call blocks until the job ends and is then killed with it"},
 				"timeout": {"type": "integer", "description": "Seconds to allow, default 120, maximum 600. Ask for more only when a build or a test suite needs it; the turn waits with nothing on screen while it runs"}
 			},
 			"required": ["command"]
@@ -192,6 +193,16 @@ func Shell(ctx context.Context, dir, command string, onLine func(string)) (strin
 		// is usually the reason. Interleaving is the more useful half, and
 		// nothing has been seen mistaking a log line for a failure. Give them
 		// their own buffers, tagged, when something is.
+		//
+		// The buffer is an io.Writer rather than a file, so exec hands the child
+		// a pipe and Wait waits for the copy to finish — which needs every holder
+		// of the write end to close it, including a job put in the background
+		// with `&`, since that job inherits stdout. `sleep 24 & echo started`
+		// therefore prints at once and returns twenty-four seconds later:
+		// measured, not deduced. Redirecting the job's own output releases the
+		// pipe and it does detach. The tool's description says so, because the
+		// alternative is a turn that hangs for the whole timeout on a command
+		// that looks instant, and is then killed with the group.
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
 			return "", err
