@@ -307,9 +307,27 @@ func splitCommand(command string) []string {
 		case c == ';' || c == '\n' || c == '|':
 			cut() // and `||` as well: the empty part between falls out below
 
-		case c == '&' && i+1 < len(command) && command[i+1] == '&':
-			i++
-			cut()
+		case c == '&':
+			switch {
+			case i+1 < len(command) && command[i+1] == '&':
+				i++ // one operator, two bytes
+				cut()
+
+			// A redirection rather than a separator: 2>&1, 1>&2, &>file. These
+			// are the everyday case the rest of this has to leave alone. One
+			// case with two conditions, not two cases — a Go case does not fall
+			// through, and an empty one here would drop the & and turn 2>&1
+			// into a redirect to a file called 1.
+			case i > 0 && command[i-1] == '>',
+				i+1 < len(command) && command[i+1] == '>':
+				b.WriteByte(c)
+
+			default:
+				// Everything else. A lone & backgrounds what is on its left and
+				// runs what is on its right, so both halves are commands and
+				// both have to be judged.
+				cut()
+			}
 
 		default:
 			b.WriteByte(c)
