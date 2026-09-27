@@ -110,6 +110,21 @@ func find(name string) (Tool, bool) {
 	return nil, false
 }
 
+// Names is every tool this package dispatches, in the order they are offered.
+// It exists for the sentence a model reads when it calls something that is not
+// here; spawn_task is absent for the reason it is absent from all, and a model
+// that calls it never reaches Execute.
+func Names() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	out := make([]string, 0, len(all))
+	for _, t := range all {
+		out = append(out, t.Name())
+	}
+	return out
+}
+
 // Definitions returns the ToolSpecs sent to the provider so the model knows
 // what it can call.
 func Definitions() []provider.ToolSpec {
@@ -128,7 +143,13 @@ func Definitions() []provider.ToolSpec {
 func Execute(ctx context.Context, root, name string, input json.RawMessage) (result string, isError bool) {
 	t, ok := find(name)
 	if !ok {
-		return fmt.Sprintf("unknown tool: %s", name), true
+		// Named, because a refusal that does not say what exists costs a whole
+		// turn to guess again. Watched live: a model reached for read_file_ide —
+		// a name it remembered from another harness — and was told only that it
+		// was unknown, so it tried the same thing six times before arriving at
+		// read_file. Seven provider calls to read one file, six of them paying
+		// for the whole prefix to learn nothing.
+		return fmt.Sprintf("unknown tool: %s. The tools here are: %s", name, strings.Join(Names(), ", ")), true
 	}
 	result, isError = t.Run(ctx, root, input)
 

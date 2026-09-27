@@ -187,6 +187,26 @@ func TestUnknownToolIsRefused(t *testing.T) {
 	}
 }
 
+// And the refusal names what does exist. A model reaching for a name it
+// remembers from another harness — read_file_ide was the live case — used to be
+// told only that it was wrong, and tried the same thing six times before
+// arriving at read_file: seven provider calls to read one file.
+func TestAnUnknownToolIsToldWhatExists(t *testing.T) {
+	out, isErr := Execute(context.Background(), "", "read_file_ide", json.RawMessage(`{"path":"go.mod"}`))
+	if !isErr {
+		t.Fatal("a tool nobody defined is an error")
+	}
+	if !strings.Contains(out, NameRead) {
+		t.Errorf("the answer must name the tool it was reaching for:\n%s", out)
+	}
+	// Every tool, so the model does not have to ask twice for a different one.
+	for _, spec := range Definitions() {
+		if !strings.Contains(out, spec.Name) {
+			t.Errorf("%s is missing from the list", spec.Name)
+		}
+	}
+}
+
 // A result is cut at the end, so what a command printed last — where a failure
 // explains itself — is what survives.
 func TestLongResultsAreTruncated(t *testing.T) {
