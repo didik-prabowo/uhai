@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -431,5 +432,180 @@ func TestEveryToolIsActuallyDispatched(t *testing.T) {
 	// And the other direction, so the check cannot pass by accident.
 	if out, _ := Execute(context.Background(), "", "nope", json.RawMessage(`{}`)); !strings.Contains(out, "unknown tool") {
 		t.Errorf("a tool nobody defined must be refused, got %q", out)
+	}
+}
+
+// docs/guide/permissions.md prints the credential list, and a page that
+// disagrees with the code is worse than no page: somebody reads it, writes no
+// rule, and expects a file to be refused that is not. So the two are one list
+// with two spellings, and this fails if they part.
+func TestDocumentedCredentialListMatchesTheCode(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "..", "docs", "guide", "permissions.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	block := regexp.MustCompile("(?s)### Credentials are the exception.*?```\n(.*?)```")
+	found := block.FindSubmatch(page)
+	if found == nil {
+		t.Fatal("the page no longer prints the credential list")
+	}
+
+	documented := map[string]bool{}
+	for _, word := range strings.Fields(string(found[1])) {
+		documented[strings.TrimSuffix(word, "/")] = true
+	}
+
+	for _, name := range append(append([]string{}, secretNames...), secretDirs...) {
+		if !documented[name] {
+			t.Errorf("%s is refused by the code and not on the page", name)
+		}
+	}
+	for word := range documented {
+		if !slices.Contains(secretNames, word) && !slices.Contains(secretDirs, word) {
+			t.Errorf("the page promises %s is refused and the code does not refuse it", word)
+		}
+	}
+	for _, open := range openSecrets {
+		if !strings.Contains(string(page), "`"+open+"`") {
+			t.Errorf("%s is allowed by the code and the page does not say so", open)
+		}
+	}
+}
+
+// The list itself, and the two ways it is deliberately narrow: a template is not
+// a secret, and a name is never a guess.
+func TestCredentialsByConvention(t *testing.T) {
+	for _, path := range []string{
+		".env", ".env.production", "app/.env.local", "deploy.pem", "server.key",
+		"id_rsa", "id_ed25519.pub", ".netrc", "/home/x/.ssh/known_hosts",
+		"/home/x/.aws/credentials", "/Users/x/.uhai/auth.json",
+	} {
+		if !SecretPath(path) {
+			t.Errorf("%s holds a credential by convention and was not recognised", path)
+		}
+	}
+	for _, path := range []string{
+		".env.example", ".env.sample", "main.go", "README.md", "keyboard.go",
+		"internal/config/permission.go", "",
+	} {
+		if SecretPath(path) {
+			t.Errorf("%s is an ordinary file and must not be refused", path)
+		}
+	}
+}
+
+// Every tool's output goes through Execute, so redaction goes there once rather
+// than into each tool. What it catches is a shape a vendor reserves — not
+// anything that merely looks random, which is every git sha in a repository.
+func TestCredentialShapesAreTakenOutOfEveryResult(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	body := `{
+  "anthropic": "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+  "github":    "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789xy",
+  "aws":       "AKIAIOSFODNN7EXAMPLE",
+  "commit":    "7148d6c4872a61b1402f262fd929e36eb4a1c2d3",
+  "note":      "keep this line"
+}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	in, _ := json.Marshal(map[string]string{"path": path})
+	out, isErr := Execute(context.Background(), "", NameRead, in)
+	if isErr {
+		t.Fatalf("reading it is not an error: %s", out)
+	}
+
+	for _, secret := range []string{"sk-ant-api03-AbCd", "ghp_AbCd", "AKIAIOSFODNN7EXAMPLE"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("%s reached the result, and from there the provider", secret)
+		}
+	}
+	for _, kind := range []string{"anthropic api key", "github token", "aws access key id"} {
+		if !strings.Contains(out, redactedPrefix+kind+"]") {
+			t.Errorf("the marker must name what was taken out, missing %q:\n%s", kind, out)
+		}
+	}
+	// A sha is forty hex characters of high entropy and is not a secret. This is
+	// the false positive the whole prefix-anchored design exists to avoid.
+	if !strings.Contains(out, "7148d6c4872a61b1402f262fd929e36eb4a1c2d3") {
+		t.Error("a commit sha was redacted, which is the mistake entropy detection makes")
+	}
+	if !strings.Contains(out, "keep this line") {
+		t.Error("ordinary text must survive")
+	}
+
+	// And a result with nothing in it comes back untouched, which is the path
+	// every other read takes.
+	plain := "package main\n\nfunc main() {}\n"
+	if got := Redact(plain); got != plain {
+		t.Errorf("an ordinary file must not be rewritten: %q", got)
+	}
+
+	// The word boundaries, which are load-bearing and were added because these
+	// three failed: `sk-` matched inside `task-` and `MSG.` inside SendGrid's
+	// shape, so a CI URL came back as an OpenAI key.
+	for _, ordinary := range []string{
+		"see https://ci.example.com/task-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8",
+		"disk-usage-report-0123456789abcdefghijklmnopqrstuv",
+		"MSG.0123456789abcdefghij.0123456789abcdefghij",
+	} {
+		if got := Redact(ordinary); got != ordinary {
+			t.Errorf("false positive:\n  in:  %s\n  out: %s", ordinary, got)
+		}
+	}
+}
+
+// A marker is not the file's text, so using it as the text to replace cannot
+// work — and "read it again" would send the model round the same loop, since
+// reading it again returns the same marker.
+func TestEditSaysWhyARedactedValueCannotBeReplaced(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".config")
+	if err := os.WriteFile(path, []byte("key = sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	in, _ := json.Marshal(map[string]string{
+		"path": path,
+		"old":  "key = " + redactedPrefix + "anthropic api key]",
+		"new":  "key = something else",
+	})
+	out, isErr := Execute(context.Background(), "", NameEdit, in)
+	if !isErr {
+		t.Fatal("it cannot have replaced a marker that is not in the file")
+	}
+	if !strings.Contains(out, "redacted") {
+		t.Errorf("the reason must name the redaction, not a stale read: %q", out)
+	}
+}
+
+// grep reads every file it walks, so a credential with no shape — a password in
+// a .env — would come back as a matching line. The same list read_file is
+// refused by is skipped here, and the count is said rather than left silent.
+func TestGrepSkipsCredentialFilesAndSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DB_PASSWORD=hunter2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("// DB_PASSWORD comes from the environment\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	in, _ := json.Marshal(map[string]string{"pattern": "DB_PASSWORD", "path": dir})
+	out, isErr := Execute(context.Background(), "", NameGrep, in)
+	if isErr {
+		t.Fatalf("grep failed: %s", out)
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Error("a password with no shape came back as a matching line")
+	}
+	if !strings.Contains(out, "main.go") {
+		t.Errorf("the ordinary file must still match: %s", out)
+	}
+	if !strings.Contains(out, "skipped") {
+		t.Errorf("a search that left files out must say so: %s", out)
 	}
 }

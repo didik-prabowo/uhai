@@ -50,6 +50,7 @@ func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 	defer cancel()
 
 	var hits []string
+	var skipped int
 	include := func(string) bool { return true }
 	if args.Include != "" {
 		include = matcher(args.Include)
@@ -60,6 +61,14 @@ func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 	err = walk(ctx, resolve(root, args.Path), func(path string) bool {
 		rel := display(root, path)
 		if !include(rel) {
+			return true
+		}
+		// The same files read_file refuses. Redaction takes care of a
+		// credential that has a recognisable shape wherever it lives; this is
+		// for the one that does not — DB_PASSWORD=hunter2 is a matching line
+		// like any other, and .env is the file it lives in.
+		if SecretPath(rel) {
+			skipped++
 			return true
 		}
 		data, err := os.ReadFile(path)
@@ -86,8 +95,15 @@ func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 	if err != nil {
 		return fmt.Sprintf("could not search: %v", err), true
 	}
-	if len(hits) == 0 {
-		return "no matches for " + args.Pattern, false
+	// Said rather than silent: a search that quietly left files out reads as a
+	// search that found everything, and the count is what lets the model ask
+	// for one of them by name instead.
+	tail := ""
+	if skipped > 0 {
+		tail = fmt.Sprintf("\n\n(%d file(s) skipped: credentials by convention — read one by name if you need it)", skipped)
 	}
-	return strings.Join(hits, "\n"), false
+	if len(hits) == 0 {
+		return "no matches for " + args.Pattern + tail, false
+	}
+	return strings.Join(hits, "\n") + tail, false
 }
