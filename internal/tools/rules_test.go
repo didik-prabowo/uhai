@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // timeAfter keeps the waits in this file readable in milliseconds.
@@ -210,27 +211,58 @@ func TestAnUnknownToolIsToldWhatExists(t *testing.T) {
 
 // A result is cut at the end, so what a command printed last — where a failure
 // explains itself — is what survives.
+// Execute's cut is the backstop for a tool that does not bound its own output.
+// Tested as the function rather than through a tool, because every tool this
+// package ships now budgets itself — so reaching the cut would mean registering
+// one that does not, and a tool registered in a test is a tool the documentation
+// tests then demand a section for.
 func TestLongResultsAreTruncated(t *testing.T) {
-	// grep, and no longer read_file: a read now stops at its own budget and
-	// says which lines it gave, so it never reaches this cut. grep can — two
-	// hundred matches of two hundred characters is forty thousand — and the
-	// cut is still the backstop for every tool that has no budget of its own.
-	dir := t.TempDir()
-	long := strings.Repeat("needle ", 30) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "many.txt"), []byte(strings.Repeat(long, 300)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	out, isErr := Execute(context.Background(), "", NameGrep,
-		json.RawMessage(fmt.Sprintf(`{"pattern":"needle","path":%q}`, dir)))
-	if isErr {
-		t.Fatalf("a search with many hits is not an error: %q", out)
-	}
+	out := capResult(strings.Repeat("x", maxResultLen*2))
 	if !strings.HasSuffix(out, "...[output truncated]") {
 		t.Fatal("a truncated result must say so, or the model treats half of it as the whole")
 	}
 	if len(out) > maxResultLen+len("\n...[output truncated]") {
 		t.Fatalf("result is %d characters, cap is %d", len(out), maxResultLen)
+	}
+	if short := capResult("brief"); short != "brief" {
+		t.Errorf("a result under the cap must come back whole, got %q", short)
+	}
+
+	// And the cut lands on a rune boundary: maxResultLen is not a multiple of
+	// three, so a result of three-byte runes would otherwise end in half a
+	// character — which is what grep's line truncation was doing.
+	if cjk := capResult(strings.Repeat("あ", maxResultLen)); !utf8.ValidString(cjk) {
+		t.Error("the cut split a rune")
+	}
+}
+
+// And the tools that budget their own output stay under the cap, so the notes
+// that explain them survive. This is the invariant the test above used to be
+// standing in for, and it is the one that actually matters: a note cut off the
+// end is a limit nobody was told about.
+func TestBudgetedToolsNeverReachTheCut(t *testing.T) {
+	dir := t.TempDir()
+	long := strings.Repeat("needle ", 40)
+	for i := 0; i < maxMatches+100; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%03d.go", i)), []byte(long+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, c := range []struct{ tool, args string }{
+		{NameGrep, `{"pattern":"needle"}`},
+		{NameGlob, `{"pattern":"*.go"}`},
+	} {
+		out, isErr := Execute(context.Background(), dir, c.tool, json.RawMessage(c.args))
+		if isErr {
+			t.Fatalf("%s: %s", c.tool, out)
+		}
+		if strings.Contains(out, "output truncated") {
+			t.Errorf("%s reached Execute's cut, so its own note may have been cut off", c.tool)
+		}
+		if !strings.Contains(out, "match limit") && !strings.Contains(out, "did not fit") {
+			t.Errorf("%s stopped early and said nothing about it:\n%s", c.tool, lastLine(out))
+		}
 	}
 }
 

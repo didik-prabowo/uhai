@@ -158,10 +158,24 @@ func Execute(ctx context.Context, root, name string, input json.RawMessage) (res
 	// once. Before the truncation, so a marker cannot be cut in half.
 	result = Redact(result)
 
-	if len(result) > maxResultLen {
-		result = result[:maxResultLen] + "\n...[output truncated]"
+	return capResult(result), isError
+}
+
+// capResult is the backstop for a tool that does not bound its own output.
+//
+// Every tool this package ships now does — run_bash, read_file, grep and glob
+// each stop below maxResultLen so the note explaining an early stop cannot be the
+// part that gets cut. This is for the ones that do not: fetch_url, which pulls up
+// to two megabytes, and anything registered from outside, which is what the Tool
+// interface exists for and cannot be assumed to behave.
+//
+// Cut at a rune boundary. The cut is in bytes, a rune is not one byte, and a
+// result ending in half a character is the same fault truncate had.
+func capResult(result string) string {
+	if len(result) <= maxResultLen {
+		return result
 	}
-	return result, isError
+	return strings.ToValidUTF8(result[:maxResultLen], "") + "\n...[output truncated]"
 }
 
 // resolve is where a path the model gave lands on disk: under the project when
