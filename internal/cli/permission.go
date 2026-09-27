@@ -211,6 +211,12 @@ func confirmTitle(name, input string) string {
 
 	switch name {
 	case tools.NameBash:
+		// The duration only when it is not the usual one. A number on every
+		// shell prompt is a number that stops being read, and the whole reason
+		// the question beats a blob of JSON is that it is read.
+		if limit := tools.BashLimit(input); limit != tools.BashTimeout {
+			return "Shell command, up to " + limit.String()
+		}
 		return "Shell command"
 	case tools.NameFetch:
 		return "Fetch a page"

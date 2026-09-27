@@ -118,8 +118,8 @@ func TestGlobAndGrep(t *testing.T) {
 // A command the model runs has to outlive a test suite: the old thirty seconds
 // meant it could not verify its own work on anything bigger than a toy.
 func TestBashTimeoutOutlivesATestSuite(t *testing.T) {
-	if bashTimeout < time.Minute {
-		t.Fatalf("bashTimeout is %s, too short to run tests with", bashTimeout)
+	if BashTimeout < time.Minute {
+		t.Fatalf("BashTimeout is %s, too short to run tests with", BashTimeout)
 	}
 
 	// It is still a limit: a command that waits for input must die rather than
@@ -816,5 +816,50 @@ func TestBashRefusesBinaryOutput(t *testing.T) {
 	out, isErr := Execute(context.Background(), "", NameBash, in)
 	if !isErr || !strings.Contains(out, "binary") {
 		t.Fatalf("binary output should be refused with a reason: %q", out)
+	}
+}
+
+// Two minutes was the only answer, and a build slower than that could not be
+// verified by the model at all: /check is the other way to run something long
+// and is deliberately not offered to it. The ceiling is /check's own, so nothing
+// new is reachable — only reachable from here.
+func TestBashTimeoutCanBeAskedForAndIsCapped(t *testing.T) {
+	for input, want := range map[string]time.Duration{
+		`{"command":"x"}`:                BashTimeout,     // asked for nothing
+		`{"command":"x","timeout":0}`:    BashTimeout,     // asked for nothing, explicitly
+		`{"command":"x","timeout":-5}`:   BashTimeout,     // nonsense is not a short timeout
+		`{"command":"x","timeout":300}`:  5 * time.Minute, // asked, and allowed
+		`{"command":"x","timeout":600}`:  maxBashTimeout,  // exactly the ceiling
+		`{"command":"x","timeout":9999}`: maxBashTimeout,  // clamped, not refused
+		`not json at all`:                BashTimeout,     // and never zero, which would kill instantly
+	} {
+		if got := BashLimit(input); got != want {
+			t.Errorf("%s → %s, want %s", input, got, want)
+		}
+	}
+	if maxBashTimeout != 10*time.Minute {
+		t.Errorf("the ceiling is meant to be /check's ten minutes, got %s", maxBashTimeout)
+	}
+}
+
+// A shorter timeout is honoured, and the message names the limit that was
+// actually applied rather than the default — a model told "killed after 2m0s"
+// when it asked for one second learns the wrong thing about its own request.
+func TestBashReportsTheLimitItWasGiven(t *testing.T) {
+	in, _ := json.Marshal(map[string]any{"command": "echo HELLO; sleep 5", "timeout": 1})
+
+	start := time.Now()
+	out, isErr := Execute(context.Background(), "", NameBash, in)
+	if !isErr {
+		t.Fatalf("it should have been killed: %s", out)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("the short timeout was ignored: %s", elapsed)
+	}
+	if !strings.Contains(out, "1s") {
+		t.Errorf("the message must name the limit that applied: %q", out)
+	}
+	if !strings.Contains(out, "HELLO") {
+		t.Errorf("and still keep what was printed: %q", out)
 	}
 }

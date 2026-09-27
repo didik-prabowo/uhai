@@ -180,13 +180,25 @@ the order they were printed.
 
 ```json
 { "command": "go test ./..." }
+{ "command": "go build ./...", "timeout": 420 }
 ```
 
 Killed after two minutes, and killed as a whole process group — killing the
 shell alone would leave `go test` compiling away with nothing to report to. A
 command that waits for input dies rather than hanging the turn, so there is no
-`vim`, no `git rebase -i`, no password prompt. Anything slower than two minutes
-belongs in `/check`, which runs in the background and can be stopped.
+`vim`, no `git rebase -i`, no password prompt.
+
+`timeout` asks for longer, in seconds, up to ten minutes — the same ceiling
+`/check` has, since the limit was never about duration. Anything above is
+clamped rather than refused. The confirmation says how long it is agreeing to
+whenever it is not the usual two minutes, because the turn waits with nothing on
+the screen for the whole of it: `/check` is still the better answer for a suite
+that takes that long, since it runs in the background and can be stopped.
+
+The command inherits your environment, less `UHAI_API_KEY` and `BRAVE_API_KEY`,
+and is told there is no terminal — `NO_COLOR`, `TERM=dumb`, a pager that is
+`cat`. Output containing a NUL byte is refused with a byte count rather than
+returned as mojibake.
 
 ## Tasks
 
@@ -209,11 +221,14 @@ they need no permission and behave the same everywhere.
 | result size | 8,000 characters, then `...[output truncated]` |
 | `glob`, `grep` matches | 200, then the search stops |
 | `grep` line length | 200 characters, then `…` |
-| `run_bash` | killed after 2 minutes |
+| `run_bash` time | 2 minutes, or what `timeout` asks for, up to 10 |
+| `run_bash` output | the last 7,488 characters, headed by how many were dropped |
 | never walked | `.git`, `node_modules`, `vendor` |
 
-A result is cut at the end, so what a command printed last — which is where a
-failure explains itself — is what survives.
+`run_bash` keeps the **end** of what a command printed, which is where a failure
+explains itself, and says how many bytes went before it. Every other tool is cut
+at 8,000 characters from the front, which is the right half of a file and the
+wrong half of a test run — hence the difference.
 
 ### fetch_url
 
