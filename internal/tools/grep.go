@@ -67,7 +67,7 @@ func (grepTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 	// Walked absolutely, matched and reported relative to the project: the
 	// include pattern is written as a project path, and so is every result the
 	// model reads back and hands to read_file.
-	err = walk(ctx, resolve(root, args.Path), func(path string) bool {
+	err = walk(ctx, root, resolve(root, args.Path), func(path string) bool {
 		rel := display(root, path)
 		if !include(rel) {
 			return true

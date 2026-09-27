@@ -115,15 +115,28 @@ func searchResult(empty string, found []string, notes ...string) string {
 // call and reached bash, and stopped at the edge of this function — a grep
 // that finds nothing in a large repository read every file to the end no
 // matter what the user pressed.
-func walk(ctx context.Context, root string, visit func(path string) bool) error {
-	if root == "" {
-		root = "."
+func walk(ctx context.Context, project, from string, visit func(path string) bool) error {
+	if from == "" {
+		from = "."
 	}
-	// What the project itself says not to look at, read once for the walk
-	// rather than per entry.
-	ignore := readIgnore(root)
+	// What the project says not to look at, read from the project and not from
+	// wherever this search happens to start. It used to be the search root, so
+	// `grep path=app` read app/.gitignore — which does not exist — and searched
+	// dist/ and *.log that the same grep from the root had skipped. An anchored
+	// rule was wrong the same way: /uhai means the project's root, not the
+	// subdirectory somebody narrowed to.
+	//
+	// That mattered more after the match limit started saying "narrow it with
+	// path": following the tool's own advice made the answer noisier.
+	// list_directory has read it from the project all along, with a comment
+	// saying why; this is the other place that makes the same decision.
+	base := project
+	if base == "" {
+		base = from
+	}
+	ignore := readIgnore(base)
 
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(from, func(path string, d fs.DirEntry, err error) error {
 		// Checked per entry rather than per directory: one huge folder is
 		// exactly the case where waiting for the next directory is waiting.
 		if err := ctx.Err(); err != nil {

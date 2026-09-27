@@ -214,7 +214,7 @@ func TestWalkAbandonsATreePartway(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	seen := 0
-	err := walk(ctx, dir, func(string) bool {
+	err := walk(ctx, dir, dir, func(string) bool {
 		seen++
 		if seen == 5 {
 			cancel()
@@ -339,7 +339,7 @@ func TestTheProjectsOwnIgnoresAreObeyed(t *testing.T) {
 	write("penting.log", "wanted")
 
 	var seen []string
-	if err := walk(context.Background(), dir, func(path string) bool {
+	if err := walk(context.Background(), dir, dir, func(path string) bool {
 		seen = append(seen, strings.TrimPrefix(path, dir+"/"))
 		return true
 	}); err != nil {
@@ -369,7 +369,7 @@ func TestAnAnchoredIgnoreStaysAtTheRoot(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "cmd", "uhai", "main.go"), []byte("package main"), 0o644)
 
 	var seen []string
-	walk(context.Background(), dir, func(path string) bool {
+	walk(context.Background(), dir, dir, func(path string) bool {
 		seen = append(seen, strings.TrimPrefix(path, dir+"/"))
 		return true
 	})
@@ -393,7 +393,7 @@ func TestTheBaselineHoldsWithoutAGitignore(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644)
 
 	var seen []string
-	walk(context.Background(), dir, func(path string) bool {
+	walk(context.Background(), dir, dir, func(path string) bool {
 		seen = append(seen, path)
 		return true
 	})

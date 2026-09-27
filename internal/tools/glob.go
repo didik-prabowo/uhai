@@ -47,7 +47,7 @@ func (globTool) Run(ctx context.Context, root string, input json.RawMessage) (st
 	// Walked absolutely, matched and reported relative to the project. The
 	// pattern the model writes is a project path — "internal/**/*.go" — and it
 	// would match nothing against /Users/…/internal/foo.go.
-	err := walk(ctx, resolve(root, args.Path), func(path string) bool {
+	err := walk(ctx, root, resolve(root, args.Path), func(path string) bool {
 		rel := display(root, path)
 		if match(rel) {
 			found = append(found, rel)

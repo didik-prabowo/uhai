@@ -809,3 +809,61 @@ func TestGrepSkipsCredentialFilesAndSaysSo(t *testing.T) {
 		t.Errorf("a search that left files out must say so: %s", out)
 	}
 }
+
+// Where .gitignore is read from, and which of its forms work. Two faults that
+// were invisible from the root of a project and only showed from inside it.
+func TestGitignoreIsReadFromTheProject(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"),
+		[]byte("dist/\n*.log\nbuild*/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{
+		"app/main.go", "app/dist/out.js", "app/debug.log", "build1/x.js", "build/x.js",
+	} {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("needle\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	search := func(args string) string {
+		out, isErr := Execute(context.Background(), dir, NameGrep, json.RawMessage(args))
+		if isErr {
+			t.Fatalf("%s: %s", args, out)
+		}
+		return out
+	}
+
+	// The same answer from the root and from inside it. It used to read the
+	// .gitignore at the *search* root, so narrowing to app/ found no rules at
+	// all and returned everything the project ignores — which the match-limit
+	// note now actively suggests doing.
+	for _, args := range []string{
+		`{"pattern":"needle"}`,
+		`{"pattern":"needle","path":"app"}`,
+	} {
+		out := search(args)
+		if !strings.Contains(out, "main.go") {
+			t.Errorf("%s: an ordinary file must still be found:\n%s", args, out)
+		}
+		for _, ignored := range []string{"dist/out.js", "debug.log"} {
+			if strings.Contains(out, ignored) {
+				t.Errorf("%s: %s is ignored by the project and was searched anyway", args, ignored)
+			}
+		}
+	}
+
+	// A wildcard directory rule. "build*/" went into an exact-name lookup, so it
+	// was a key nothing equalled and the rule matched nothing — not build1/ and
+	// not even build/.
+	out := search(`{"pattern":"needle"}`)
+	for _, ignored := range []string{"build1/x.js", "build/x.js"} {
+		if strings.Contains(out, ignored) {
+			t.Errorf("%s matches build*/ and was searched anyway", ignored)
+		}
+	}
+}
