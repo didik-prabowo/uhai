@@ -207,6 +207,24 @@ order. Each is small; the point is that *use* picks which.
 - **Editing more than one place at a time.** `edit_file` replaces one unique
   match. A refactor across six files is six confirmations.
   *Build it when a single change routinely takes more than three edits.*
+- **Running a batch of tools at once** *(measured, not built)*. `runTools`
+  walks one response's tool calls in a single loop, while the system prompt asks
+  the model to batch the independent ones — so it does, and they run in series.
+  Measured on this repository: four greps take 13ms one after another and 5ms
+  together. The ratio flatters it; the saving is eight milliseconds against a
+  turn that waits seconds for a model. The cost scales with the tree, since a
+  grep reads every file in it, so at a hundred times this size each one
+  approaches its own fifteen-second ceiling and four of them is a minute.
+  *Build it when a batch of reads is visibly slower than one of them.*
+
+  The shape, written down because it is not the obvious one: **effects serial,
+  looking parallel**. `NeedsConfirm() == false` is exactly the set of tools whose
+  effects do not escape the process, so those are safe together by construction,
+  and a confirmation is serial anyway because a person answers it — which is why
+  a batch containing `run_bash` was never the case to build for. Parallelise
+  *consecutive* runs of eligible calls rather than all of them, or a batch of
+  `read_file` then `edit_file` on one path changes meaning; and leave
+  `OnToolCall` firing in block order, since it draws to the screen.
 - **Reading the web** *(built)*. `fetch_url` opens an address and `search_web`
   finds one, so a stack trace mentioning a library's docs no longer ends the
   trail at either end. Searching needs a key; without one the tool says where
