@@ -108,6 +108,31 @@ against servers we wrote ourselves.
       the signature or a dropped empty block is a 400 on the second call, and
       it is structurally invisible from here: the fake endpoint is the side
       that would have refused.
+
+      **A gateway was tried for this and cannot stand in, which is worth
+      writing down because it looks like it can.** 9router answers
+      `POST /v1/messages` with the real thing — an SSE stream of
+      `message_start` and `content_block_delta`, naming the model that replied
+      — and accepts `x-api-key`, so uhai's own client drives it unchanged. A
+      twelve-call turn ran through it: tool calls, tool results, thinking
+      blocks arriving signed and going back on every subsequent call, no error.
+      It proves the client works against a real Messages API endpoint, which
+      had never been observed. It proves nothing about the replay.
+
+      The probe that settles it is a *corrupted* signature. The real API
+      refuses one; through the `cc/*` route it returns 200, so the blocks are
+      not reaching Anthropic and nothing is checking them. The same route
+      caches the history whether or not uhai marks a breakpoint, and reports a
+      usage object of its own — three observations with one explanation: it is
+      an agent-harness proxy that rebuilds the conversation, not a passthrough.
+      Its sibling `midas-telkom-stg/*` drops `cache_control` outright, by the
+      same invalid-value probe. The one route that *is* a passthrough,
+      `anthropic/*`, returns Anthropic's own sentence verbatim: *"Your credit
+      balance is too low"*.
+
+      So the wall has been reached from two directions now, and it is the same
+      wall. **Verification needs credit on a direct key, and a proxy in front
+      of the API is the side that would have refused.**
 - [x] Fix the model registry against what the APIs actually list. Anthropic
       and Gemini report their own limits, and the table now carries theirs:
       Haiku answers 64k rather than the 8k it was capped at, and Opus 4.5 and
