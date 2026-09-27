@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -403,14 +404,66 @@ func TestSearchesStopAtTheMatchLimit(t *testing.T) {
 		}
 	}
 
-	out, _ := Execute(context.Background(), "", "glob", json.RawMessage(fmt.Sprintf(`{"pattern":"*.go","path":%q}`, dir)))
-	if lines := strings.Count(out, "\n") + 1; lines > maxMatches {
-		t.Errorf("glob returned %d lines, cap is %d", lines, maxMatches)
+	// The cap holds, and it says so. Both halves matter: a search that stopped
+	// at two hundred and returned two hundred lines in silence reads exactly
+	// like one that found everything there was — and the byte truncation cannot
+	// be relied on to mark it, since two hundred short paths fit inside it.
+	for _, tool := range []string{NameGlob, NameGrep} {
+		pattern := `"pattern":"*.go"`
+		if tool == NameGrep {
+			pattern = `"pattern":"cocok"`
+		}
+		out, _ := Execute(context.Background(), dir, tool, json.RawMessage("{"+pattern+"}"))
+
+		hits := 0
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasSuffix(line, ".go") || strings.Contains(line, ".go:") {
+				hits++
+			}
+		}
+		if hits > maxMatches {
+			t.Errorf("%s returned %d results, cap is %d", tool, hits, maxMatches)
+		}
+		if !strings.Contains(out, "match limit") {
+			t.Errorf("%s stopped at the cap and did not say so:\n%s", tool, lastLine(out))
+		}
+	}
+}
+
+// lastLine is what a note would be, for a failure message that does not print
+// two hundred paths.
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return lines[len(lines)-1]
+}
+
+// grep reads a file whole, so one file it cannot hold is one search it cannot
+// finish. A 300 MiB log in the tree cost 600 MiB of allocation — the read, and
+// the copy strings.Split makes — on a search that was looking at source.
+func TestGrepSkipsFilesTooLargeToRead(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "small.go"), []byte("needle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Just over the ceiling, and containing the pattern, so a miss is provable
+	// rather than inferred.
+	big := append(bytes.Repeat([]byte("x\n"), maxGrepFile/2), []byte("needle\n")...)
+	if err := os.WriteFile(filepath.Join(dir, "big.log"), big, 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	out, _ = Execute(context.Background(), "", "grep", json.RawMessage(fmt.Sprintf(`{"pattern":"cocok","path":%q}`, dir)))
-	if lines := strings.Count(out, "\n") + 1; lines > maxMatches {
-		t.Errorf("grep returned %d lines, cap is %d", lines, maxMatches)
+	out, isErr := Execute(context.Background(), dir, NameGrep, json.RawMessage(`{"pattern":"needle"}`))
+	if isErr {
+		t.Fatalf("grep failed: %s", out)
+	}
+	if !strings.Contains(out, "small.go") {
+		t.Errorf("the small file must still be searched:\n%s", out)
+	}
+	if strings.Contains(out, "big.log:") {
+		t.Error("a file over the ceiling was read anyway")
+	}
+	if !strings.Contains(out, "larger than") {
+		t.Errorf("skipping it must be said, not silent:\n%s", out)
 	}
 }
 

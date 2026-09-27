@@ -31,6 +31,20 @@ var searchTimeout = 15 * time.Second
 // searchNote explains a result that stopped early, and is empty for one that
 // ran to the end. Shared so glob and grep say the same thing about the same
 // situation.
+//
+// The match limit is one of those situations and used not to be. A search that
+// found its two hundredth hit stopped walking and returned exactly two hundred
+// lines with nothing said, so a capped result and a complete one read
+// identically — 200 hits of 300 came back at 2,599 characters, under the
+// truncation Execute would otherwise have marked. A model that greps for a
+// symbol, gets two hundred, and concludes that is all of them then reasons
+// about a codebase it has only partly seen, which for "rename every caller" is
+// a wrong answer delivered confidently.
+//
+// found >= maxMatches is exactly the capped case rather than an approximation of
+// it: the walk stops on the hit that reaches the limit, so it cannot be exceeded
+// and is only reached by stopping. A search that genuinely has two hundred
+// matches is told there may be more, which is the harmless direction.
 func searchNote(err error, found int) (string, bool) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -40,6 +54,8 @@ func searchNote(err error, found int) (string, bool) {
 		return fmt.Sprintf("(partial: still searching after %s, so there may be more)", searchTimeout), false
 	case errors.Is(err, context.Canceled):
 		return "the user interrupted this search", true
+	case found >= maxMatches:
+		return fmt.Sprintf("(stopped at the %d-match limit, so there are probably more — narrow it with \"path\", \"include\", or a more specific pattern)", maxMatches), false
 	}
 	return "", false
 }
