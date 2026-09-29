@@ -10,6 +10,16 @@ import (
 	"strings"
 )
 
+// maxEditFile is the largest file edit_file will open. Ten megabytes is far
+// past any source file and far short of a log: what it stops is the accident —
+// a model asked to fix a line in something that turned out to be a database
+// dump.
+//
+// Bigger than grep's four, because these are different questions. grep skips a
+// large file and says so, and the answer may well be elsewhere; an edit names
+// one file and means it, so the ceiling only has to be past anything real.
+const maxEditFile = 10 << 20
+
 // editTool is the edit_file tool: what the model is told about it, and the
 // thing that runs.
 type editTool struct{}
@@ -110,6 +120,18 @@ func (editTool) Run(_ context.Context, root string, input json.RawMessage) (stri
 		path := resolve(root, e.Path)
 		body, held := updated[path]
 		if !held {
+			// An exact-string replacement has to hold the file in memory, so
+			// the ceiling read_file was given belongs here too — this was the
+			// one path left where os.ReadFile on a 500 MB log is 500 MB, and
+			// in the daemon the process that runs out of memory is holding
+			// every project's conversation. Refused rather than truncated: a
+			// partial read would replace text in a file whose rest we never
+			// saw, which is how an edit corrupts something.
+			if info, err := os.Stat(path); err == nil && info.Size() > maxEditFile {
+				return fmt.Sprintf("%s is %d MiB, too big to edit — an exact replacement has to hold the whole file, "+
+					"and a file this size is not source. Use run_bash with sed or a script if the change really is in there",
+					e.Path, info.Size()>>20), true
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Sprintf("could not read %s: %v", e.Path, err), true
