@@ -176,7 +176,16 @@ func (r *Registry) finish(t *Task, report string, tokens int, err error) {
 
 	// Elapsed is time spent working, not time spent waiting: a task that sat
 	// in the queue for a minute did not take a minute.
-	t.Elapsed, t.Tokens, t.Report, t.Err = time.Since(t.Started), tokens, report, err
+	//
+	// Zero when it never started, which is what a task cancelled in the queue
+	// is. Started is only set by begin, so time.Since read from the zero time
+	// and saturated: /tasks and the daemon's wire both reported 2562047h47m16s
+	// for a task that had done nothing at all.
+	t.Elapsed = 0
+	if !t.Started.IsZero() {
+		t.Elapsed = time.Since(t.Started)
+	}
+	t.Tokens, t.Report, t.Err = tokens, report, err
 	t.Status = StatusDone
 	if err != nil {
 		t.Status = StatusFailed

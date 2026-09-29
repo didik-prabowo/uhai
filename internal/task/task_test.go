@@ -112,14 +112,21 @@ func TestQueuedTaskEndsWhenCancelled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, err := r.Run(ctx, "never runs", func(context.Context, Task) (string, int, error) {
+	cancelled, _, err := r.Run(ctx, "never runs", func(context.Context, Task) (string, int, error) {
 		t.Error("a cancelled task must not run")
 		return "", 0, nil
-	}); err == nil {
+	})
+	if err == nil {
 		t.Fatal("cancelling while queued must be reported")
 	}
 	if failed := countStatus(&r, StatusFailed); failed != 1 {
 		t.Fatalf("the cancelled task must be recorded as ended, got %d failed", failed)
+	}
+	// And it took no time, because it never began. This read time.Since(zero)
+	// and reported 2562047h47m16s — a Duration at its ceiling, in a column
+	// meant for seconds.
+	if cancelled.Elapsed != 0 {
+		t.Errorf("a task that never started spent no time working, got %s", cancelled.Elapsed)
 	}
 }
 
