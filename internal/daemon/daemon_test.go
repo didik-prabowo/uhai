@@ -1402,6 +1402,42 @@ func TestListeningSeesARunningDaemon(t *testing.T) {
 	}
 }
 
+// A front end that falls behind loses events — there is no alternative that
+// does not have the turn waiting for a terminal — but it is told what it
+// missed. Dropping in silence meant a terminal that stalled for a moment lost
+// pieces of an answer and drew the rest as if it were whole.
+func TestAFrontEndIsToldWhatItMissed(t *testing.T) {
+	ws := &workspace{watchers: map[chan Event]int{}}
+	events, stop := ws.watch()
+	defer stop()
+
+	// More than the buffer holds, with nobody reading.
+	const lost = 5
+	for i := 0; i < eventBuffer+lost; i++ {
+		ws.publish(Event{Kind: EventDelta, Text: "x"})
+	}
+	for i := 0; i < eventBuffer; i++ {
+		<-events
+	}
+
+	// Draining again, the gap is the first thing said, before the event that
+	// got through.
+	ws.publish(Event{Kind: EventDelta, Text: "the one after the gap"})
+	got := <-events
+	if got.Kind != EventNotice || !strings.Contains(got.Text, fmt.Sprintf("%d event(s) were lost", lost)) {
+		t.Fatalf("the gap was not reported: %+v", got)
+	}
+	if next := <-events; next.Text != "the one after the gap" {
+		t.Fatalf("and the event itself must follow it: %+v", next)
+	}
+
+	// Said once, not on every event after it.
+	ws.publish(Event{Kind: EventDelta, Text: "and the next"})
+	if again := <-events; again.Kind == EventNotice {
+		t.Errorf("the gap was reported twice: %+v", again)
+	}
+}
+
 // The description a task list shows is cut by byte, and a character is not
 // one: a prompt written in anything but English was as likely as not to end in
 // half a rune, which every front end then drew as a replacement glyph.
