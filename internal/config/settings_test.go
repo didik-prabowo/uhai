@@ -747,6 +747,69 @@ func TestAnExplicitRuleBeatsTheCredentialDefault(t *testing.T) {
 	}
 }
 
+// One file has many spellings and a rule has one. The model sends whatever it
+// was looking at — the path it read in a grep result, one it built by walking
+// up a directory, the absolute one it was handed — so a rule that only matched
+// the spelling it was written in was silent on the same file arriving by
+// another name. Silent is the worst way for a rule to be wrong: it looks like
+// it holds.
+func TestARuleMatchesTheSameFileHoweverItIsSpelled(t *testing.T) {
+	home := isolate(t)
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".uhai"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"),
+		[]byte(`{"permissions":{"deny":["Read(config/prod.yaml)"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"config/prod.yaml",                                         // as written
+		"./config/prod.yaml",                                       // as a model often sends it
+		"config/../config/prod.yaml",                               // as one walks out and back
+		"lib/../config/prod.yaml",                                  // and out of somewhere else
+		filepath.Join(project, "config", "prod.yaml"),              // absolute, inside the project
+		filepath.Join(project, "lib", "..", "config", "prod.yaml"), // both at once
+	} {
+		if got := Permission(project, "read_file", path); got != PermDeny {
+			t.Errorf("%s is the denied file and was answered %q", path, got)
+		}
+	}
+
+	// And the rule still means one file: a different one is not caught by it,
+	// and neither is the same name in another tree.
+	for _, path := range []string{
+		"config/other.yaml",
+		"/somewhere/else/config/prod.yaml",
+	} {
+		if got := Permission(project, "read_file", path); got == PermDeny {
+			t.Errorf("%s is not what the rule named", path)
+		}
+	}
+
+	// The other direction: a rule written as a full path is about that file,
+	// however the call spells it. Somebody pasting a path from their terminal
+	// into settings.json is not making a mistake.
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"),
+		[]byte(`{"permissions":{"deny":["Read(`+filepath.Join(project, "config", "prod.yaml")+`)"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Permission(project, "read_file", "config/prod.yaml"); got != PermDeny {
+		t.Errorf("a rule written in full must still be about that file, got %q", got)
+	}
+
+	// A path outside the project keeps its absolute form, or a rule could
+	// never name one.
+	if err := os.WriteFile(filepath.Join(home, ".uhai", "settings.json"),
+		[]byte(`{"permissions":{"deny":["Read(/etc/hosts)"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Permission(project, "read_file", "/etc/hosts"); got != PermDeny {
+		t.Errorf("a rule about a file outside the project must hold, got %q", got)
+	}
+}
+
 // The hole a single character opened. `&&`, `;` and `|` were all judged part by
 // part, and `&` was not — deliberately, to keep `2>&1` in one piece — so a line
 // that backgrounded an allowed command and ran anything after it was judged as
