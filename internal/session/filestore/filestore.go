@@ -60,7 +60,45 @@ func (f store) Save(s session.Session) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, s.ID+".json"), data, 0o644)
+
+	// Written beside the file and renamed onto it, not into it. os.WriteFile
+	// truncates first, so a crash, a full disk or a kill between the truncate
+	// and the last byte left the conversation not stale but gone — and this is
+	// the file the daemon reads back when it picks a project up again, so the
+	// loss survives the restart that would otherwise hide it. A rename is
+	// atomic on both systems uhai runs on: a reader sees the previous save or
+	// this one, never half of either.
+	//
+	// The temporary name ends in .tmp rather than .json so that All ignores
+	// one left behind by a kill; named .json it would be listed as a
+	// conversation and resumed from, which is the corrupt file this was
+	// supposed to stop existing.
+	//
+	// ponytail: not fsync'd, so a power cut can still lose the last save even
+	// though no file is corrupt. The failure this closes is the truncate
+	// window, which is the one that happened; fsync on every turn is a disk
+	// flush in the way of the next prompt. Add it if a conversation is ever
+	// lost to a machine going down rather than to a process dying.
+	tmp, err := os.CreateTemp(dir, s.ID+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // nothing to remove once the rename has taken it
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	// CreateTemp makes it 0600, and a session file has always been 0644.
+	// Changing that is a decision of its own and not this one's to make.
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, s.ID+".json"))
 }
 
 // All lists what has been saved, newest first.

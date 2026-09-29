@@ -185,3 +185,58 @@ func TestSavedSessionKeepsItsWireNames(t *testing.T) {
 		t.Errorf("the result lost the call it answers: %+v", back.Messages[2].Content[0])
 	}
 }
+
+// A save replaces the file by renaming onto it, so nothing ever reads a
+// half-written conversation. The observable half of that is the temporary
+// name: it must not look like a session, or a file left behind by a kill is
+// listed as one and resumed from.
+func TestSavingLeavesOneFileAndNoTemporaries(t *testing.T) {
+	dir := t.TempDir()
+	st := New(dir)
+
+	s := session.New()
+	s.Model = "openai/a"
+	s.Messages = []provider.Message{{
+		Role: provider.RoleUser, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "sekali"}},
+	}}
+	if err := st.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	s.Messages = append(s.Messages, provider.Message{
+		Role: provider.RoleAssistant, Content: []provider.ContentBlock{{Type: provider.BlockText, Text: "dua kali"}},
+	})
+	if err := st.Save(s); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if len(names) != 1 || names[0] != s.ID+".json" {
+		t.Fatalf("two saves of one conversation are one file: %v", names)
+	}
+
+	all, err := st.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || len(all[0].Messages) != 2 {
+		t.Fatalf("the newer save is what is on disk: %+v", all)
+	}
+
+	// And what a kill between the write and the rename leaves behind is not a
+	// conversation. Written by hand because a test cannot be killed halfway:
+	// this is the shape of the file, which is the part the listing has to
+	// ignore.
+	if err := os.WriteFile(filepath.Join(dir, s.ID+".2411063.tmp"), []byte(`{"messages":[`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if all, err := st.All(); err != nil || len(all) != 1 {
+		t.Fatalf("a half-written file must not be listed as a session: %+v %v", all, err)
+	}
+}
