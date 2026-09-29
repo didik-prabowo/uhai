@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/didik-prabowo/uhai/internal/agent"
 	"github.com/didik-prabowo/uhai/internal/cli"
@@ -347,14 +348,7 @@ func RunDaemon() error {
 			if err != nil {
 				return "", 0, err
 			}
-			cmd := exec.CommandContext(ctx, self, "-task", prompt)
-			// In the project, which is what makes AGENTS.md, the tools' idea
-			// of the tree, and the permission lists that project's own.
-			cmd.Dir = root
-			// The worker's own notices and tool calls, kept where a task that
-			// did something surprising can be looked up afterwards.
-			cmd.Stderr = os.Stderr
-			out, err := cmd.Output()
+			out, err := taskCmd(ctx, self, root, prompt).Output()
 
 			// The last line is the result; anything before it is the model's
 			// own printing, which is not this program's to interpret.
@@ -540,6 +534,41 @@ func StopDaemon() error {
 	}
 	fmt.Fprintln(os.Stderr, "uhai: daemon stopped")
 	return nil
+}
+
+// stopGrace is how long a worker that has been asked to stop gets before it is
+// killed. Long enough to cancel a turn and take its children down, short
+// enough that /stop still feels like stopping.
+const stopGrace = 5 * time.Second
+
+// taskCmd is the worker for one background task: uhai again, run in the
+// project — which is what makes AGENTS.md, the tools' idea of the tree and the
+// permission lists that project's own — with its notices and tool calls going
+// to the daemon's log, where a task that did something surprising can be
+// looked up afterwards.
+//
+// Stopped with an interrupt rather than with the kill exec.CommandContext
+// sends by default. A killed process runs none of its defers, and the deferred
+// thing that matters here is the kill of the process group its run_bash
+// started: /stop took the worker and left the `go test` it had started
+// compiling, which is the exact failure ownGroup exists to prevent, one
+// process further out. An interrupt is what RunTask already listens for, so
+// the worker cancels its own turn and takes its children with it.
+//
+// WaitDelay is the backstop for a worker that does not take the hint. Without
+// it an interrupt that is ignored is a task that never ends.
+func taskCmd(ctx context.Context, exe, dir, prompt string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, exe, "-task", prompt)
+	cmd.Dir = dir
+	cmd.Stderr = os.Stderr
+	cmd.Cancel = func() error {
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			return cmd.Process.Kill() // Windows has no interrupt to send
+		}
+		return nil
+	}
+	cmd.WaitDelay = stopGrace
+	return cmd
 }
 
 // cwd is the project a front end in a terminal is about: the directory it was

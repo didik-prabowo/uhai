@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -377,6 +378,65 @@ func TestAPathRuleReachesTheToolsThatNeverAsk(t *testing.T) {
 	// to be answered here. Writing has one, and is left to it.
 	if !a.AllowTool("write_file", `{"path":"secret.txt"}`) {
 		t.Error("a tool that confirms must be left to its confirmation")
+	}
+}
+
+// A stopped task is asked to stop before it is killed. exec.CommandContext
+// kills by default, and a killed process runs none of its defers — including
+// the one that takes down the process group its run_bash started. /stop on a
+// task running a test suite therefore stopped the worker and left the compile
+// running, which is the failure ownGroup exists to prevent, one process
+// further out.
+//
+// The worker here is a shell script rather than uhai: what is being tested is
+// how it is stopped, and a real worker would need a provider to talk to.
+func TestAStoppedTaskWorkerIsInterruptedBeforeItIsKilled(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "worker")
+	ready := filepath.Join(dir, "ready")
+	// $2 is the prompt, which is the file it touches to say it is up: the
+	// test has to cancel while the worker is running, not before it starts.
+	// The sleep is backgrounded so the trap can run — a shell waiting on a
+	// foreground child handles no signal until it returns — and its output
+	// goes to /dev/null so that it is not left holding the pipe this test
+	// reads, which a real worker's children never do either.
+	write(t, exe, "#!/bin/sh\ntrap 'echo interrupted; exit 0' INT\n: > \"$2\"\nsleep 30 >/dev/null 2>&1 &\nwait\n")
+	if err := os.Chmod(exe, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := taskCmd(ctx, exe, dir, ready)
+
+	said := make(chan string, 1)
+	go func() {
+		out, _ := cmd.Output()
+		said <- string(out)
+	}()
+
+	for i := 0; i < 1000; i++ {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(ready); err != nil {
+		t.Fatal("the worker never started")
+	}
+
+	start := time.Now()
+	cancel()
+	select {
+	case out := <-said:
+		if !strings.Contains(out, "interrupted") {
+			t.Errorf("the worker was killed outright, so it cleaned up nothing: %q", out)
+		}
+	case <-time.After(2 * stopGrace):
+		t.Fatal("the worker was neither interrupted nor killed")
+	}
+	if took := time.Since(start); took > stopGrace {
+		t.Errorf("stopping took %s, past the %s grace", took, stopGrace)
 	}
 }
 
