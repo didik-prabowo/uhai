@@ -6,6 +6,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -125,7 +126,12 @@ func (r *Registry) Progress(id, chunk string) {
 		}
 		t.Output += chunk
 		if len(t.Output) > maxOutput {
-			t.Output = "…" + t.Output[len(t.Output)-maxOutput:]
+			// ToValidUTF8 because the cut is by byte and a character is not
+			// one: landing inside a multi-byte rune left a broken glyph at the
+			// head of every trimmed output, and the output of a task is where
+			// non-English text is most likely to be. Same answer Execute gives
+			// when it truncates a tool result.
+			t.Output = "…" + strings.ToValidUTF8(t.Output[len(t.Output)-maxOutput:], "")
 		}
 		return
 	}

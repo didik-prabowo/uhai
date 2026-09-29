@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/didik-prabowo/uhai/internal/task"
@@ -125,10 +126,16 @@ func (s *Server) handleStopTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // short is a prompt cut down to something a task list can show.
+//
+// ToValidUTF8 because the cut is by byte and a character is not one: a prompt
+// written in anything but English was as likely as not to end in half a rune,
+// which every front end then drew as a replacement glyph. The limit stays in
+// bytes — it is a guard on how much is shown, and being a little conservative
+// about a prompt with wide characters in it is the harmless direction.
 func short(prompt string) string {
 	const max = 40
 	if len(prompt) <= max {
 		return prompt
 	}
-	return prompt[:max] + "…"
+	return strings.ToValidUTF8(prompt[:max], "") + "…"
 }

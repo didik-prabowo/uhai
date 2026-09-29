@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/session"
@@ -1398,5 +1399,27 @@ func TestListeningSeesARunningDaemon(t *testing.T) {
 	s, _ := serve(t, nil, nil)
 	if !Listening(s.Addr()) {
 		t.Fatal("a daemon that is serving has to be seen")
+	}
+}
+
+// The description a task list shows is cut by byte, and a character is not
+// one: a prompt written in anything but English was as likely as not to end in
+// half a rune, which every front end then drew as a replacement glyph.
+func TestAShortenedPromptIsStillValidText(t *testing.T) {
+	long := strings.Repeat("perbaiki ini 日本語 ", 10)
+	got := short(long)
+
+	if got == long {
+		t.Fatal("the prompt was never shortened, so the test proves nothing")
+	}
+	if !utf8.ValidString(got) {
+		t.Errorf("the shortened prompt is not valid text: %q", got)
+	}
+	if strings.ContainsRune(got, utf8.RuneError) {
+		t.Errorf("the cut left a replacement glyph behind: %q", got)
+	}
+	// A prompt that already fits is handed back as it is.
+	if short("singkat") != "singkat" {
+		t.Error("a short prompt must not be touched")
 	}
 }
