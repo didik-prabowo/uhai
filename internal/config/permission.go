@@ -157,10 +157,15 @@ func Subjects(tool, input string) []string {
 //
 // The folding lives here and nowhere else. Every time one decision was copied
 // into two places today, the second copy was the one that was wrong.
-func PermissionFor(tool, input string) string {
+//
+// root is the project whose rules are being asked for, "" for the process's
+// own directory. It is not optional and not defaulted: this is the one thing
+// in config consulted while a turn is running, and in the daemon a turn runs
+// for a project that is not the one the process was started in.
+func PermissionFor(root, tool, input string) string {
 	answer := PermAllow
 	for _, subject := range Subjects(tool, input) {
-		switch Permission(tool, subject) {
+		switch Permission(root, tool, subject) {
 		case PermDeny:
 			return PermDeny
 		case PermAsk:
@@ -177,8 +182,8 @@ func PermissionFor(tool, input string) string {
 // Deny is checked first and wins outright, then ask, then allow. A rule with a
 // specifier is more specific than a bare tool name, so "deny Bash(rm:*)" and
 // "allow Bash" together mean everything but rm.
-func Permission(tool, subject string) string {
-	s, err := LoadSettings()
+func Permission(root, tool, subject string) string {
+	s, err := LoadSettingsIn(root)
 	if err != nil {
 		return defaultPermission(tool, subject)
 	}
@@ -255,8 +260,8 @@ func bestMatch(rules []string, tool, subject string) int {
 
 // ToolDenied reports whether a tool is refused outright, specifier or not.
 // Such a tool is never offered to the model at all.
-func ToolDenied(tool string) bool {
-	s, err := LoadSettings()
+func ToolDenied(root, tool string) bool {
+	s, err := LoadSettingsIn(root)
 	if err != nil {
 		return false
 	}

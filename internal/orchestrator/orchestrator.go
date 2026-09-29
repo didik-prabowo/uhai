@@ -31,7 +31,7 @@ import (
 // With resume, a saved conversation is picked up where it left off: the one
 // named by id, or the newest when there is no id.
 func Run(resume bool, id string) {
-	a, err := newAgent()
+	a, err := newAgent(cwd())
 	cli.UseStore(store)
 	if resume {
 		if note, rerr := restore(a, id); rerr != nil {
@@ -148,7 +148,7 @@ func ListSessions() error {
 // ran, it reports. Notices and tool calls go to stderr, where the daemon's log
 // keeps them for when a task did something surprising.
 func RunTask(prompt string) error {
-	a, err := newAgent()
+	a, err := newAgent(cwd())
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ type taskResult struct {
 }
 
 func RunOnce(prompt string, allowTools bool) error {
-	a, err := newAgent()
+	a, err := newAgent(cwd())
 	if err != nil {
 		return err // no provider is fatal here: nothing can be done about it
 	}
@@ -226,7 +226,12 @@ var store session.Store = filestore.New("")
 // project's own instructions. A provider that cannot be built is not fatal for
 // every caller: the interactive session opens without one so the user can
 // /connect from inside, and the reason is passed on to be shown.
-func newAgent() (*agent.Agent, error) {
+//
+// root is the project this agent works in, and it is a parameter rather than
+// os.Getwd() because one of the callers is a daemon serving every project on
+// the machine: the permission closure below outlives the build, and asking the
+// working directory when it runs asked whichever project started the process.
+func newAgent(root string) (*agent.Agent, error) {
 	// The one place every entry point passes through, which is where the
 	// stored model figures belong: the picker prices a row with them and the
 	// status row prices a turn with them, and both would rather not discover
@@ -247,19 +252,17 @@ func newAgent() (*agent.Agent, error) {
 	// says "refused by this project's settings" rather than this one's blunter
 	// answer.
 	a.AllowTool = func(name, input string) bool {
-		if config.ToolDenied(name) {
+		if config.ToolDenied(root, name) {
 			return false
 		}
 		if tools.NeedsConfirm(name) {
 			return true
 		}
-		return config.PermissionFor(name, input) != config.PermDeny
+		return config.PermissionFor(root, name, input) != config.PermDeny
 	}
-	// The project this agent works in. Right for both front ends because the
-	// daemon builds each project's agent inside inRoot, the same reason
-	// AGENTS.md and the permission lists come out right — and the daemon
-	// states it again below rather than leaving the guarantee inherited.
-	a.Root, _ = os.Getwd()
+	// The project this agent works in, which the tools resolve every relative
+	// path against.
+	a.Root = root
 	if notes := config.ProjectNotes(); notes != "" {
 		a.System += "\n\n# Project instructions\nThese come from UHAI.md, AGENTS.md or CLAUDE.md in the working directory. Follow them.\n\n" + notes
 	}
@@ -313,9 +316,15 @@ func RunDaemon() error {
 			defer os.Chdir(back)
 			return f()
 		}
+		// The root is passed as well as chdir'd into. They cover different
+		// halves: inRoot is for what is read once, here, while the build runs
+		// — the notes files, the skills, the provider — and the argument is
+		// for what the agent keeps and consults later, which is the permission
+		// closure. A closure that asked the working directory would be asking
+		// about whichever project last woke the daemon.
 		newFor := func() (*agent.Agent, error) {
 			var a *agent.Agent
-			err := inRoot(func() (err error) { a, err = newAgent(); return err })
+			err := inRoot(func() (err error) { a, err = newAgent(root); return err })
 			return a, err
 		}
 
@@ -367,10 +376,6 @@ func RunDaemon() error {
 		if err != nil {
 			return daemon.Conversation{}, err
 		}
-		// Stated, not inherited. newAgent read it from the working directory
-		// inside inRoot, which is correct today and quietly wrong the first
-		// time an agent is built outside it.
-		conv.Root = root
 
 		// Picked up rather than started fresh. The daemon leaves after half an
 		// hour idle and takes every conversation it holds with it; the turns
@@ -497,7 +502,7 @@ func RunAttached() error {
 	// The local agent is still built: it holds the tools list, the model name
 	// for the status row, and everything a slash command reads. It just never
 	// answers a prompt.
-	a, err := newAgent()
+	a, err := newAgent(cwd())
 	cli.UseStore(store)
 	cli.Run(a, err)
 	return nil
@@ -535,6 +540,15 @@ func StopDaemon() error {
 	}
 	fmt.Fprintln(os.Stderr, "uhai: daemon stopped")
 	return nil
+}
+
+// cwd is the project a front end in a terminal is about: the directory it was
+// started in. Every entry point but the daemon has exactly one, and an error
+// here is the same nothing os.Getwd has always been allowed to be — resolve
+// and the settings both read "" as this directory.
+func cwd() string {
+	dir, _ := os.Getwd()
+	return dir
 }
 
 // lastLine is the final non-empty line of a worker's output. The result is

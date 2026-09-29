@@ -112,7 +112,7 @@ func TestNewAgentComposesTheSession(t *testing.T) {
 		"---\nname: planning\ndescription: Rencanakan dulu\n---\nBadan panjang yang tidak ikut ke prompt.\n")
 	write(t, filepath.Join(dir, ".uhai", "settings.json"), `{"permissions":{"deny":["run_bash"]}}`)
 
-	a, err := newAgent()
+	a, err := newAgent(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestAPathRuleReachesTheToolsThatNeverAsk(t *testing.T) {
 	write(t, filepath.Join(dir, ".uhai", "settings.json"),
 		`{"permissions":{"deny":["Read(./secret.txt)"]}}`)
 
-	a, err := newAgent()
+	a, err := newAgent(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,15 +380,57 @@ func TestAPathRuleReachesTheToolsThatNeverAsk(t *testing.T) {
 	}
 }
 
+// A rule belongs to a project, and the deny list is consulted per tool call —
+// long after the agent was built. Asking the working directory at that moment
+// is asking the wrong project: one daemon serves every checkout on the machine
+// and runs in whichever one woke it, so project B's read_file was answered by
+// project A's rules. read_file is one of the tools nobody is asked about, so
+// nothing said so; this is the test that would have.
+func TestARuleBelongsToItsProjectAndNotToTheWorkingDirectory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no home settings in the way
+	t.Setenv("OPENAI_API_KEY", "k")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
+
+	// Two checkouts, each denying a file of its own.
+	first, second := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(first, ".uhai", "settings.json"), `{"permissions":{"deny":["Read(./first-only.txt)"]}}`)
+	write(t, filepath.Join(second, ".uhai", "settings.json"), `{"permissions":{"deny":["Read(./second-only.txt)"]}}`)
+
+	// The process sits in the first, the way a daemon sits in whichever
+	// project started it.
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(first); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	a, err := newAgent(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Root != second {
+		t.Errorf("the agent's root is the project it was built for, got %q", a.Root)
+	}
+	if a.AllowTool("read_file", `{"path":"second-only.txt"}`) {
+		t.Error("a project's own deny list must be the one that answers for it")
+	}
+	if !a.AllowTool("read_file", `{"path":"first-only.txt"}`) {
+		t.Error("a rule from the directory the process happens to be in must not reach another project")
+	}
+}
+
 // The default half of the same thing: a file that is a credential by convention
 // is refused with no settings at all, because until now `read_file .env` put one
 // in the history, the request and the session file without anybody being asked.
 func TestCredentialFilesAreRefusedByDefault(t *testing.T) {
-	workIn(t)
+	dir := workIn(t)
 	t.Setenv("OPENAI_API_KEY", "k")
 	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
 
-	a, err := newAgent()
+	a, err := newAgent(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
