@@ -466,3 +466,23 @@ func TestCachingAnEmptyHistoryIsSafe(t *testing.T) {
 	cacheHistory(nil)
 	cacheHistory([]wireMessage{{Role: "user"}})
 }
+
+// The client goes through the shared transport rather than building one, which
+// is what it did — and a transport built from scratch has no proxy, so
+// HTTPS_PROXY was ignored and nothing anywhere said why.
+func TestTheClientUsesTheSharedTransport(t *testing.T) {
+	c, err := New(Options{BaseURL: "https://example.invalid", Model: "claude-sonnet-5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, ok := c.http.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("the client's transport is %T", c.http.Transport)
+	}
+	if tr.Proxy == nil || tr.TLSHandshakeTimeout == 0 {
+		t.Error("the transport was built here rather than taken from provider.Transport")
+	}
+	if tr.ResponseHeaderTimeout != headerTimeout {
+		t.Errorf("the header timeout did not follow: %s", tr.ResponseHeaderTimeout)
+	}
+}

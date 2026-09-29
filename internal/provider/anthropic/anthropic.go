@@ -79,7 +79,7 @@ func New(o Options) (*Client, error) {
 	}
 	return &Client{
 		opts: o,
-		http: &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: headerTimeout}},
+		http: &http.Client{Transport: provider.Transport(headerTimeout)},
 	}, nil
 }
 

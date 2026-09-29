@@ -57,7 +57,7 @@ func New(o Options) (*Client, error) {
 		return nil, fmt.Errorf("empty model")
 	}
 	o.BaseURL = strings.TrimRight(o.BaseURL, "/")
-	return &Client{opts: o, http: &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: headerTimeout}}}, nil
+	return &Client{opts: o, http: &http.Client{Transport: provider.Transport(headerTimeout)}}, nil
 }
 
 func (c *Client) Name() string { return c.opts.Label + "/" + c.opts.Model }
