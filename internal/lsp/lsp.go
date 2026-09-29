@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 // Symbol is one declaration the server knows about.
@@ -50,9 +51,68 @@ func (w wireLocation) location() Location {
 // Kept rather than started per call because starting one costs an index of the
 // whole module, which is tens of seconds on a large repository and would make
 // the tool slower than the grep it replaces.
+//
+// used is when each was last asked something, which is the other half of
+// keeping them: see idleAfter.
 var running struct {
 	sync.Mutex
 	byKey map[string]*client
+	used  map[string]time.Time
+}
+
+// idleAfter is how long a server nobody has asked anything is kept.
+//
+// Kept warm is the whole point, so this is deliberately long: a server costs
+// an index of the module to start, and a timeout short enough to notice would
+// pay for that index again on the next question. What it bounds is the other
+// end. gopls is hundreds of megabytes, there is one per project and language,
+// and until this existed none of them stopped until the process did — which in
+// a daemon means for as long as any terminal stays attached, since a terminal
+// attached is what keeps the daemon alive. A machine with four checkouts open
+// held four indexes of four repositories, in a process nobody was watching.
+//
+// Half an hour is the daemon's own idle timeout, for the same reason it is:
+// long enough to survive lunch.
+const idleAfter = 30 * time.Minute
+
+// sweepEvery is how often the servers are looked at. A minute is far below the
+// timeout, so asking costs nothing and the answer is never much out of date.
+const sweepEvery = time.Minute
+
+// sweeping starts the reaper on the first server started, rather than in an
+// init: a uhai that never asks a symbol question should not have a goroutine
+// waking every minute to look at a map that stays empty.
+var sweeping sync.Once
+
+func reapIdle() {
+	for range time.Tick(sweepEvery) {
+		reapOnce(idleAfter)
+	}
+}
+
+// reapOnce stops every server nobody has asked anything for longer than after,
+// and returns how many went — a count, because a test cannot watch a process
+// disappear and the map is the only thing it can hold on to.
+func reapOnce(after time.Duration) int {
+	running.Lock()
+	var done []*client
+	for key, c := range running.byKey {
+		if time.Since(running.used[key]) < after {
+			continue
+		}
+		done = append(done, c)
+		delete(running.byKey, key)
+		delete(running.used, key)
+	}
+	running.Unlock()
+
+	// Outside the lock. close waits up to two seconds for a server that does
+	// not take the hint, and a question arriving in that window has a server
+	// of its own to start rather than a reaping to wait for.
+	for _, c := range done {
+		c.close()
+	}
+	return len(done)
 }
 
 // Symbols finds declarations by name across the project.
@@ -176,8 +236,14 @@ func serverFor(ctx context.Context, root string, s server) (*client, error) {
 	running.Lock()
 	defer running.Unlock()
 	if running.byKey == nil {
-		running.byKey = map[string]*client{}
+		running.byKey, running.used = map[string]*client{}, map[string]time.Time{}
 	}
+	// Before the early return as well as after it, so a server answering
+	// questions all afternoon is not reaped for never having been started
+	// twice.
+	running.used[key] = time.Now()
+	sweeping.Do(func() { go reapIdle() })
+
 	if c, ok := running.byKey[key]; ok {
 		return c, nil
 	}
@@ -186,6 +252,7 @@ func serverFor(ctx context.Context, root string, s server) (*client, error) {
 	// whichever finished last — paying twice and leaking the loser.
 	c, err := start(ctx, root, s.argv)
 	if err != nil {
+		delete(running.used, key) // no server, so nothing for the reaper to hold
 		return nil, err
 	}
 	running.byKey[key] = c
@@ -201,6 +268,7 @@ func Close() {
 	for key, c := range running.byKey {
 		c.close()
 		delete(running.byKey, key)
+		delete(running.used, key)
 	}
 }
 

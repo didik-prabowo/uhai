@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -239,4 +240,62 @@ func TestTailKeepsTheEndAndOffersTheFirstLine(t *testing.T) {
 	if held > tailMax {
 		t.Fatalf("the tail grew to %d, past the %d it keeps", held, tailMax)
 	}
+}
+
+// A server nobody has asked anything is stopped. Until this existed none of
+// them stopped until the process did, and in a daemon that is for as long as
+// any terminal stays attached: four checkouts open meant four language servers
+// holding four indexes, in a process nobody was watching.
+func TestAnIdleServerIsStoppedAndABusyOneIsNot(t *testing.T) {
+	t.Cleanup(Close)
+
+	idle, busy := heldOpen(t), heldOpen(t)
+	running.Lock()
+	running.byKey = map[string]*client{"/one\x00go": idle, "/two\x00go": busy}
+	running.used = map[string]time.Time{
+		"/one\x00go": time.Now().Add(-time.Hour),
+		"/two\x00go": time.Now(),
+	}
+	running.Unlock()
+
+	if reaped := reapOnce(idleAfter); reaped != 1 {
+		t.Fatalf("one server was idle and one was not, %d went", reaped)
+	}
+
+	running.Lock()
+	_, keptIdle := running.byKey["/one\x00go"]
+	_, keptBusy := running.byKey["/two\x00go"]
+	_, stampIdle := running.used["/one\x00go"]
+	running.Unlock()
+	if keptIdle || stampIdle {
+		t.Error("the idle server must go, and its timestamp with it")
+	}
+	if !keptBusy {
+		t.Error("a server asked something a moment ago must be left alone")
+	}
+
+	// Stopped, not merely forgotten: a forgotten one is a process still
+	// holding its index, which is the whole thing being fixed.
+	if err := idle.call(context.Background(), "workspace/symbol", nil, nil); err == nil {
+		t.Error("the reaped server is still answering")
+	}
+	if reaped := reapOnce(idleAfter); reaped != 0 {
+		t.Errorf("a second sweep found %d more to stop", reaped)
+	}
+}
+
+// heldOpen is a client with a real process behind it, because ending one is
+// close's whole job: cat exits when its stdin does, which is what a language
+// server does too.
+func heldOpen(t *testing.T) *client {
+	t.Helper()
+	cmd := exec.Command("cat")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	return &client{cmd: cmd, in: in, pending: map[int]chan reply{}}
 }
