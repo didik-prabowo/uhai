@@ -49,6 +49,35 @@ func TestEditFile(t *testing.T) {
 	}
 }
 
+// read_file was given a memory ceiling and edit_file was the path left without
+// one: an exact replacement holds the whole file, so a model asked to fix a
+// line in what turned out to be a database dump read all of it into a process
+// that, in the daemon, is holding every project's conversation.
+//
+// Refused rather than read partially. An edit applied to a file whose rest was
+// never seen is how a file gets corrupted.
+func TestEditRefusesAFileTooBigToHold(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dump.sql")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sparse, so the test costs no disk: the tool decides on the size it is
+	// told, which is what a caller would be deciding on too.
+	if err := f.Truncate(maxEditFile + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	out, isErr := tryEdit(t, path, "anything", "else")
+	if !isErr {
+		t.Fatalf("a file past the ceiling must be refused: %s", out)
+	}
+	if !strings.Contains(out, "too big to edit") {
+		t.Errorf("and the refusal has to say why: %s", out)
+	}
+}
+
 func TestWriteFileCreatesParentFolders(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deep", "nested", "x.txt")
 	in, _ := json.Marshal(map[string]string{"path": path, "content": "hi"})

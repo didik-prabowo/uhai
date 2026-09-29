@@ -40,8 +40,12 @@ type workspace struct {
 	turning  sync.Mutex
 	stopTurn context.CancelFunc
 
-	mu       sync.Mutex
-	watchers map[chan Event]struct{}
+	mu sync.Mutex
+	// watchers is every front end attached to this project, and how many events
+	// each of them has missed. An event is dropped when a front end is not
+	// draining fast enough; the count is what makes the gap visible again. See
+	// publish.
+	watchers map[chan Event]int
 	// model is what prompt answers with, so a front end can say so truthfully
 	// rather than reading its own config. Under mu because /model changes it
 	// while health is being asked.
@@ -123,7 +127,7 @@ func (s *Server) workspaceFor(r *http.Request) (*workspace, error) {
 		return ws, nil
 	}
 
-	ws := &workspace{root: abs, tasks: &task.Registry{}, watchers: map[chan Event]struct{}{}}
+	ws := &workspace{root: abs, tasks: &task.Registry{}, watchers: map[chan Event]int{}}
 	if s.New != nil {
 		conv, err := s.New(abs)
 		if err != nil {
@@ -143,13 +147,35 @@ func (s *Server) workspaceFor(r *http.Request) (*workspace, error) {
 // publish hands one event to the front ends watching this project, and only
 // this project. A terminal attached to project A must never see project B's
 // answer being written.
+//
+// A front end that is not draining loses the event, which cannot be helped: the
+// alternative is the turn waiting for a terminal. What can be helped is the
+// silence. This used to drop on the grounds that a front end not draining has
+// gone away, and a slow one is the same thing from here — so a terminal that
+// fell behind for a moment lost pieces of an answer and went on drawing the
+// rest as if it were whole. The count is carried until something gets through,
+// and then the gap is announced before it: the same bargain tailBuffer makes
+// when it says how many bytes it dropped, and for the same reason. Silence
+// reads as "this is all of it".
 func (w *workspace) publish(e Event) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for ch := range w.watchers {
+	for ch, missed := range w.watchers {
+		if missed > 0 {
+			select {
+			case ch <- Event{Kind: EventNotice,
+				Text: fmt.Sprintf("%d event(s) were lost — this terminal could not keep up", missed)}:
+				w.watchers[ch] = 0
+			default:
+				// Still full. The count keeps, and grows by this event too.
+				w.watchers[ch]++
+				continue
+			}
+		}
 		select {
 		case ch <- e:
-		default: // a front end that has stopped draining has gone away
+		default:
+			w.watchers[ch]++
 		}
 	}
 }
@@ -162,10 +188,15 @@ func (w *workspace) watched() bool {
 	return len(w.watchers) > 0
 }
 
+// eventBuffer is how far a front end may fall behind before events are lost.
+// Sixty-four is a second or two of a streaming answer, which is far more than
+// a terminal drawing frames needs — past that it is not behind, it is gone.
+const eventBuffer = 64
+
 func (w *workspace) watch() (<-chan Event, func()) {
-	ch := make(chan Event, 64)
+	ch := make(chan Event, eventBuffer)
 	w.mu.Lock()
-	w.watchers[ch] = struct{}{}
+	w.watchers[ch] = 0
 	w.mu.Unlock()
 
 	return ch, func() {

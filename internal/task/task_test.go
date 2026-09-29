@@ -3,9 +3,11 @@ package task
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestRunTracksTasks(t *testing.T) {
@@ -127,6 +129,32 @@ func TestQueuedTaskEndsWhenCancelled(t *testing.T) {
 	// meant for seconds.
 	if cancelled.Elapsed != 0 {
 		t.Errorf("a task that never started spent no time working, got %s", cancelled.Elapsed)
+	}
+}
+
+// The tail kept of a task's output is cut by byte, and a character is not one.
+// Landing inside a multi-byte rune left a broken glyph at the head of every
+// trimmed output — and a task's output is where non-English text is most
+// likely to be.
+func TestTrimmedOutputIsStillValidText(t *testing.T) {
+	var r Registry
+	r.start("a task")
+
+	// Three bytes per character, so a cut at a byte boundary lands inside one
+	// two times out of three whatever the length.
+	for i := 0; i < 400; i++ {
+		r.Progress("t1", strings.Repeat("日", 10))
+	}
+
+	got := find(&r, "t1").Output
+	if len(got) <= maxOutput {
+		t.Fatalf("the output was never trimmed, so the test proves nothing: %d bytes", len(got))
+	}
+	if !utf8.ValidString(got) {
+		t.Error("the trimmed output is not valid text")
+	}
+	if strings.ContainsRune(got, utf8.RuneError) {
+		t.Error("the trim left a replacement glyph behind")
 	}
 }
 

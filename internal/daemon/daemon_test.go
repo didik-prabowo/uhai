@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/didik-prabowo/uhai/internal/provider"
 	"github.com/didik-prabowo/uhai/internal/session"
@@ -1398,5 +1399,63 @@ func TestListeningSeesARunningDaemon(t *testing.T) {
 	s, _ := serve(t, nil, nil)
 	if !Listening(s.Addr()) {
 		t.Fatal("a daemon that is serving has to be seen")
+	}
+}
+
+// A front end that falls behind loses events — there is no alternative that
+// does not have the turn waiting for a terminal — but it is told what it
+// missed. Dropping in silence meant a terminal that stalled for a moment lost
+// pieces of an answer and drew the rest as if it were whole.
+func TestAFrontEndIsToldWhatItMissed(t *testing.T) {
+	ws := &workspace{watchers: map[chan Event]int{}}
+	events, stop := ws.watch()
+	defer stop()
+
+	// More than the buffer holds, with nobody reading.
+	const lost = 5
+	for i := 0; i < eventBuffer+lost; i++ {
+		ws.publish(Event{Kind: EventDelta, Text: "x"})
+	}
+	for i := 0; i < eventBuffer; i++ {
+		<-events
+	}
+
+	// Draining again, the gap is the first thing said, before the event that
+	// got through.
+	ws.publish(Event{Kind: EventDelta, Text: "the one after the gap"})
+	got := <-events
+	if got.Kind != EventNotice || !strings.Contains(got.Text, fmt.Sprintf("%d event(s) were lost", lost)) {
+		t.Fatalf("the gap was not reported: %+v", got)
+	}
+	if next := <-events; next.Text != "the one after the gap" {
+		t.Fatalf("and the event itself must follow it: %+v", next)
+	}
+
+	// Said once, not on every event after it.
+	ws.publish(Event{Kind: EventDelta, Text: "and the next"})
+	if again := <-events; again.Kind == EventNotice {
+		t.Errorf("the gap was reported twice: %+v", again)
+	}
+}
+
+// The description a task list shows is cut by byte, and a character is not
+// one: a prompt written in anything but English was as likely as not to end in
+// half a rune, which every front end then drew as a replacement glyph.
+func TestAShortenedPromptIsStillValidText(t *testing.T) {
+	long := strings.Repeat("perbaiki ini 日本語 ", 10)
+	got := short(long)
+
+	if got == long {
+		t.Fatal("the prompt was never shortened, so the test proves nothing")
+	}
+	if !utf8.ValidString(got) {
+		t.Errorf("the shortened prompt is not valid text: %q", got)
+	}
+	if strings.ContainsRune(got, utf8.RuneError) {
+		t.Errorf("the cut left a replacement glyph behind: %q", got)
+	}
+	// A prompt that already fits is handed back as it is.
+	if short("singkat") != "singkat" {
+		t.Error("a short prompt must not be touched")
 	}
 }
