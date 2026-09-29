@@ -409,28 +409,45 @@ func TestAStoppedTaskWorkerIsInterruptedBeforeItIsKilled(t *testing.T) {
 	defer cancel()
 	cmd := taskCmd(ctx, exe, dir, ready)
 
-	said := make(chan string, 1)
+	// Whatever it printed and whatever went wrong, together: the run is over
+	// either way, and the error is where the reason lives.
+	type ended struct {
+		out string
+		err error
+	}
+	said := make(chan ended, 1)
 	go func() {
-		out, _ := cmd.Output()
-		said <- string(out)
+		out, err := cmd.Output()
+		said <- ended{string(out), err}
 	}()
 
-	for i := 0; i < 1000; i++ {
+	// Five seconds at 5ms, the budget every wait here uses: the answer arrives
+	// in milliseconds, and the rest is for a machine busy with something else.
+	// A worker that ended instead of coming up is reported with what it said —
+	// this used to time out claiming it never started, which is the symptom and
+	// says nothing about the cause.
+	up := false
+	for i := 0; i < 1000 && !up; i++ {
 		if _, err := os.Stat(ready); err == nil {
+			up = true
 			break
 		}
-		time.Sleep(5 * time.Millisecond)
+		select {
+		case done := <-said:
+			t.Fatalf("the worker ended before it was up: %v, output %q", done.err, done.out)
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
-	if _, err := os.Stat(ready); err != nil {
-		t.Fatal("the worker never started")
+	if !up {
+		t.Fatal("the worker did not come up within five seconds")
 	}
 
 	start := time.Now()
 	cancel()
 	select {
-	case out := <-said:
-		if !strings.Contains(out, "interrupted") {
-			t.Errorf("the worker was killed outright, so it cleaned up nothing: %q", out)
+	case done := <-said:
+		if !strings.Contains(done.out, "interrupted") {
+			t.Errorf("the worker was killed outright, so it cleaned up nothing: %q", done.out)
 		}
 	case <-time.After(2 * stopGrace):
 		t.Fatal("the worker was neither interrupted nor killed")
