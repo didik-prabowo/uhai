@@ -223,23 +223,35 @@ type Settings struct {
 	Effort string `json:"effort,omitempty"`
 }
 
-// settingsFiles returns the settings locations, lowest priority first.
-func settingsFiles() []string {
+// settingsFiles returns the settings locations for one project, lowest
+// priority first. An empty root means the process's own directory, which is
+// what it means everywhere else here.
+func settingsFiles(root string) []string {
 	var out []string
 	if path, err := InDir("settings.json"); err == nil {
 		out = append(out, path)
 	}
 	return append(out,
-		filepath.Join(ProjectDir, "settings.json"),
-		filepath.Join(ProjectDir, "settings.local.json"),
+		filepath.Join(root, ProjectDir, "settings.json"),
+		filepath.Join(root, ProjectDir, "settings.local.json"),
 	)
 }
 
-// LoadSettings merges the settings files (later ones win over earlier ones),
-// then the env vars, which always win.
-func LoadSettings() (Settings, error) {
+// LoadSettings merges the settings files of the project this process is
+// running in.
+func LoadSettings() (Settings, error) { return LoadSettingsIn("") }
+
+// LoadSettingsIn is LoadSettings for a named project (later files win over
+// earlier ones, then the env vars, which always win).
+//
+// The root is a parameter because one daemon serves every project on the
+// machine, and its own working directory is whichever project happened to
+// start it. Read from there, project B's tool calls were answered by project
+// A's deny list — and the tools it answers for are the ones that never ask a
+// human, so nothing said so.
+func LoadSettingsIn(root string) (Settings, error) {
 	var s Settings
-	for _, path := range settingsFiles() {
+	for _, path := range settingsFiles(root) {
 		data, err := os.ReadFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue

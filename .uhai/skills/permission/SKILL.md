@@ -196,6 +196,19 @@ Two ways to stop being asked, and they are deliberately different:
 - `a` at the prompt allows that tool for the rest of the session only. It is
   in memory, so nothing a session waves through outlives it.
 
+Which project's `.uhai/settings.json` is a parameter, not the working
+directory: `PermissionFor`, `Permission` and `ToolDenied` all take a root, and
+`LoadSettingsIn` is what reads it. Every other reader in `config` — the model,
+the endpoints, the skills, the notes — still asks the working directory,
+because those are read once while an agent is being built and the daemon builds
+each one inside `inRoot`. The permission lists are the exception that made the
+parameter necessary: they are consulted per tool call, long after the build,
+and one daemon serves every checkout on the machine from whichever directory
+woke it. Project B's `read_file` was therefore answered by project A's deny
+list — and `read_file` is one of the tools nobody is asked about, so nothing
+said so. `newAgent` takes the root for the same reason: the closure it builds
+outlives the chdir.
+
 The question is asked from the agent's goroutine while the model works, which
 is why it outranks the spinner in the status row and why the session's list
 carries its own lock.

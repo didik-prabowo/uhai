@@ -39,7 +39,11 @@ func (m *teaModel) decide(name, input string) string {
 	// Every path the call touches, folded to the least permissive answer, in
 	// config rather than here — edit_file takes a list, and a deny that could be
 	// escaped by putting the denied path second in it is not a deny.
-	if rule := config.PermissionFor(name, input); rule != config.PermAsk {
+	// The agent's own project, not this process's directory. The two are the
+	// same for a terminal — but saying which project a rule is about is the
+	// whole point of the parameter, and a front end that answers the daemon's
+	// questions is deciding about a conversation it does not run.
+	if rule := config.PermissionFor(m.agent.Root, name, input); rule != config.PermAsk {
 		return rule
 	}
 	if m.allowed.has(name) {

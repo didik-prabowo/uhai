@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -112,7 +113,7 @@ func TestNewAgentComposesTheSession(t *testing.T) {
 		"---\nname: planning\ndescription: Rencanakan dulu\n---\nBadan panjang yang tidak ikut ke prompt.\n")
 	write(t, filepath.Join(dir, ".uhai", "settings.json"), `{"permissions":{"deny":["run_bash"]}}`)
 
-	a, err := newAgent()
+	a, err := newAgent(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +363,7 @@ func TestAPathRuleReachesTheToolsThatNeverAsk(t *testing.T) {
 	write(t, filepath.Join(dir, ".uhai", "settings.json"),
 		`{"permissions":{"deny":["Read(./secret.txt)"]}}`)
 
-	a, err := newAgent()
+	a, err := newAgent(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,15 +381,116 @@ func TestAPathRuleReachesTheToolsThatNeverAsk(t *testing.T) {
 	}
 }
 
+// A stopped task is asked to stop before it is killed. exec.CommandContext
+// kills by default, and a killed process runs none of its defers — including
+// the one that takes down the process group its run_bash started. /stop on a
+// task running a test suite therefore stopped the worker and left the compile
+// running, which is the failure ownGroup exists to prevent, one process
+// further out.
+//
+// The worker here is a shell script rather than uhai: what is being tested is
+// how it is stopped, and a real worker would need a provider to talk to.
+func TestAStoppedTaskWorkerIsInterruptedBeforeItIsKilled(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "worker")
+	ready := filepath.Join(dir, "ready")
+	// $2 is the prompt, which is the file it touches to say it is up: the
+	// test has to cancel while the worker is running, not before it starts.
+	// The sleep is backgrounded so the trap can run — a shell waiting on a
+	// foreground child handles no signal until it returns — and its output
+	// goes to /dev/null so that it is not left holding the pipe this test
+	// reads, which a real worker's children never do either.
+	write(t, exe, "#!/bin/sh\ntrap 'echo interrupted; exit 0' INT\n: > \"$2\"\nsleep 30 >/dev/null 2>&1 &\nwait\n")
+	if err := os.Chmod(exe, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := taskCmd(ctx, exe, dir, ready)
+
+	said := make(chan string, 1)
+	go func() {
+		out, _ := cmd.Output()
+		said <- string(out)
+	}()
+
+	for i := 0; i < 1000; i++ {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(ready); err != nil {
+		t.Fatal("the worker never started")
+	}
+
+	start := time.Now()
+	cancel()
+	select {
+	case out := <-said:
+		if !strings.Contains(out, "interrupted") {
+			t.Errorf("the worker was killed outright, so it cleaned up nothing: %q", out)
+		}
+	case <-time.After(2 * stopGrace):
+		t.Fatal("the worker was neither interrupted nor killed")
+	}
+	if took := time.Since(start); took > stopGrace {
+		t.Errorf("stopping took %s, past the %s grace", took, stopGrace)
+	}
+}
+
+// A rule belongs to a project, and the deny list is consulted per tool call —
+// long after the agent was built. Asking the working directory at that moment
+// is asking the wrong project: one daemon serves every checkout on the machine
+// and runs in whichever one woke it, so project B's read_file was answered by
+// project A's rules. read_file is one of the tools nobody is asked about, so
+// nothing said so; this is the test that would have.
+func TestARuleBelongsToItsProjectAndNotToTheWorkingDirectory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no home settings in the way
+	t.Setenv("OPENAI_API_KEY", "k")
+	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
+
+	// Two checkouts, each denying a file of its own.
+	first, second := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(first, ".uhai", "settings.json"), `{"permissions":{"deny":["Read(./first-only.txt)"]}}`)
+	write(t, filepath.Join(second, ".uhai", "settings.json"), `{"permissions":{"deny":["Read(./second-only.txt)"]}}`)
+
+	// The process sits in the first, the way a daemon sits in whichever
+	// project started it.
+	back, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(first); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(back) })
+
+	a, err := newAgent(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Root != second {
+		t.Errorf("the agent's root is the project it was built for, got %q", a.Root)
+	}
+	if a.AllowTool("read_file", `{"path":"second-only.txt"}`) {
+		t.Error("a project's own deny list must be the one that answers for it")
+	}
+	if !a.AllowTool("read_file", `{"path":"first-only.txt"}`) {
+		t.Error("a rule from the directory the process happens to be in must not reach another project")
+	}
+}
+
 // The default half of the same thing: a file that is a credential by convention
 // is refused with no settings at all, because until now `read_file .env` put one
 // in the history, the request and the session file without anybody being asked.
 func TestCredentialFilesAreRefusedByDefault(t *testing.T) {
-	workIn(t)
+	dir := workIn(t)
 	t.Setenv("OPENAI_API_KEY", "k")
 	t.Setenv("UHAI_MODEL", "openai/gpt-4o-mini")
 
-	a, err := newAgent()
+	a, err := newAgent(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

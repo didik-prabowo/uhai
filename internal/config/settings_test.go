@@ -223,17 +223,17 @@ func TestPermissionRules(t *testing.T) {
 		{"edit_file", "main.go", PermAsk},   // unnamed, and it changes something
 		{"grep", "", PermAllow},             // unnamed, and it only looks
 	} {
-		if got := Permission(c.tool, c.subject); got != c.want {
+		if got := Permission("", c.tool, c.subject); got != c.want {
 			t.Errorf("%s(%s) → %q, want %q", c.tool, c.subject, got, c.want)
 		}
 	}
 
 	// A tool denied outright is not offered to the model at all; one denied
 	// only for certain arguments still is.
-	if !ToolDenied("write_file") {
+	if !ToolDenied("", "write_file") {
 		t.Error("Write is denied outright")
 	}
-	if ToolDenied("run_bash") {
+	if ToolDenied("", "run_bash") {
 		t.Error("Bash is only denied for one command, so it stays on offer")
 	}
 }
@@ -260,7 +260,7 @@ func TestChainedCommandsAreJudgedInFull(t *testing.T) {
 		"git log `whoami`":            PermAsk,
 		"git log ${EDITOR}":           PermAsk,
 	} {
-		if got := Permission("run_bash", command); got != want {
+		if got := Permission("", "run_bash", command); got != want {
 			t.Errorf("%q → %q, want %q", command, got, want)
 		}
 	}
@@ -656,7 +656,7 @@ func TestAVariableIsNotAllowedSilently(t *testing.T) {
 		"grep 'needle$' f":   PermAllow,
 		"echo done":          PermAllow,
 	} {
-		if got := Permission("run_bash", command); got != want {
+		if got := Permission("", "run_bash", command); got != want {
 			t.Errorf("%q → %q, want %q", command, got, want)
 		}
 	}
@@ -722,7 +722,7 @@ func TestAnEscapedQuoteDoesNotHideTheRestOfTheLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := Permission("run_bash", `echo \" && rm -rf /`); got != PermDeny {
+	if got := Permission("", "run_bash", `echo \" && rm -rf /`); got != PermDeny {
 		t.Errorf("an escaped quote hid the rm: got %q, want %q", got, PermDeny)
 	}
 }
@@ -739,10 +739,10 @@ func TestAnExplicitRuleBeatsTheCredentialDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := Permission("read_file", ".env"); got != PermAllow {
+	if got := Permission("", "read_file", ".env"); got != PermAllow {
 		t.Errorf("an explicit allow must win: got %q", got)
 	}
-	if got := Permission("read_file", "other/.env"); got != PermDeny {
+	if got := Permission("", "read_file", "other/.env"); got != PermDeny {
 		t.Errorf("the rule named one path, not the category: got %q", got)
 	}
 }
@@ -781,7 +781,7 @@ func TestALoneAmpersandDoesNotHideTheRestOfTheLine(t *testing.T) {
 		"go build &>/tmp/log": PermAllow,
 		"go test ./... 2>&1":  PermAllow,
 	} {
-		if got := Permission("run_bash", command); got != want {
+		if got := Permission("", "run_bash", command); got != want {
 			t.Errorf("%q → %q, want %q", command, got, want)
 		}
 	}
@@ -820,7 +820,7 @@ func TestABatchOfEditsIsJudgedInFull(t *testing.T) {
 		batch("secret.go", "app/main.go"):    PermDeny, // whichever order it is in
 		batch("app/main.go", "elsewhere.go"): PermAsk,  // the unknown half decides
 	} {
-		if got := PermissionFor("edit_file", input); got != want {
+		if got := PermissionFor("", "edit_file", input); got != want {
 			t.Errorf("%s → %q, want %q", input, got, want)
 		}
 	}

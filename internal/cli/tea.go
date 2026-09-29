@@ -59,6 +59,15 @@ type teaModel struct {
 	stream   string
 	streamed int
 
+	// above is the chat as drawn down to the answer being streamed: every
+	// entry rendered, wrapped and joined. aboveN is how many entries went into
+	// it, and -1 says it has to be built again whatever the count.
+	//
+	// It is kept because refresh runs on every delta and this is the expensive
+	// half of it. See refresh.
+	above  string
+	aboveN int
+
 	// queued is a prompt typed while the model was still working. It is sent
 	// as soon as the turn ends, so enter never throws the text away.
 	queued string
@@ -283,8 +292,57 @@ func (m *teaModel) add(e chatEntry) {
 // refresh redraws the chat with the answer currently streaming at its end.
 // It follows the bottom only while the reader is already there, so scrolling
 // back is not undone by the next chunk.
+//
+// The settled part — everything above the answer being written — is built once
+// and kept. It used to be rebuilt here, which meant every delta of every
+// answer re-wrapped the whole conversation: a turn near the end of a long
+// session paid for the length of that session on each character the model
+// wrote, and the screen got slower the longer you talked to it. Nothing above
+// the stream can change without going through add, clear or a resize, and each
+// of those says so.
 func (m *teaModel) refresh() {
 	follow := m.chat.AtBottom()
+	if m.aboveN != len(m.lines) {
+		m.above, m.aboveN = strings.Join(m.aboveRows(), "\n"), len(m.lines)
+	}
+
+	content := m.above
+	if stream := m.streamRows(); len(stream) > 0 {
+		if content != "" {
+			content += "\n"
+		}
+		content += strings.Join(stream, "\n")
+	}
+	m.chat.SetContent(content)
+	if follow {
+		m.chat.GotoBottom()
+	}
+}
+
+// clearChat takes the conversation off the screen. It is a method rather than
+// `m.lines = nil` at the call site because the drawn chat is kept, and dropping
+// one without the other leaves the old conversation on screen: emptying the
+// list and adding one entry back lands on the same count the cache was built
+// at, which is exactly what /clear does.
+func (m *teaModel) clearChat() {
+	m.lines = nil
+	m.invalidate()
+}
+
+// invalidate drops what was drawn for a width or a palette that no longer
+// applies. Both caches go together — the render of each entry and the chat
+// joined out of them — because the second is made of the first.
+func (m *teaModel) invalidate() {
+	for i := range m.lines {
+		m.lines[i].rendered = ""
+	}
+	// Not "", which is what an empty chat legitimately joins to.
+	m.aboveN = -1
+}
+
+// aboveRows is every line of the chat above the answer being streamed,
+// wrapped to the width and ready to be drawn.
+func (m *teaModel) aboveRows() []string {
 	rows := make([]string, 0, len(m.lines)+1)
 	for i, e := range m.lines {
 		if e.rendered == "" {
@@ -312,11 +370,7 @@ func (m *teaModel) refresh() {
 			}
 		}
 	}
-	rows = append(rows, m.streamRows()...)
-	m.chat.SetContent(strings.Join(rows, "\n"))
-	if follow {
-		m.chat.GotoBottom()
-	}
+	return rows
 }
 
 func (m *teaModel) Init() tea.Cmd { return textarea.Blink }
@@ -332,14 +386,18 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		applyInputStyle(&m.input, msg.IsDark())
 		applyInputStyle(&m.keyInput, msg.IsDark())
 		m.renderer = newRenderer(m.width - 4)
+		// The palette every entry was drawn with has just changed, so what was
+		// drawn with the old one is no longer what it should look like. This
+		// repainted without dropping the cache, and the lines already on
+		// screen — the welcome box, whatever the startup had to say — kept the
+		// colours of the guess.
+		m.invalidate()
 		m.refresh()
 		return m, nil
 	case tea.WindowSizeMsg:
 		if msg.Width != m.width {
 			m.renderer = newRenderer(msg.Width - 4)
-			for i := range m.lines {
-				m.lines[i].rendered = "" // rendered for the old width
-			}
+			m.invalidate() // rendered and wrapped for the old width
 		}
 		m.width, m.height = msg.Width, msg.Height
 		m.input.SetWidth(max(1, msg.Width-4))

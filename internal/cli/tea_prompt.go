@@ -138,7 +138,7 @@ func (m *teaModel) slashCommand(value string) tea.Cmd {
 			return nil
 		}
 		m.agent.History = nil
-		m.lines = nil // not even the echo of /clear survives the clearing
+		m.clearChat() // not even the echo of /clear survives the clearing
 		m.chatted = false
 		// A cleared chat is a session starting over, so it opens the way one
 		// does: with the welcome box, not with an empty screen.

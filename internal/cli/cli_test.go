@@ -198,7 +198,7 @@ func TestEscInterruptsTheTurn(t *testing.T) {
 func TestQuestionIsBanded(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.lines = nil
+	m.clearChat()
 
 	m.input.SetValue("halo")
 	m.submit()
@@ -426,7 +426,7 @@ func TestPortedCommands(t *testing.T) {
 
 	// Without a provider these say so rather than pretending to work.
 	for _, cmd := range []string{"/compact", "/bg do something"} {
-		m.lines = nil
+		m.clearChat()
 		m.input.SetValue(cmd)
 		m.submit()
 		if last := m.lines[len(m.lines)-1].text; !strings.Contains(last, "no provider") {
@@ -434,7 +434,7 @@ func TestPortedCommands(t *testing.T) {
 		}
 	}
 
-	m.lines = nil
+	m.clearChat()
 	m.input.SetValue("/tasks")
 	m.submit()
 	if last := m.lines[len(m.lines)-1].text; !strings.Contains(last, "no tasks yet") {
@@ -575,7 +575,7 @@ func TestCheckCanBeWatchedAndStopped(t *testing.T) {
 func TestLongLinesAreWrappedInTheChat(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
-	m.lines = nil
+	m.clearChat()
 
 	m.addHistory(strings.Repeat("x", 100)) // three rows at this width
 	if got := m.chat.TotalLineCount(); got != 3 {
@@ -1182,7 +1182,7 @@ func TestTurnClosesWithASummary(t *testing.T) {
 	// A turn that was stopped, or that failed, says that instead — there is
 	// nothing to be pleased about.
 	for _, err := range []error{context.Canceled, fmt.Errorf("provider error")} {
-		m.lines = nil
+		m.clearChat()
 		m.Update(teaDoneMsg{err: err})
 		for _, line := range m.lines {
 			if strings.Contains(line.text, "Done in") {
@@ -1197,7 +1197,7 @@ func TestTurnClosesWithASummary(t *testing.T) {
 
 	// A turn that failed says what to do next: stopping there with only the
 	// reason leaves it unclear whether the reading it did was lost with it.
-	m.lines = nil
+	m.clearChat()
 	m.Update(teaDoneMsg{err: fmt.Errorf("provider error (HTTP 429)")})
 	if last := m.lines[len(m.lines)-1].text; !strings.Contains(last, "still in the history") {
 		t.Fatalf("a failed turn should say the work survived it: %q", last)
@@ -1295,7 +1295,7 @@ func TestDiffCarriesLineNumbers(t *testing.T) {
 func TestLongLinesHangRatherThanFallLeft(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
-	m.lines = nil
+	m.clearChat()
 
 	m.addHistory("error: provider error (HTTP 429): rate limit reached for this model in this organization on tokens per minute")
 	rows := strings.Split(strings.TrimRight(m.chat.View(), "\n"), "\n")
@@ -1323,7 +1323,7 @@ func TestLongLinesHangRatherThanFallLeft(t *testing.T) {
 func TestToolLinesFitOnOneLine(t *testing.T) {
 	m := newTeaModel(agent.New(nil), nil)
 	m.Update(tea.WindowSizeMsg{Width: 70, Height: 20})
-	m.lines = nil
+	m.clearChat()
 
 	m.Update(teaToolMsg(`run_bash find . -maxdepth 3 -name "*.go" -not -path "*/node_modules/*" -not -path "*/.git/*"; echo done`))
 
@@ -2868,4 +2868,69 @@ func TestABackgroundTaskInheritsTheDenials(t *testing.T) {
 	if sub.Confirm("run_bash", `{"command":"rm -rf /"}`) {
 		t.Error("a task must refuse what it cannot ask about")
 	}
+}
+
+// /clear empties the chat and puts the welcome box straight back, which lands
+// on the same number of entries the drawn chat was last built at. That is the
+// one case a count cannot see, so clearing says so itself — without that the
+// conversation that was supposed to be gone stayed on the screen.
+func TestClearLeavesNothingOfTheConversationOnScreen(t *testing.T) {
+	m := newTeaModel(agent.New(nil), nil)
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 20})
+	m.clearChat()
+
+	m.addHistory("rahasia yang harus hilang")
+	if !strings.Contains(plain(m.chat.View()), "rahasia") {
+		t.Fatal("the line was never drawn, so the test proves nothing")
+	}
+
+	m.slashCommand("/clear")
+	if strings.Contains(plain(m.chat.View()), "rahasia") {
+		t.Error("/clear left the conversation on the screen")
+	}
+}
+
+// The chat above the answer being written is kept, so what a delta costs is
+// about the size of the answer rather than the size of the conversation. Run
+// it against a long chat and a short one: the gap between them is the part
+// that used to be paid on every character the model wrote.
+func BenchmarkRefreshWhileStreaming(b *testing.B) {
+	for _, entries := range []int{10, 400} {
+		b.Run(fmt.Sprintf("%d-entries", entries), func(b *testing.B) {
+			m := streamingModel(b, entries)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.refresh()
+			}
+		})
+	}
+}
+
+// A resize is the other half of the same bargain: it drops the cache, so it
+// pays for the whole chat exactly once. It is also what a delta used to cost,
+// which is the comparison worth having.
+func BenchmarkRefreshAfterAResize(b *testing.B) {
+	for _, entries := range []int{10, 400} {
+		b.Run(fmt.Sprintf("%d-entries", entries), func(b *testing.B) {
+			m := streamingModel(b, entries)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.invalidate()
+				m.refresh()
+			}
+		})
+	}
+}
+
+func streamingModel(b *testing.B, entries int) *teaModel {
+	b.Helper()
+	m := newTeaModel(agent.New(nil), nil)
+	m.width, m.height = 100, 40
+	m.chat.SetWidth(m.cols())
+	for i := 0; i < entries; i++ {
+		m.addHistory("⎿ read_file internal/cli/tea.go")
+		m.add(chatEntry{kind: entryAnswer, text: "Saya baca file itu dulu, lalu jelaskan bagian yang relevan.\n"})
+	}
+	m.stream = strings.Repeat("kalimat jawaban yang panjangnya wajar. ", 20)
+	return m
 }
