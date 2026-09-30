@@ -14,6 +14,8 @@ package config
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -97,7 +99,7 @@ func parseRule(text string) (rule, bool) {
 // matches reports whether this rule covers a call. subject is the command for
 // Bash and the path for the file tools; a rule with no specifier covers the
 // whole tool whatever the subject.
-func (r rule) matches(tool, subject string) bool {
+func (r rule) matches(root, tool, subject string) bool {
 	if r.tool != tool && r.tool != "*" {
 		return false
 	}
@@ -107,7 +109,7 @@ func (r rule) matches(tool, subject string) bool {
 	if tool == tools.NameBash {
 		return matchCommand(r.spec, subject)
 	}
-	return matchPath(r.spec, subject)
+	return matchPath(root, r.spec, subject)
 }
 
 // Subjects is everything one call acts on: the command for a shell call, and
@@ -175,7 +177,7 @@ func PermissionFor(root, tool, input string) string {
 	return answer
 }
 
-// Permission answers one call: the tool// Permission answers one call: the tool, and what it wants to act on — the
+// Permission answers one call: the tool, and what it wants to act on — the
 // command for run_bash, the path for the file tools, "" when there is nothing
 // to narrow by.
 //
@@ -194,11 +196,11 @@ func Permission(root, tool, subject string) string {
 	}
 
 	switch {
-	case bestMatch(s.Permissions.Deny, tool, subject) >= 0:
+	case bestMatch(root, s.Permissions.Deny, tool, subject) >= 0:
 		return PermDeny
-	case bestMatch(s.Permissions.Ask, tool, subject) >= 0:
+	case bestMatch(root, s.Permissions.Ask, tool, subject) >= 0:
 		return PermAsk
-	case bestMatch(s.Permissions.Allow, tool, subject) >= 0:
+	case bestMatch(root, s.Permissions.Allow, tool, subject) >= 0:
 		return PermAllow
 	}
 	return defaultPermission(tool, subject)
@@ -229,13 +231,15 @@ func commandPermission(s Settings, command string) string {
 	return answer
 }
 
+// The empty root is not a default here: a command has no path for it to
+// place, and matchCommand never looks at it.
 func onePart(s Settings, command string) string {
 	switch {
-	case bestMatch(s.Permissions.Deny, tools.NameBash, command) >= 0:
+	case bestMatch("", s.Permissions.Deny, tools.NameBash, command) >= 0:
 		return PermDeny
-	case bestMatch(s.Permissions.Ask, tools.NameBash, command) >= 0:
+	case bestMatch("", s.Permissions.Ask, tools.NameBash, command) >= 0:
 		return PermAsk
-	case bestMatch(s.Permissions.Allow, tools.NameBash, command) >= 0:
+	case bestMatch("", s.Permissions.Allow, tools.NameBash, command) >= 0:
 		return PermAllow
 	}
 	return defaultPermission(tools.NameBash, command)
@@ -244,11 +248,11 @@ func onePart(s Settings, command string) string {
 // bestMatch returns the length of the longest matching rule, -1 for none. The
 // length is what makes "Bash(git push:*)" beat "Bash(git:*)" whichever order
 // they were written in.
-func bestMatch(rules []string, tool, subject string) int {
+func bestMatch(root string, rules []string, tool, subject string) int {
 	best := -1
 	for _, text := range rules {
 		r, ok := parseRule(text)
-		if !ok || !r.matches(tool, subject) {
+		if !ok || !r.matches(root, tool, subject) {
 			continue
 		}
 		if len(r.spec) > best {
@@ -432,10 +436,50 @@ func matchCommand(spec, command string) bool {
 
 // matchPath matches a rule's specifier against a path. "*" stops at a slash
 // and "**" does not, the way every other tool spells it.
-func matchPath(spec, path string) bool {
-	spec = strings.TrimPrefix(spec, "./")
-	path = strings.TrimPrefix(path, "./")
-	return glob(spec, path, true)
+//
+// Both sides are put in the same terms first. They are written by different
+// hands and have to meet somewhere: a person writes the rule the way the file
+// appears in the project, and the model sends whatever it was looking at — the
+// path it read in a grep result, the one it built by walking up a directory, or
+// the absolute one it was handed. Until this existed the two only met when the
+// spellings happened to agree.
+func matchPath(root, spec, path string) bool {
+	return glob(canonPath(root, spec), canonPath(root, path), true)
+}
+
+// canonPath is a path as the rules compare them: cleaned, and relative to the
+// project when it is inside it.
+//
+// This is what `"deny": ["Read(./.env)"]` — the example in this package's own
+// comment — needed to mean anything beyond the one spelling. `.env`, `./.env`
+// and `src/../.env` are one file, and so is `/Users/x/proj/.env` when the
+// project is /Users/x/proj: the rule was silent on all but the second, which
+// is the worst way for a rule to be wrong, since it looks like it holds.
+//
+// A path outside the project keeps its absolute form: relative to a tree it is
+// not in means nothing. So a rule can still name /etc/hosts and be about that.
+//
+// Globs pass through unharmed — Clean and Rel are both lexical, and neither
+// touches a star — so "**/.env" is still "**/.env" and an absolute pattern
+// inside the project becomes a relative one.
+func canonPath(root, path string) string {
+	if path == "" {
+		return ""
+	}
+	clean := filepath.Clean(path)
+	if !filepath.IsAbs(clean) {
+		return clean
+	}
+	if root == "" {
+		// "" means this process's directory, the way it does everywhere else
+		// here. Read only when there is an absolute path to place, so an
+		// ordinary relative call costs no syscall.
+		root, _ = os.Getwd()
+	}
+	if rel, err := filepath.Rel(root, clean); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return clean
 }
 
 // glob compiles a pattern once and matches the whole string. stopAtSlash makes
